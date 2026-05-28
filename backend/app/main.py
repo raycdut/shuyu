@@ -38,11 +38,11 @@ from .session.manager import SessionManager
 # ---------------------------------------------------------------------------
 
 config: Config = None  # type: ignore
-connector: DatabaseConnector = None  # type: ignore
+connector: DatabaseConnector | None = None
 tool_registry: ToolRegistry = None  # type: ignore
 agent_loop: AgentLoop = None  # type: ignore
 session_manager: SessionManager = None  # type: ignore
-schema_prompt: str = ""
+schema_prompt: str = "请先在右侧配置面板中添加数据库。"
 _config_store: dict = {}  # runtime config
 _db_connections: list[dict] = []  # registered databases
 _sqlite: sqlite3.Connection | None = None
@@ -100,25 +100,13 @@ async def lifespan(app: FastAPI):
     # 1. Load config
     config = load_config()
 
-    # 2. Connect to database
-    if config.database.type == "duckdb":
-        connector = DuckDBConnector(
-            db_path=config.database.path,
-            include_tables=config.database.include_tables,
-            exclude_tables=config.database.exclude_tables,
-        )
-    else:
-        raise ValueError(f"Unsupported database type: {config.database.type}")
-
-    connector.connect()
-    tables = connector.get_schema()
-    schema_prompt = build_schema_prompt(tables)
-    print(f"📦 Connected to {config.database.type} — {len(tables)} tables found")
+    # 2. Init SQLite (no auto DuckDB connection — user adds DBs via UI)
+    _init_sqlite()
+    _load_config_sqlite()
+    _load_db_connections_sqlite()
 
     # 3. Register tools
     tool_registry = ToolRegistry()
-
-    # Register query_database tool
     tool_registry.register(Tool(
         name="query_database",
         description="用自然语言查询数据库。输入你想问的问题，我会生成 SQL 并返回查询结果。",
@@ -131,8 +119,8 @@ async def lifespan(app: FastAPI):
         handler=handle_query_database,
     ))
 
-    # 4. Build system prompt for the agent
-    system_prompt = f"""你是一个数据分析助手。用户会问你关于数据库中数据的问题。
+    # 4. Build minimal system prompt (schema filled at query time)
+    system_prompt = """你是一个数据分析助手。用户会问你关于数据库中数据的问题。
 
 你的工作流程：
 1. 理解用户的问题
@@ -140,16 +128,12 @@ async def lifespan(app: FastAPI):
 3. 根据查询结果回答用户
 4. 如果用户的问题不明确，主动澄清
 
-可用的数据库表：
-{schema_prompt}
-
 注意事项：
 - 如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段
 - 使用中文回答
 - 回答简洁，突出关键数据
 - 如果工具返回了数据，直接根据数据回答，不要编造"""
     system_prompt += f"\n- 每次查询最多返回 {config.safety.max_rows} 行数据"
-
     if config.safety.read_only:
         system_prompt += "\n- 你只能查询数据，不能修改"
 
@@ -160,18 +144,14 @@ async def lifespan(app: FastAPI):
         system_prompt=system_prompt,
     )
 
-    # 6. Init SQLite
-    _init_sqlite()
-    _load_config_sqlite()
-    _load_db_connections_sqlite()
-
-    # 7. Session manager
+    # 6. Session manager
     session_manager = SessionManager(sqlite_conn=_sqlite)
 
     yield
 
     # Cleanup
-    connector.disconnect()
+    if connector:
+        connector.disconnect()
 
 
 # ---------------------------------------------------------------------------
