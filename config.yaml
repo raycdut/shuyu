@@ -1,0 +1,69 @@
+# Agentic Data Analyst — Configuration
+#
+# Copy this to config.yaml and edit for your environment.
+# All values can be overridden via environment variables.
+
+llm:
+  # Supported: openai, azure, anthropic, ollama, or any OpenAI-compatible endpoint
+  provider: openai
+
+  # Model name (depends on provider)
+  model: gpt-4o
+
+  # API key — 建议通过环境变量 LLM_API_KEY 或 OPENAI_API_KEY 设置
+  # 建议通过环境变量 LLM_API_KEY 或 OPENAI_API_KEY 设置
+  api_key: ""
+
+  # Optional: custom API base URL (for OpenAI-compatible proxies)
+  # api_base: "https://api.openai.com/v1"
+
+  # Optional: Azure-specific
+  # azure_endpoint: ""
+  # azure_api_version: "2024-02-01"
+
+database:
+  # Supported: duckdb, postgres, clickhouse, snowflake, sqlite
+  type: duckdb
+
+  # For DuckDB: path to the database file
+  # For others: JDBC/connection string
+  path: ./data/analytics.db
+
+  # Connection details for remote databases
+  # host: localhost
+  # port: 5432
+  # user: ""
+  # password: ""
+  # database: ""
+
+  # Optional: schema/table filter (list tables to expose)
+  # include_tables:
+  #   - dim_*
+  #   - fct_*
+  # exclude_tables:
+  #   - _internal
+  #   - secrets
+
+knowledge_base:
+  # Vector store for schema descriptions, business metrics, and domain knowledge
+  type: chromadb
+  path: ./data/kb/
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+  # Optional: require API key for all requests
+  # api_key: ""
+
+safety:
+  # Enforce read-only: block INSERT/UPDATE/DELETE/CREATE/ALTER/DROP
+  read_only: true
+
+  # Tables whose data should never be returned
+  # restricted_tables:
+  #   - employee_salary
+  #   - pii_data
+
+  # Max rows returned per query
+  max_rows: 1000

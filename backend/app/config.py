@@ -38,7 +38,7 @@ class ServerConfig(BaseModel):
 
 
 class StorageConfig(BaseModel):
-    path: str = "./data/sessions.db"
+    path: str = "./data/config.db"
 
 
 class SafetyConfig(BaseModel):

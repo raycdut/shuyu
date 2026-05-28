@@ -52,7 +52,7 @@ Browser (React) ──→ FastAPI ──→ ReAct Agent Loop
                     (DuckDB)    (ChromaDB)  Manager
                         │                     │
                         ▼                     ▼
-                   analytics.db          sessions.db
+                   analytics.db          config.db
                    (your data)           (SQLite config + history)
 ```
 
