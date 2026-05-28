@@ -636,6 +636,9 @@ async def get_database_tables(db_id: str):
 @app.post("/api/database/connect")
 async def connect_database(req: DBConnectRequest):
     """Register a new database connection."""
+    # Check duplicate name
+    if any(d["name"].lower() == req.name.lower() for d in _db_connections):
+        raise HTTPException(409, f"数据库名称「{req.name}」已存在")
     db_id = str(uuid.uuid4())[:8]
     entry = {
         "id": db_id,
