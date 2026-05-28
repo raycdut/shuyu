@@ -64,6 +64,7 @@ schema_prompt: str = "请先在右侧配置面板中添加数据库。"
 _config_store: dict = {}  # runtime config
 _db_connections: list[dict] = []  # registered databases
 _sqlite: sqlite3.Connection | None = None
+_active_connector: DatabaseConnector | None = None  # per-request DB connection
 
 
 def build_schema_prompt(tables) -> str:
@@ -97,12 +98,25 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
 
 async def handle_query_database(question: str) -> str:
     """Tool handler: query the database with a natural language question."""
+    global _active_connector
     logger.info(f"SQL tool: processing question '{question[:80]}'")
+
+    if _active_connector is None:
+        return "⚠️ 没有选中的数据库，无法查询。请先在左侧选择一个数据库。"
+
+    # Build SQL generation system prompt from _active_connector schema
+    tables = _active_connector.get_schema()
+    schema_text = build_schema_prompt(tables)
+
+    async def _call_llm_for_sql(msgs):
+        resp = await call_llm(msgs)
+        return resp.choices[0].message.content
+
     return await handle_sql_query(
         question=question,
-        connector=connector,
-        schema_prompt=schema_prompt,
-        call_llm_func=lambda msgs: call_llm(msgs).choices[0].message.content,
+        connector=_active_connector,
+        schema_prompt=schema_text,
+        call_llm_func=_call_llm_for_sql,
         max_rows=config.safety.max_rows,
     )
 
@@ -448,7 +462,7 @@ async def root():
 async def get_schema():
     """Return database schema info for debugging."""
     if connector is None:
-        raise HTTPException(503, "Database not connected")
+        return {"tables": []}
     tables = connector.get_schema()
     return {
         "tables": [
@@ -469,7 +483,7 @@ async def chat(req: ChatRequest):
     if agent_loop is None:
         raise HTTPException(503, "Agent not initialized")
 
-    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  msg={req.message[:50]}...")
+    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  db={req.db_id or 'none'}  msg={req.message[:50]}...")
 
     # Check API key
     if not config.llm.api_key and not os.environ.get("OPENAI_API_KEY"):
@@ -488,15 +502,61 @@ async def chat(req: ChatRequest):
         title = req.message[:30] + ("…" if len(req.message) > 30 else "")
         session.metadata["title"] = title
 
+    # If a database is selected, connect and inject schema
+    global _active_connector
+    _active_connector = None
+    db_entry = None
+    if req.db_id:
+        db_entry = next((d for d in _db_connections if d["id"] == req.db_id), None)
+        session.metadata["db_id"] = req.db_id
+
+    # Build messages with optional schema context
+    agent_messages = list(session.get_messages())
+
+    if db_entry:
+        try:
+            db_path = db_entry.get("path", "")
+            if db_path.startswith("~"):
+                db_path = Path(db_path).expanduser().resolve()
+            _active_connector = DuckDBConnector(
+                db_path=str(db_path),
+                include_tables=db_entry.get("include_tables"),
+                exclude_tables=db_entry.get("exclude_tables"),
+            )
+            from pathlib import Path as _Path
+            _active_connector.connect()
+            tables = _active_connector.get_schema()
+            schema_text = build_schema_prompt(tables)
+            logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables ({len(schema_text)} chars)")
+
+            agent_messages.insert(0, {
+                "role": "system",
+                "content": f"你可以查询以下数据库。\n\n{schema_text}\n\n根据用户的问题，调用 query_database 工具来查询数据。"
+            })
+        except Exception as e:
+            logger.error(f"Failed to load schema for {db_entry['name']}: {e}")
+            agent_messages.insert(0, {
+                "role": "system",
+                "content": f"注意：你已连接到数据库「{db_entry['name']}」，但无法加载表结构（{e}）。请告知用户。"
+            })
+
     # Add user message to session
     session.add_message("user", req.message)
 
     # Run agent loop
     try:
-        result = await agent_loop.run(session.get_messages())
+        result = await agent_loop.run(agent_messages)
         content = result.get("content", "")
     except Exception as e:
         content = f"❌ 请求失败：{e}"
+    finally:
+        # Cleanup per-request DB connection
+        if _active_connector:
+            try:
+                _active_connector.disconnect()
+            except Exception:
+                pass
+            _active_connector = None
 
     # Add assistant response to session
     session.add_message("assistant", content)

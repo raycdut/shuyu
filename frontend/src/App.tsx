@@ -96,7 +96,7 @@ export default function App() {
     setIsLoading(true)
 
     try {
-      const res = await api.sendMessage(text, activeSessionId ?? undefined)
+      const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined)
       setActiveSessionId(res.session_id)
 
       const agentMsg: Message = {
@@ -115,7 +115,7 @@ export default function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeSessionId, isLoading])
+  }, [activeSessionId, activeDbId, isLoading])
 
   // --- 选择会话 ---
   const handleSelectSession = async (sessionId: string) => {

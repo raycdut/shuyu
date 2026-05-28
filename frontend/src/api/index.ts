@@ -24,10 +24,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   // ===== 聊天 =====
-  sendMessage(message: string, sessionId?: string): Promise<ChatResponse> {
+  sendMessage(message: string, sessionId?: string, dbId?: string): Promise<ChatResponse> {
     return request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ message, session_id: sessionId || null }),
+      body: JSON.stringify({ message, session_id: sessionId || null, db_id: dbId || null }),
     })
   },
 
