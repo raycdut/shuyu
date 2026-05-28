@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== 宋氏美学全局样式 ===== */
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-paper text-ink font-sans antialiased;
+    background-image:
+      radial-gradient(ellipse at 20% 50%, rgba(123, 168, 147, 0.03) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 20%, rgba(212, 201, 184, 0.06) 0%, transparent 50%);
+    background-attachment: fixed;
+  }
+
+  /* 自定义滚动条 - 极细墨线风格 */
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-tea rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-celadon;
+  }
+}
+
+@layer components {
+  /* 毛笔分隔线 */
+  .ink-divider {
+    @apply border-0 border-t;
+    border-color: #d4c9b8;
+    border-image: linear-gradient(
+      to right,
+      transparent 0%,
+      #d4c9b8 15%,
+      #d4c9b8 85%,
+      transparent 100%
+    ) 1;
+  }
+
+  /* 极淡宣纸阴影 */
+  .paper-shadow {
+    box-shadow:
+      0 1px 3px rgba(44, 44, 44, 0.04),
+      0 1px 2px rgba(44, 44, 44, 0.02);
+  }
+
+  .paper-shadow-md {
+    box-shadow:
+      0 4px 6px rgba(44, 44, 44, 0.04),
+      0 2px 4px rgba(44, 44, 44, 0.02);
+  }
+
+  /* 青瓷按钮 */
+  .btn-celadon {
+    @apply bg-celadon text-white px-4 py-1.5 text-sm rounded-sm
+           transition-all duration-200
+           hover:bg-celadon-dark
+           active:scale-[0.98];
+  }
+
+  .btn-celadon:disabled {
+    @apply opacity-40 cursor-not-allowed active:scale-100;
+  }
+
+  /* 墨线边框 */
+  .ink-border {
+    @apply border;
+    border-color: #d4c9b8;
+  }
+
+  /* 输入框 */
+  .ink-input {
+    @apply w-full bg-paper-light border px-3 py-2 text-sm rounded-sm
+           placeholder:text-ink-lighter
+           focus:outline-none focus:border-celadon focus:ring-1 focus:ring-celadon/20
+           transition-colors duration-200;
+    border-color: #d4c9b8;
+  }
+
+  /* 消息气泡 */
+  .bubble-user {
+    @apply bg-celadon text-white rounded-sm px-4 py-2.5 max-w-[80%] self-end
+           shadow-sm;
+    border-radius: 6px 6px 2px 6px;
+  }
+
+  .bubble-agent {
+    @apply bg-white text-ink rounded-sm px-4 py-2.5 max-w-[80%] self-start
+           paper-shadow;
+    border-radius: 6px 6px 6px 2px;
+  }
+
+  /* 表格渲染 */
+  .query-table {
+    @apply w-full text-xs border-collapse my-2;
+  }
+  .query-table th {
+    @apply bg-smoke text-ink-light font-medium px-3 py-1.5 text-left border-b;
+    border-color: #d4c9b8;
+  }
+  .query-table td {
+    @apply px-3 py-1.5 border-b;
+    border-color: #e8e3d8;
+  }
+  .query-table tr:last-child td {
+    @apply border-b-0;
+  }
+  .query-table tr:hover td {
+    @apply bg-smoke/50;
+  }
+}

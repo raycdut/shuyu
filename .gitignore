@@ -1,0 +1,8 @@
+dist/
+__pycache__/
+*.pyc
+.env
+config.yaml
+data/*.db
+data/kb/
+.DS_Store
