@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -188,10 +189,24 @@ def _init_sqlite():
     _sqlite.execute("PRAGMA busy_timeout=5000")
 
     _sqlite.executescript("""
-        CREATE TABLE IF NOT EXISTS config (
+        CREATE TABLE IF NOT EXISTS llm_providers (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            provider   TEXT NOT NULL DEFAULT 'openai',
+            model      TEXT NOT NULL DEFAULT 'gpt-4o',
+            api_key    TEXT DEFAULT '',
+            api_base   TEXT DEFAULT '',
+            is_active  INTEGER DEFAULT 0,
+            created_at REAL NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS settings (
             key   TEXT PRIMARY KEY,
             value TEXT NOT NULL
         );
+
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('safety_read_only', 'true');
+        INSERT OR IGNORE INTO settings (key, value) VALUES ('safety_max_rows', '1000');
 
         CREATE TABLE IF NOT EXISTS databases (
             id                TEXT PRIMARY KEY,
@@ -228,26 +243,30 @@ def _init_sqlite():
 
 
 def _load_config_sqlite():
-    """Load config from SQLite into runtime _config_store and config object."""
-    global _config_store
+    """Load config from SQLite into runtime config object."""
     if _sqlite is None:
         return
     try:
-        rows = _sqlite.execute("SELECT key, value FROM config").fetchall()
-        _config_store = dict(rows)
-        # Restore LLM config
-        if "llm_provider" in _config_store:
-            config.llm.provider = _config_store["llm_provider"]
-        if "llm_model" in _config_store:
-            config.llm.model = _config_store["llm_model"]
-        if "llm_api_key" in _config_store:
-            config.llm.api_key = _config_store["llm_api_key"]
-        if "llm_api_base" in _config_store:
-            config.llm.api_base = _config_store["llm_api_base"]
-        if "safety_read_only" in _config_store:
-            config.safety.read_only = _config_store["safety_read_only"] == "true"
-        if "safety_max_rows" in _config_store:
-            config.safety.max_rows = int(_config_store["safety_max_rows"])
+        # Migrate old key-value config to new schema
+        _migrate_old_config()
+
+        # Load active LLM provider
+        row = _sqlite.execute("""
+            SELECT provider, model, api_key, api_base FROM llm_providers WHERE is_active = 1
+        """).fetchone()
+        if row:
+            config.llm.provider = row[0] or "openai"
+            config.llm.model = row[1] or "gpt-4o"
+            config.llm.api_key = row[2] or ""
+            config.llm.api_base = row[3] or ""
+
+        # Load settings
+        rows = _sqlite.execute("SELECT key, value FROM settings").fetchall()
+        for key, value in rows:
+            if key == "safety_read_only":
+                config.safety.read_only = value == "true"
+            elif key == "safety_max_rows":
+                config.safety.max_rows = int(value)
     except Exception:
         pass
 
@@ -256,17 +275,90 @@ def _save_config_sqlite():
     """Save runtime config to SQLite."""
     if _sqlite is None:
         return
-    pairs = [
-        ("llm_provider", config.llm.provider),
-        ("llm_model", config.llm.model),
-        ("llm_api_key", config.llm.api_key),
-        ("llm_api_base", config.llm.api_base or ""),
-        ("safety_read_only", str(config.safety.read_only).lower()),
-        ("safety_max_rows", str(config.safety.max_rows)),
-    ]
-    for key, value in pairs:
-        _sqlite.execute("INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", (key, value))
-    _sqlite.commit()
+    try:
+        # Upsert active LLM provider
+        existing = _sqlite.execute(
+            "SELECT id FROM llm_providers WHERE is_active = 1"
+        ).fetchone()
+        if existing:
+            _sqlite.execute("""
+                UPDATE llm_providers SET provider=?, model=?, api_key=?, api_base=?
+                WHERE id=?
+            """, (config.llm.provider, config.llm.model, config.llm.api_key,
+                  config.llm.api_base or "", existing[0]))
+        else:
+            _sqlite.execute("""
+                INSERT INTO llm_providers (name, provider, model, api_key, api_base, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, (config.llm.provider, config.llm.provider, config.llm.model,
+                  config.llm.api_key, config.llm.api_base or "", time.time()))
+
+        # Save settings
+        _sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        ("safety_read_only", str(config.safety.read_only).lower()))
+        _sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        ("safety_max_rows", str(config.safety.max_rows)))
+        _sqlite.commit()
+    except Exception:
+        pass
+
+
+def _migrate_old_config():
+    """Migrate from old key-value config table to new schema."""
+    if _sqlite is None:
+        return
+    try:
+        # Check if old table exists
+        old = _sqlite.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='config'"
+        ).fetchone()
+        if not old:
+            return
+
+        # Read old key-value pairs
+        rows = _sqlite.execute("SELECT key, value FROM config").fetchall()
+        if not rows:
+            return
+
+        pairs = dict(rows)
+        has_llm = "llm_provider" in pairs or "llm_model" in pairs
+
+        # Only migrate if there's data and no active provider exists yet
+        if has_llm:
+            existing_active = _sqlite.execute(
+                "SELECT id FROM llm_providers WHERE is_active = 1"
+            ).fetchone()
+            if existing_active:
+                # Already migrated
+                _sqlite.execute("DROP TABLE IF EXISTS config")
+                _sqlite.commit()
+                return
+
+            _sqlite.execute("""
+                INSERT INTO llm_providers (name, provider, model, api_key, api_base, is_active, created_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, (
+                pairs.get("llm_provider", "default"),
+                pairs.get("llm_provider", "openai"),
+                pairs.get("llm_model", "gpt-4o"),
+                pairs.get("llm_api_key", ""),
+                pairs.get("llm_api_base", ""),
+                time.time(),
+            ))
+
+            for old_key, new_key in [("safety_read_only", "safety_read_only"),
+                                      ("safety_max_rows", "safety_max_rows")]:
+                if old_key in pairs:
+                    _sqlite.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        (new_key, pairs[old_key]),
+                    )
+
+        # Drop old table
+        _sqlite.execute("DROP TABLE IF EXISTS config")
+        _sqlite.commit()
+    except Exception:
+        pass
 
 
 def _load_db_connections_sqlite():
