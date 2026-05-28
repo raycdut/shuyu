@@ -5,9 +5,12 @@ Uses sliding window + summary compression (same pattern as Hermes hot memory).
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import time
 from typing import Any
+
+logger = logging.getLogger("shuyu.session")
 
 MAX_MESSAGES = 20
 KEEP_RECENT = 6
@@ -25,6 +28,7 @@ class Session:
         self.metadata: dict[str, Any] = {"title": title}
         self._title = title or ""
         self._sqlite = sqlite
+        logger.debug(f"Session created: {session_id}")
 
     @property
     def title(self) -> str:
@@ -32,6 +36,7 @@ class Session:
 
     @title.setter
     def title(self, value: str):
+        old = self._title
         self._title = value
         self.metadata["title"] = value
         if self._sqlite:
@@ -40,6 +45,7 @@ class Session:
                 (value, time.time(), self.session_id),
             )
             self._sqlite.commit()
+        logger.info(f"Session {self.session_id}: rename '{old}' -> '{value}'")
 
     def add_message(self, role: str, content: str, tool_calls: list = None) -> None:
         self.last_active = time.time()
@@ -47,6 +53,7 @@ class Session:
         if tool_calls:
             msg["tool_calls"] = tool_calls
         self.messages.append(msg)
+        logger.debug(f"Session {self.session_id}: +{role} msg ({len(content)} chars)")
         self._maybe_compress()
 
         # Persist to SQLite
@@ -111,6 +118,7 @@ class SessionManager:
                 rows = self._sqlite.execute(
                     "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
                 ).fetchall()
+                logger.info(f"Loading {len(rows)} sessions from SQLite...")
                 for sid, title, created, updated in rows:
                     sess = Session(sid, title or "", self._sqlite)
                     sess.created_at = created
@@ -128,8 +136,9 @@ class SessionManager:
                             sess.title = m["content"][:30] + ("…" if len(m["content"]) > 30 else "")
                             break
                     self._sessions[sid] = sess
-            except Exception:
-                pass
+                logger.info(f"Loaded {len(self._sessions)} sessions ({sum(len(s.messages) for s in self._sessions.values())} messages)")
+            except Exception as e:
+                logger.error(f"Failed to load sessions: {e}")
 
     def get_or_create(self, session_id: str) -> Session:
         if session_id not in self._sessions:

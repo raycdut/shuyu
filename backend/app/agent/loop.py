@@ -10,10 +10,13 @@ The agent:
 from __future__ import annotations
 
 import json
+import logging
 import time
 from typing import Any, Callable
 
 from .tools.registry import ToolRegistry
+
+logger = logging.getLogger("shuyu.agent")
 
 
 class AgentLoop:
@@ -32,17 +35,10 @@ class AgentLoop:
         self.max_iterations = max_iterations
 
     async def run(self, messages: list[dict]) -> dict:
-        """Run the agent loop on a conversation.
-
-        Args:
-            messages: List of messages in OpenAI format, e.g.
-                [{"role": "user", "content": "上月销量多少？"}]
-
-        Returns:
-            dict with "role": "assistant" and "content": str
-        """
+        """Run the agent loop on a conversation."""
         iteration = 0
         conversation = list(messages)
+        logger.info("Agent loop started")
 
         while iteration < self.max_iterations:
             iteration += 1
@@ -62,12 +58,14 @@ class AgentLoop:
 
             # --- Step 2: Check if LLM wants to call a tool ---
             if not response_message.tool_calls:
-                # No tool calls — this is the final answer
+                logger.info(f"Agent loop: final answer ({len(response_message.content or '')} chars)")
                 return {
                     "role": "assistant",
                     "content": response_message.content or "",
                     "tool_calls": [],
                 }
+
+            logger.info(f"Agent loop iter {iteration}: LLM requested {len(response_message.tool_calls)} tool call(s)")
 
             # --- Step 3: Execute tool calls ---
             conversation.append({
@@ -94,7 +92,9 @@ class AgentLoop:
                     arguments = {}
 
                 # Execute the tool
+                logger.info(f"  -> Calling tool: {tool_name}({json.dumps(arguments, ensure_ascii=False)[:100]})")
                 result = await self.tool_registry.call_tool(tool_name, arguments)
+                logger.info(f"  <- Tool result: {len(result)} chars")
 
                 # Add tool result to conversation
                 conversation.append({

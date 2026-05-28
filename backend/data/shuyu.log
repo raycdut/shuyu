@@ -1,0 +1,9 @@
+2026-05-29 06:21:08,717 [shuyu.main] INFO Starting Shuyu server...
+2026-05-29 06:21:08,717 [shuyu.main] INFO Config loaded: LLM=openai/gpt-4o, DB=duckdb
+2026-05-29 06:21:08,717 [shuyu.main] INFO Initializing SQLite: ./data/config.db
+2026-05-29 06:21:08,719 [shuyu.main] INFO SQLite ready: 1 DB connections loaded
+2026-05-29 06:21:08,719 [shuyu.main] INFO Creating ReAct agent loop...
+2026-05-29 06:21:08,720 [shuyu.session] INFO Loading 3 sessions from SQLite...
+2026-05-29 06:21:08,720 [shuyu.session] INFO Loaded 3 sessions (6 messages)
+2026-05-29 06:21:08,720 [shuyu.main] INFO Shuyu ready — 3 sessions loaded
+2026-05-29 06:21:14,775 [shuyu.main] INFO GET /api/database: 1 connections

@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import duckdb
 
 from .base import ColumnInfo, DatabaseConnector, QueryResult, TableInfo
+
+logger = logging.getLogger("shuyu.db")
 
 
 class DuckDBConnector(DatabaseConnector):
@@ -17,8 +20,10 @@ class DuckDBConnector(DatabaseConnector):
         self._conn: duckdb.DuckDBPyConnection | None = None
 
     def connect(self) -> None:
+        logger.info(f"Connecting to DuckDB: {self.db_path}")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = duckdb.connect(self.db_path)
+        logger.info("DuckDB connected")
 
     def disconnect(self) -> None:
         if self._conn:

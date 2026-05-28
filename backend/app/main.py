@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+logger = logging.getLogger("shuyu.main")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler("./data/shuyu.log"),
+        logging.StreamHandler(),
+    ],
+    force=True,
+)
+
+# Ensure shuyu namespace loggers propagate
+for name in ("shuyu.main", "shuyu.session", "shuyu.agent", "shuyu.registry", "shuyu.db"):
+    l = logging.getLogger(name)
+    l.setLevel(logging.INFO)
+    l.propagate = True
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -79,6 +97,7 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
 
 async def handle_query_database(question: str) -> str:
     """Tool handler: query the database with a natural language question."""
+    logger.info(f"SQL tool: processing question '{question[:80]}'")
     return await handle_sql_query(
         question=question,
         connector=connector,
@@ -97,13 +116,17 @@ async def handle_query_database(question: str) -> str:
 async def lifespan(app: FastAPI):
     global config, connector, tool_registry, agent_loop, session_manager, schema_prompt
 
+    logger.info("Starting Shuyu server...")
+
     # 1. Load config
     config = load_config()
+    logger.info(f"Config loaded: LLM={config.llm.provider}/{config.llm.model}, DB={config.database.type}")
 
     # 2. Init SQLite (no auto DuckDB connection — user adds DBs via UI)
     _init_sqlite()
     _load_config_sqlite()
     _load_db_connections_sqlite()
+    logger.info(f"SQLite ready: {len(_db_connections)} DB connections loaded")
 
     # 3. Register tools
     tool_registry = ToolRegistry()
@@ -138,6 +161,7 @@ async def lifespan(app: FastAPI):
         system_prompt += "\n- 你只能查询数据，不能修改"
 
     # 5. Create agent loop
+    logger.info("Creating ReAct agent loop...")
     agent_loop = AgentLoop(
         tool_registry=tool_registry,
         call_llm_func=lambda **kw: call_llm(**kw),
@@ -146,6 +170,7 @@ async def lifespan(app: FastAPI):
 
     # 6. Session manager
     session_manager = SessionManager(sqlite_conn=_sqlite)
+    logger.info(f"Shuyu ready — {len(session_manager._sessions)} sessions loaded")
 
     yield
 
@@ -162,6 +187,7 @@ async def lifespan(app: FastAPI):
 def _init_sqlite():
     """Initialize SQLite database with schema."""
     global _sqlite
+    logger.info(f"Initializing SQLite: {config.storage.path}")
     db_path = Path(config.storage.path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     _sqlite = sqlite3.connect(str(db_path))
@@ -227,6 +253,7 @@ def _load_config_sqlite():
     if _sqlite is None:
         return
     try:
+        logger.debug("Loading config from SQLite...")
         # Migrate old key-value config to new schema
         _migrate_old_config()
 
@@ -256,6 +283,7 @@ def _save_config_sqlite():
     if _sqlite is None:
         return
     try:
+        logger.info(f"Saving config: LLM={config.llm.provider}/{config.llm.model}")
         # Upsert active LLM provider
         existing = _sqlite.execute(
             "SELECT id FROM llm_providers WHERE is_active = 1"
@@ -294,6 +322,7 @@ def _migrate_old_config():
         ).fetchone()
         if not old:
             return
+        logger.info("Old config table found, migrating to new schema...")
 
         # Read old key-value pairs
         rows = _sqlite.execute("SELECT key, value FROM config").fetchall()
@@ -440,8 +469,11 @@ async def chat(req: ChatRequest):
     if agent_loop is None:
         raise HTTPException(503, "Agent not initialized")
 
+    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  msg={req.message[:50]}...")
+
     # Check API key
     if not config.llm.api_key and not os.environ.get("OPENAI_API_KEY"):
+        logger.warning("Chat rejected: no LLM API key configured")
         return ChatResponse(
             reply="⚠️ 请先在右侧配置面板中设置 LLM API Key，然后再提问。",
             session_id=req.session_id or "",
@@ -530,6 +562,7 @@ async def delete_session(session_id: str):
 @app.get("/api/database")
 async def list_databases():
     """List all registered databases."""
+    logger.info(f"GET /api/database: {len(_db_connections)} connections")
     return {"databases": _db_connections}
 
 
@@ -537,6 +570,7 @@ async def list_databases():
 async def get_database_tables(db_id: str):
     """Connect to a registered database and return its table tree."""
     entry = next((d for d in _db_connections if d["id"] == db_id), None)
+    logger.info(f"GET /api/database/{db_id}/tables")
     if not entry:
         raise HTTPException(404, f"Database '{db_id}' not found")
 
@@ -616,8 +650,10 @@ async def get_database_tables(db_id: str):
 @app.post("/api/database/connect")
 async def connect_database(req: DBConnectRequest):
     """Register a new database connection."""
+    logger.info(f"POST /api/database/connect: name={req.name} type={req.type}")
     # Check duplicate name
     if any(d["name"].lower() == req.name.lower() for d in _db_connections):
+        logger.warning(f"Duplicate database name: {req.name}")
         raise HTTPException(409, f"数据库名称「{req.name}」已存在")
     db_id = str(uuid.uuid4())[:8]
     entry = {
@@ -663,6 +699,7 @@ async def test_database_connection(req: DBConnectRequest):
 async def disconnect_database(db_id: str):
     """Remove a registered database."""
     global _db_connections
+    logger.info(f"DELETE /api/database/{db_id}")
     _db_connections = [d for d in _db_connections if d["id"] != db_id]
     _save_db_connections_sqlite()
     return {"ok": True}
@@ -673,6 +710,7 @@ async def update_database(db_id: str, req: Request):
     """Update database connection settings (e.g. table filters)."""
     global _db_connections
     body = await req.json()
+    logger.info(f"PATCH /api/database/{db_id}: include={body.get('include_tables')} exclude={body.get('exclude_tables')}")
     entry = next((d for d in _db_connections if d["id"] == db_id), None)
     if not entry:
         raise HTTPException(404, f"Database '{db_id}' not found")
@@ -733,6 +771,7 @@ async def update_config(req: ConfigUpdate):
 async def test_llm(req: Request):
     """Test the LLM connection with provided (or saved) config."""
     body = await req.json() if req.headers.get("content-type") == "application/json" else {}
+    logger.info(f"POST /api/config/llm/test: provider={body.get('provider','?')} model={body.get('model','?')}")
 
     test_key = body.get("api_key") or config.llm.api_key or os.environ.get("OPENAI_API_KEY", "")
     test_base = body.get("api_base") or config.llm.api_base or ""

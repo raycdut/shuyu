@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable, Coroutine
+
+logger = logging.getLogger("shuyu.registry")
 
 ToolFunc = Callable[..., Coroutine[Any, Any, str]]
 
@@ -62,9 +65,14 @@ class ToolRegistry:
         """Execute a tool and return its result as text."""
         tool = self.get(name)
         if not tool:
+            logger.warning(f"Tool not found: {name}")
             return f"错误：未找到工具 '{name}'"
 
         try:
-            return await tool.handler(**arguments)
+            logger.info(f"Executing tool: {name}")
+            result = await tool.handler(**arguments)
+            logger.info(f"Tool {name} completed ({len(result)} chars)")
+            return result
         except Exception as e:
+            logger.error(f"Tool {name} failed: {e}")
             return f"工具 '{name}' 执行出错：{e}"
