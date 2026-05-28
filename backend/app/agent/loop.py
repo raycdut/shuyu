@@ -45,13 +45,16 @@ class AgentLoop:
             start_time = time.time()
 
             # --- Step 1: Call LLM ---
+            tools_def = self.tool_registry.to_openai_tools()
+            logger.info(f"Agent LLM call: {len(messages)} messages, {len(tools_def)} tools")
+            logger.info(f"  last_msg: {conversation[-1]['role'] if conversation else 'none'} len={len(conversation)}")
             response = await self.call_llm(
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     *conversation,
                 ],
                 tools=self.tool_registry.to_openai_tools(),
-                tool_choice="auto",
+                tool_choice="required" if tools_def else "auto",
             )
 
             response_message = response.choices[0].message
@@ -59,16 +62,21 @@ class AgentLoop:
             # --- Step 2: Check if LLM wants to call a tool ---
             if not response_message.tool_calls:
                 logger.info(f"Agent loop: final answer ({len(response_message.content or '')} chars)")
-                return {
+                result = {
                     "role": "assistant",
                     "content": response_message.content or "",
                     "tool_calls": [],
                 }
+                # Preserve DeepSeek reasoning_content
+                rc = getattr(response_message, "reasoning_content", None)
+                if rc:
+                    result["reasoning_content"] = rc
+                return result
 
             logger.info(f"Agent loop iter {iteration}: LLM requested {len(response_message.tool_calls)} tool call(s)")
 
             # --- Step 3: Execute tool calls ---
-            conversation.append({
+            assistant_msg = {
                 "role": "assistant",
                 "content": response_message.content or "",
                 "tool_calls": [
@@ -82,7 +90,14 @@ class AgentLoop:
                     }
                     for tc in response_message.tool_calls
                 ],
-            })
+            }
+
+            # Preserve DeepSeek reasoning_content
+            rc = getattr(response_message, "reasoning_content", None)
+            if rc:
+                assistant_msg["reasoning_content"] = rc
+
+            conversation.append(assistant_msg)
 
             for tool_call in response_message.tool_calls:
                 tool_name = tool_call.function.name
