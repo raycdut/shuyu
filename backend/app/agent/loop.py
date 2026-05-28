@@ -44,17 +44,17 @@ class AgentLoop:
             iteration += 1
             start_time = time.time()
 
-            # --- Step 1: Call LLM ---
+            # --- Step 1: Call LLM (force tool on first iteration with deepseek)
             tools_def = self.tool_registry.to_openai_tools()
-            logger.info(f"Agent LLM call: {len(messages)} messages, {len(tools_def)} tools")
-            logger.info(f"  last_msg: {conversation[-1]['role'] if conversation else 'none'} len={len(conversation)}")
+            tc = "required" if (tools_def and iteration == 1) else "auto" if tools_def else "none"
+            logger.info(f"Agent LLM call iter {iteration}: {len(conversation)} msgs, {len(tools_def)} tools, tool_choice={tc}")
             response = await self.call_llm(
                 messages=[
                     {"role": "system", "content": self.system_prompt},
                     *conversation,
                 ],
                 tools=self.tool_registry.to_openai_tools(),
-                tool_choice="required" if tools_def else "auto",
+                tool_choice=tc,
             )
 
             response_message = response.choices[0].message
