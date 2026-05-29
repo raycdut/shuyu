@@ -154,7 +154,21 @@ export default function Sidebar({
 
         {/* ===== 数据库列表（树状） ===== */}
         <div className="flex-shrink-0 overflow-y-auto max-h-64">
-          <div className="px-3 py-2 text-xs text-ink-lighter font-kai tracking-wider">数据库</div>
+          <div className="px-3 py-2 flex items-center justify-between">
+            <span className="text-xs text-ink-lighter font-kai tracking-wider">数据库</span>
+            {databases.length > 0 && (
+              <button
+                onClick={() => { setDbTrees({}); setExpandedDb(null); onDatabasesChange(); }}
+                className="p-1 rounded-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors"
+                title="刷新数据库列表"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polyline points="23 4 23 10 17 10" />
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                </svg>
+              </button>
+            )}
+          </div>
           {databases.length === 0 ? (
             <div className="px-3 py-2 text-xs text-ink-lighter font-kai">尚未添加数据库</div>
           ) : (
@@ -188,8 +202,10 @@ export default function Sidebar({
                   title="数据库配置"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+                    <rect x="3" y="3" width="7" height="7" rx="1" />
+                    <rect x="14" y="14" width="7" height="7" rx="1" />
+                    <rect x="14" y="3" width="7" height="7" rx="1" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
                   </svg>
                 </button>
 
