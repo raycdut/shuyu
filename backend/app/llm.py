@@ -70,7 +70,7 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
             response = await client.chat.completions.create(
                 model=state.config.llm.model,
                 messages=messages,
-                timeout=30,
+                timeout=60,
                 **kwargs,
             )
             # Log token usage if available
