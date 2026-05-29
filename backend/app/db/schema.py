@@ -17,12 +17,12 @@ def build_schema_light(tables) -> str:
         return "当前无可查数据"
 
     descriptions = {
-        "dim_customer": "客户信息",
+        "dim_customer": "客户信息（含 full_name 姓名）",
         "dim_product": "产品信息（名称、类别）",
         "dim_date": "日期维度",
         "dim_employee": "员工信息",
         "dim_territory": "销售区域",
-        "dim_sales_person": "销售人员",
+        "dim_sales_person": "销售员信息（无姓名，姓名在 dim_customer.full_name）",
         "dim_vendor": "供应商",
         "dim_address_type": "地址类型",
         "dim_contact_type": "联系方式类型",
@@ -46,5 +46,5 @@ def build_schema_light(tables) -> str:
         col_names = [c.name for c in t.columns]
         desc = descriptions.get(t.name, "")
         suffix = f" — {desc}" if desc else ""
-        parts.append(f"  {t.name}({', '.join(col_names[:5])}{'...' if len(col_names) > 5 else ''}){suffix}")
+        parts.append(f"  {t.name}({', '.join(col_names[:8])}{'...' if len(col_names) > 8 else ''}){suffix}")
     return "\n".join(parts)
