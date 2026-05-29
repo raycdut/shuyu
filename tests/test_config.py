@@ -14,10 +14,7 @@ def test_config_defaults():
     assert cfg.llm.model == "gpt-4o"
     assert cfg.llm.api_key == ""
     assert cfg.llm.api_base is None
-    assert cfg.database.type == ""
-    assert cfg.database.path == ""
-    assert cfg.server.host == "0.0.0.0"
-    assert cfg.server.port == 8000
+    assert cfg.llm.timeout == 120
     assert cfg.safety.read_only is True
     assert cfg.safety.max_rows == 1000
     assert cfg.storage.path == "./data/config.db"
@@ -29,16 +26,13 @@ def test_env_overrides(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "deepseek")
     monkeypatch.setenv("LLM_MODEL", "deepseek-v4-flash")
     monkeypatch.setenv("LLM_API_BASE", "https://api.deepseek.com")
-    monkeypatch.setenv("DB_PATH", "./custom/path.db")
-    monkeypatch.setenv("PORT", "9000")
 
     cfg = load_config()
     assert cfg.llm.api_key == "sk-test-key"
     assert cfg.llm.provider == "deepseek"
     assert cfg.llm.model == "deepseek-v4-flash"
     assert cfg.llm.api_base == "https://api.deepseek.com"
-    assert cfg.database.path == "./custom/path.db"
-    assert cfg.server.port == 9000
+    assert cfg.llm.timeout == 120
 
 
 def test_env_no_override_empty(monkeypatch):

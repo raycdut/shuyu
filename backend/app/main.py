@@ -62,7 +62,7 @@ async def lifespan(app: FastAPI):
     # 0. Setup logging
     _setup_logging()
     state.config = load_config()
-    logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}, DB={state.config.database.type}")
+    logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}")
 
     # 2. Init SQLite persistence
     init_sqlite()
