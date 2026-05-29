@@ -22,7 +22,7 @@ const PROVIDERS = [
 
 const MODELS: Record<string, string[]> = {
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  deepseek: ['deepseek-chat', 'deepseek-v4-flash', 'deepseek-v4-pro'],
+  deepseek: ['deepseek-v4-flash', 'deepseek-v4-pro'],
   azure: ['gpt-4o', 'gpt-4', 'gpt-35-turbo'],
   anthropic: ['claude-3-5-sonnet', 'claude-3-haiku'],
   ollama: ['llama3.1', 'qwen2.5', 'mistral'],

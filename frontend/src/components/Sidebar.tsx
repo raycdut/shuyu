@@ -158,7 +158,17 @@ export default function Sidebar({
             <span className="text-xs text-ink-lighter font-kai tracking-wider">数据库</span>
             {databases.length > 0 && (
               <button
-                onClick={() => { setDbTrees({}); setExpandedDb(null); onDatabasesChange(); }}
+                onClick={() => {
+                  setDbTrees({});
+                  if (activeDbId) {
+                    setExpandedDb(null);
+                    // Clear and reload
+                    setTimeout(() => toggleDbTree(activeDbId), 50);
+                  } else {
+                    setExpandedDb(null);
+                    onDatabasesChange();
+                  }
+                }}
                 className="p-1 rounded-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors"
                 title="刷新数据库列表"
               >

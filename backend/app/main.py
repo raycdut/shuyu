@@ -27,15 +27,6 @@ from .session.manager import SessionManager
 # ---------------------------------------------------------------------------
 
 logger = logging.getLogger("shuyu.main")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-    ],
-    force=True,
-)
-
 for name in ("shuyu.main", "shuyu.session", "shuyu.agent", "shuyu.registry", "shuyu.db"):
     l = logging.getLogger(name)
     l.setLevel(logging.INFO)
@@ -46,11 +37,30 @@ for name in ("shuyu.main", "shuyu.session", "shuyu.agent", "shuyu.registry", "sh
 # ---------------------------------------------------------------------------
 
 
+def _setup_logging():
+    """Configure file + stderr logging (after uvicorn starts)."""
+    import logging as _logging
+    root = _logging.getLogger()
+    # Remove uvicorn handlers
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    # Add our handlers
+    root.setLevel(_logging.INFO)
+    fmt = _logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
+    fh = _logging.FileHandler("./data/shuyu.log")
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+    sh = _logging.StreamHandler()
+    sh.setFormatter(fmt)
+    root.addHandler(sh)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Starting Shuyu server...")
+    global config, connector, tool_registry, agent_loop, session_manager, schema_prompt
 
-    # 1. Load config
+    # 0. Setup logging
+    _setup_logging()
     state.config = load_config()
     logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}, DB={state.config.database.type}")
 

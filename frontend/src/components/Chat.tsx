@@ -115,6 +115,7 @@ export default function Chat({ messages, isLoading, onSend, schema }: ChatProps)
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" />
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                <span className="text-xs ml-1">正在分析…</span>
               </div>
             </div>
           </div>
