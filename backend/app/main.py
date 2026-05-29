@@ -1,130 +1,45 @@
-"""Agentic Data Analyst — FastAPI server entry point."""
+"""Agentic Data Analyst — FastAPI server entry point (slim).
+
+App assembly: lifespan → load config/persistence → register tools → mount routes.
+"""
 
 from __future__ import annotations
 
-import json
 import logging
-import os
-import sqlite3
-import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+
+from . import state
+from .agent.loop import AgentLoop
+from .agent.tools.registry import Tool, ToolRegistry
+from .config import load_config
+from .config_store import init_sqlite, load_config_sqlite, load_db_connections_sqlite
+from .llm import call_llm, handle_query_database
+from .routes import chat, config as config_route, database, schema, sessions
+from .session.manager import SessionManager
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
 
 logger = logging.getLogger("shuyu.main")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
     handlers=[
-        logging.FileHandler("./data/shuyu.log"),
         logging.StreamHandler(),
     ],
     force=True,
 )
 
-# Ensure shuyu namespace loggers propagate
 for name in ("shuyu.main", "shuyu.session", "shuyu.agent", "shuyu.registry", "shuyu.db"):
     l = logging.getLogger(name)
     l.setLevel(logging.INFO)
     l.propagate = True
-
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-
-from .agent.loop import AgentLoop
-from .agent.tools.registry import Tool, ToolRegistry
-from .agent.tools.sql_tool import handle_sql_query
-from .config import Config, load_config
-from .db.base import DatabaseConnector
-from .db.duckdb import DuckDBConnector
-from .models.schemas import (
-    ChatRequest,
-    ChatResponse,
-    ConfigUpdate,
-    DBConnectRequest,
-    DBInfo,
-    DBTestResult,
-    LLMTestResult,
-    SessionRenameRequest,
-    SessionMessagesResponse,
-)
-from .session.manager import SessionManager
-
-# ---------------------------------------------------------------------------
-# Global state (initialized at startup)
-# ---------------------------------------------------------------------------
-
-config: Config = None  # type: ignore
-connector: DatabaseConnector | None = None
-tool_registry: ToolRegistry = None  # type: ignore
-agent_loop: AgentLoop = None  # type: ignore
-session_manager: SessionManager = None  # type: ignore
-schema_prompt: str = "请先在右侧配置面板中添加数据库。"
-_config_store: dict = {}  # runtime config
-_db_connections: list[dict] = []  # registered databases
-_sqlite: sqlite3.Connection | None = None
-_active_connector: DatabaseConnector | None = None  # per-request DB connection
-
-
-def build_schema_prompt(tables) -> str:
-    """Build the schema description injected into agent system prompt."""
-    lines = ["以下是数据库中的表和字段：\n"]
-    for t in tables:
-        lines.append(t.to_prompt_block())
-    return "\n".join(lines)
-
-
-async def call_llm(messages: list[dict], **kwargs) -> object:
-    """Unified LLM call — routes to the configured provider."""
-    from openai import AsyncOpenAI
-    import time
-
-    client_kwargs = {}
-    if config.llm.api_base:
-        client_kwargs["base_url"] = config.llm.api_base
-
-    api_key = config.llm.api_key or os.environ.get("OPENAI_API_KEY", "")
-    if api_key:
-        client_kwargs["api_key"] = api_key
-
-    # DeepSeek V4 models need thinking mode enabled for tool calling
-    if config.llm.model.startswith("deepseek-v4"):
-        kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
-
-    client = AsyncOpenAI(**client_kwargs)
-    response = await client.chat.completions.create(
-        model=config.llm.model,
-        messages=messages,
-        **kwargs,
-    )
-    return response
-
-
-async def handle_query_database(question: str) -> str:
-    """Tool handler: query the database with a natural language question."""
-    global _active_connector
-    logger.info(f"SQL tool: processing question '{question[:80]}'")
-
-    if _active_connector is None:
-        return "⚠️ 没有选中的数据库，无法查询。请先在左侧选择一个数据库。"
-
-    # Build SQL generation system prompt from _active_connector schema
-    tables = _active_connector.get_schema()
-    schema_text = build_schema_prompt(tables)
-
-    async def _call_llm_for_sql(msgs):
-        resp = await call_llm(msgs)
-        return resp.choices[0].message.content
-
-    return await handle_sql_query(
-        question=question,
-        connector=_active_connector,
-        schema_prompt=schema_text,
-        call_llm_func=_call_llm_for_sql,
-        max_rows=config.safety.max_rows,
-    )
-
 
 # ---------------------------------------------------------------------------
 # App lifecycle
@@ -133,23 +48,21 @@ async def handle_query_database(question: str) -> str:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global config, connector, tool_registry, agent_loop, session_manager, schema_prompt
-
     logger.info("Starting Shuyu server...")
 
     # 1. Load config
-    config = load_config()
-    logger.info(f"Config loaded: LLM={config.llm.provider}/{config.llm.model}, DB={config.database.type}")
+    state.config = load_config()
+    logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}, DB={state.config.database.type}")
 
-    # 2. Init SQLite (no auto DuckDB connection — user adds DBs via UI)
-    _init_sqlite()
-    _load_config_sqlite()
-    _load_db_connections_sqlite()
-    logger.info(f"SQLite ready: {len(_db_connections)} DB connections loaded")
+    # 2. Init SQLite persistence
+    init_sqlite()
+    load_config_sqlite()
+    load_db_connections_sqlite()
+    logger.info(f"SQLite ready: {len(state._db_connections)} DB connections loaded")
 
     # 3. Register tools
-    tool_registry = ToolRegistry()
-    tool_registry.register(Tool(
+    state.tool_registry = ToolRegistry()
+    state.tool_registry.register(Tool(
         name="query_database",
         description="用自然语言查询数据库。输入你想问的问题，我会生成 SQL 并返回查询结果。",
         parameters={
@@ -161,281 +74,46 @@ async def lifespan(app: FastAPI):
         handler=handle_query_database,
     ))
 
-    # 4. Build minimal system prompt (schema filled at query time)
-    system_prompt = """你是一个数据分析助手。用户会问你关于数据库中数据的问题。
-
-你的工作流程：
-1. 理解用户的问题
-2. 如果需要查数据，调用 query_database 工具
-3. 根据查询结果回答用户
-4. 如果用户的问题不明确，主动澄清
-
-注意事项：
-- 如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段
-- 使用中文回答
-- 回答简洁，突出关键数据
-- 如果工具返回了数据，直接根据数据回答，不要编造"""
-    system_prompt += f"\n- 每次查询最多返回 {config.safety.max_rows} 行数据"
-    if config.safety.read_only:
+    # 4. Build system prompt
+    system_prompt = (
+        "你是一个数据分析助手。用户会问你关于数据库中数据的问题。\n\n"
+        "你的工作流程：\n"
+        "1. 理解用户的问题\n"
+        "2. 如果需要查数据，调用 query_database 工具\n"
+        "3. 根据查询结果回答用户\n"
+        "4. 如果用户的问题不明确，主动澄清\n\n"
+        "注意事项：\n"
+        "- 如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段\n"
+        "- 使用中文回答\n"
+        "- 回答简洁，突出关键数据\n"
+        "- 如果工具返回了数据，直接根据数据回答，不要编造"
+    )
+    system_prompt += f"\n- 每次查询最多返回 {state.config.safety.max_rows} 行数据"
+    if state.config.safety.read_only:
         system_prompt += "\n- 你只能查询数据，不能修改"
 
     # 5. Create agent loop
     logger.info("Creating ReAct agent loop...")
-    agent_loop = AgentLoop(
-        tool_registry=tool_registry,
+    state.agent_loop = AgentLoop(
+        tool_registry=state.tool_registry,
         call_llm_func=lambda **kw: call_llm(**kw),
         system_prompt=system_prompt,
     )
 
     # 6. Session manager
-    session_manager = SessionManager(sqlite_conn=_sqlite)
-    logger.info(f"Shuyu ready — {len(session_manager._sessions)} sessions loaded")
+    state.session_manager = SessionManager(sqlite_conn=state._sqlite)
+    logger.info(f"Shuyu ready — {len(state.session_manager._sessions)} sessions loaded")
 
     yield
 
     # Cleanup
-    if connector:
-        connector.disconnect()
+    if state.connector:
+        state.connector.disconnect()
 
 
 # ---------------------------------------------------------------------------
-# SQLite persistence (config + sessions + messages)
+# App creation
 # ---------------------------------------------------------------------------
-
-
-def _init_sqlite():
-    """Initialize SQLite database with schema."""
-    global _sqlite
-    logger.info(f"Initializing SQLite: {config.storage.path}")
-    db_path = Path(config.storage.path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    _sqlite = sqlite3.connect(str(db_path))
-    _sqlite.execute("PRAGMA journal_mode=WAL")
-    _sqlite.execute("PRAGMA busy_timeout=5000")
-
-    _sqlite.executescript("""
-        CREATE TABLE IF NOT EXISTS llm_providers (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            name       TEXT NOT NULL,
-            provider   TEXT NOT NULL DEFAULT 'openai',
-            model      TEXT NOT NULL DEFAULT 'gpt-4o',
-            api_key    TEXT DEFAULT '',
-            api_base   TEXT DEFAULT '',
-            is_active  INTEGER DEFAULT 0,
-            created_at REAL NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS settings (
-            key   TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
-
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('safety_read_only', 'true');
-        INSERT OR IGNORE INTO settings (key, value) VALUES ('safety_max_rows', '1000');
-
-        CREATE TABLE IF NOT EXISTS databases (
-            id                TEXT PRIMARY KEY,
-            name              TEXT NOT NULL,
-            type              TEXT NOT NULL DEFAULT 'duckdb',
-            path              TEXT,
-            connection_string TEXT,
-            host              TEXT,
-            port              INTEGER,
-            username          TEXT,
-            password          TEXT,
-            db_name           TEXT,
-            include_tables    TEXT,
-            exclude_tables    TEXT,
-            is_active         INTEGER DEFAULT 0
-        );
-
-        CREATE TABLE IF NOT EXISTS sessions (
-            id         TEXT PRIMARY KEY,
-            title      TEXT DEFAULT '',
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS messages (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL REFERENCES sessions(id),
-            role      TEXT NOT NULL,
-            content   TEXT NOT NULL DEFAULT '',
-            tool_data TEXT,
-            created_at REAL NOT NULL
-        );
-    """)
-
-
-def _load_config_sqlite():
-    """Load config from SQLite into runtime config object."""
-    if _sqlite is None:
-        return
-    try:
-        logger.debug("Loading config from SQLite...")
-        # Migrate old key-value config to new schema
-        _migrate_old_config()
-
-        # Load active LLM provider
-        row = _sqlite.execute("""
-            SELECT provider, model, api_key, api_base FROM llm_providers WHERE is_active = 1
-        """).fetchone()
-        if row:
-            config.llm.provider = row[0] or "openai"
-            config.llm.model = row[1] or "gpt-4o"
-            config.llm.api_key = row[2] or ""
-            config.llm.api_base = row[3] or ""
-
-        # Load settings
-        rows = _sqlite.execute("SELECT key, value FROM settings").fetchall()
-        for key, value in rows:
-            if key == "safety_read_only":
-                config.safety.read_only = value == "true"
-            elif key == "safety_max_rows":
-                config.safety.max_rows = int(value)
-    except Exception:
-        pass
-
-
-def _save_config_sqlite():
-    """Save runtime config to SQLite."""
-    if _sqlite is None:
-        return
-    try:
-        logger.info(f"Saving config: LLM={config.llm.provider}/{config.llm.model}")
-        # Upsert active LLM provider
-        existing = _sqlite.execute(
-            "SELECT id FROM llm_providers WHERE is_active = 1"
-        ).fetchone()
-        if existing:
-            _sqlite.execute("""
-                UPDATE llm_providers SET provider=?, model=?, api_key=?, api_base=?
-                WHERE id=?
-            """, (config.llm.provider, config.llm.model, config.llm.api_key,
-                  config.llm.api_base or "", existing[0]))
-        else:
-            _sqlite.execute("""
-                INSERT INTO llm_providers (name, provider, model, api_key, api_base, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-            """, (config.llm.provider, config.llm.provider, config.llm.model,
-                  config.llm.api_key, config.llm.api_base or "", time.time()))
-
-        # Save settings
-        _sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                        ("safety_read_only", str(config.safety.read_only).lower()))
-        _sqlite.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                        ("safety_max_rows", str(config.safety.max_rows)))
-        _sqlite.commit()
-    except Exception:
-        pass
-
-
-def _migrate_old_config():
-    """Migrate from old key-value config table to new schema."""
-    if _sqlite is None:
-        return
-    try:
-        # Check if old table exists
-        old = _sqlite.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='config'"
-        ).fetchone()
-        if not old:
-            return
-        logger.info("Old config table found, migrating to new schema...")
-
-        # Read old key-value pairs
-        rows = _sqlite.execute("SELECT key, value FROM config").fetchall()
-        if not rows:
-            return
-
-        pairs = dict(rows)
-        has_llm = "llm_provider" in pairs or "llm_model" in pairs
-
-        # Only migrate if there's data and no active provider exists yet
-        if has_llm:
-            existing_active = _sqlite.execute(
-                "SELECT id FROM llm_providers WHERE is_active = 1"
-            ).fetchone()
-            if existing_active:
-                # Already migrated
-                _sqlite.execute("DROP TABLE IF EXISTS config")
-                _sqlite.commit()
-                return
-
-            _sqlite.execute("""
-                INSERT INTO llm_providers (name, provider, model, api_key, api_base, is_active, created_at)
-                VALUES (?, ?, ?, ?, ?, 1, ?)
-            """, (
-                pairs.get("llm_provider", "default"),
-                pairs.get("llm_provider", "openai"),
-                pairs.get("llm_model", "gpt-4o"),
-                pairs.get("llm_api_key", ""),
-                pairs.get("llm_api_base", ""),
-                time.time(),
-            ))
-
-            for old_key, new_key in [("safety_read_only", "safety_read_only"),
-                                      ("safety_max_rows", "safety_max_rows")]:
-                if old_key in pairs:
-                    _sqlite.execute(
-                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                        (new_key, pairs[old_key]),
-                    )
-
-        # Drop old table
-        _sqlite.execute("DROP TABLE IF EXISTS config")
-        _sqlite.commit()
-    except Exception:
-        pass
-
-
-def _load_db_connections_sqlite():
-    """Load database connections from SQLite."""
-    global _db_connections
-    if _sqlite is None:
-        _db_connections = []
-        return
-    try:
-        rows = _sqlite.execute("""
-            SELECT id, name, type, path, connection_string, host, port,
-                   username, db_name, include_tables, exclude_tables, is_active
-            FROM databases ORDER BY name
-        """).fetchall()
-        _db_connections = []
-        for r in rows:
-            _db_connections.append({
-                "id": r[0], "name": r[1], "type": r[2], "path": r[3],
-                "connection_string": r[4], "host": r[5], "port": r[6],
-                "user": r[7], "database": r[8],
-                "include_tables": r[9].split(",") if r[9] else None,
-                "exclude_tables": r[10].split(",") if r[10] else None,
-                "is_active": bool(r[11]),
-            })
-    except Exception:
-        _db_connections = []
-
-
-def _save_db_connections_sqlite():
-    """Save database connections to SQLite."""
-    if _sqlite is None:
-        return
-    _sqlite.execute("DELETE FROM databases")
-    for db in _db_connections:
-        _sqlite.execute(
-            "INSERT INTO databases (id, name, type, path, connection_string, host, port, "
-            "username, password, db_name, include_tables, exclude_tables, is_active) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                db["id"], db["name"], db["type"], db.get("path"),
-                db.get("connection_string"), db.get("host"), db.get("port"),
-                db.get("user"), db.get("password"), db.get("database"),
-                ",".join(db.get("include_tables") or []),
-                ",".join(db.get("exclude_tables") or []),
-                1 if db.get("is_active") else 0,
-            ),
-        )
-    _sqlite.commit()
-
 
 app = FastAPI(title="Agentic Data Analyst", lifespan=lifespan)
 
@@ -445,9 +123,16 @@ ui_dist = ui_dir / "dist" if ui_dir.exists() else None
 if ui_dist and ui_dist.exists():
     app.mount("/assets", StaticFiles(directory=str(ui_dist / "assets")), name="assets")
 
+# Register routers
+app.include_router(schema.router)
+app.include_router(chat.router)
+app.include_router(sessions.router)
+app.include_router(database.router)
+app.include_router(config_route.router)
+
 
 # ---------------------------------------------------------------------------
-# Routes
+# Root route
 # ---------------------------------------------------------------------------
 
 
@@ -456,413 +141,10 @@ async def root():
     index_path = (ui_dist / "index.html") if ui_dist else None
     if index_path and index_path.exists():
         return HTMLResponse(index_path.read_text(encoding="utf-8"))
-    # fallback: old static HTML
     legacy = ui_dir / "chat.html" if ui_dir else None
     if legacy and legacy.exists():
         return HTMLResponse(legacy.read_text(encoding="utf-8"))
     return HTMLResponse("<h1>Agentic Data Analyst</h1><p>UI not found.</p>")
-
-
-@app.get("/api/schema")
-async def get_schema():
-    """Return database schema info for debugging."""
-    if connector is None:
-        return {"tables": []}
-    tables = connector.get_schema()
-    return {
-        "tables": [
-            {
-                "name": t.name,
-                "columns": [
-                    {"name": c.name, "type": c.data_type}
-                    for c in (t.columns or [])
-                ],
-            }
-            for t in tables
-        ]
-    }
-
-
-@app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    if agent_loop is None:
-        raise HTTPException(503, "Agent not initialized")
-
-    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  db={req.db_id or 'none'}  msg={req.message[:50]}...")
-
-    # Check API key
-    if not config.llm.api_key and not os.environ.get("OPENAI_API_KEY"):
-        logger.warning("Chat rejected: no LLM API key configured")
-        return ChatResponse(
-            reply="⚠️ 请先在右侧配置面板中设置 LLM API Key，然后再提问。",
-            session_id=req.session_id or "",
-            tool_calls=[],
-        )
-
-    session_id = req.session_id or str(uuid.uuid4())[:8]
-    session = session_manager.get_or_create(session_id)
-
-    # Auto-title: use first user message as session title
-    if not session.metadata.get("title") and len(session.messages) == 0:
-        title = req.message[:30] + ("…" if len(req.message) > 30 else "")
-        session.metadata["title"] = title
-
-    # If a database is selected, connect and inject schema
-    global _active_connector
-    _active_connector = None
-    db_entry = None
-    if req.db_id:
-        db_entry = next((d for d in _db_connections if d["id"] == req.db_id), None)
-        session.metadata["db_id"] = req.db_id
-
-    # Build messages with optional schema context
-    agent_messages = list(session.get_messages())
-
-    if db_entry:
-        try:
-            db_path = db_entry.get("path", "")
-            if db_path.startswith("~"):
-                db_path = Path(db_path).expanduser().resolve()
-            _active_connector = DuckDBConnector(
-                db_path=str(db_path),
-                include_tables=db_entry.get("include_tables"),
-                exclude_tables=db_entry.get("exclude_tables"),
-            )
-            from pathlib import Path as _Path
-            _active_connector.connect()
-            tables = _active_connector.get_schema()
-            schema_text = build_schema_prompt(tables)
-            logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables ({len(schema_text)} chars)")
-
-            agent_messages.insert(0, {
-                "role": "system",
-                "content": f"你可以查询以下数据库。\n\n{schema_text}\n\n根据用户的问题，调用 query_database 工具来查询数据。"
-            })
-        except Exception as e:
-            logger.error(f"Failed to load schema for {db_entry['name']}: {e}")
-            agent_messages.insert(0, {
-                "role": "system",
-                "content": f"注意：你已连接到数据库「{db_entry['name']}」，但无法加载表结构（{e}）。请告知用户。"
-            })
-
-    # Add user message to session AND agent_messages
-    session.add_message("user", req.message)
-    agent_messages.append({"role": "user", "content": req.message})
-
-    # Run agent loop
-    try:
-        result = await agent_loop.run(agent_messages)
-        content = result.get("content", "")
-    except Exception as e:
-        content = f"❌ 请求失败：{e}"
-    finally:
-        # Cleanup per-request DB connection
-        if _active_connector:
-            try:
-                _active_connector.disconnect()
-            except Exception:
-                pass
-            _active_connector = None
-
-    # Add assistant response to session
-    session.add_message("assistant", content)
-
-    return ChatResponse(
-        reply=content,
-        session_id=session_id,
-        tool_calls=result.get("tool_calls", []) if 'result' in locals() else [],
-    )
-
-
-@app.get("/api/sessions")
-async def list_sessions():
-    """List active sessions."""
-    if session_manager is None:
-        return {"sessions": []}
-    return {
-        "sessions": [
-            {
-                "id": s.session_id,
-                "title": s.metadata.get("title", "新对话"),
-                "messages": len(s.messages),
-                "last_active": s.last_active,
-            }
-            for s in session_manager._sessions.values()
-        ]
-    }
-
-
-@app.get("/api/sessions/{session_id}/messages", response_model=SessionMessagesResponse)
-async def get_session_messages(session_id: str):
-    """Get messages for a specific session."""
-    if session_manager is None:
-        raise HTTPException(503, "Session manager not initialized")
-    session = session_manager.get_or_create(session_id)
-    return SessionMessagesResponse(
-        session_id=session_id,
-        messages=session.get_messages(),
-    )
-
-
-@app.patch("/api/sessions/{session_id}")
-async def rename_session(session_id: str, req: SessionRenameRequest):
-    """Rename a session."""
-    if session_manager is None:
-        raise HTTPException(503, "Session manager not initialized")
-    session_manager.rename(session_id, req.title)
-    return {"ok": True}
-
-
-@app.delete("/api/sessions/{session_id}")
-async def delete_session(session_id: str):
-    """Delete a session."""
-    if session_manager is None:
-        raise HTTPException(503, "Session manager not initialized")
-    session_manager.delete(session_id)
-    return {"ok": True}
-
-
-# ===== Database management =====
-
-
-@app.get("/api/database")
-async def list_databases():
-    """List all registered databases."""
-    logger.info(f"GET /api/database: {len(_db_connections)} connections")
-    return {"databases": _db_connections}
-
-
-@app.get("/api/database/{db_id}/tables")
-async def get_database_tables(db_id: str):
-    """Connect to a registered database and return its table tree."""
-    entry = next((d for d in _db_connections if d["id"] == db_id), None)
-    logger.info(f"GET /api/database/{db_id}/tables")
-    if not entry:
-        raise HTTPException(404, f"Database '{db_id}' not found")
-
-    import os
-    from pathlib import Path
-
-    if entry["type"] == "duckdb":
-        db_path = entry.get("path", "")
-        if db_path.startswith("~"):
-            db_path = Path(db_path).expanduser().resolve()
-        if not os.path.exists(str(db_path)):
-            raise HTTPException(404, f"DuckDB file not found: {db_path}")
-
-        try:
-            import duckdb
-            import fnmatch
-            conn = duckdb.connect(str(db_path))
-            rows = conn.execute("""
-                SELECT table_name, table_type FROM information_schema.tables
-                WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-                ORDER BY table_type DESC, table_name
-            """).fetchall()
-
-            # Apply include/exclude filters
-            include_patterns = entry.get("include_tables") or None
-            exclude_patterns = entry.get("exclude_tables") or None
-
-            filtered = []
-            for table_name, table_type in rows:
-                # Exclude takes priority
-                if exclude_patterns:
-                    skip = False
-                    for p in exclude_patterns:
-                        if p.endswith("*") and table_name.startswith(p[:-1]):
-                            skip = True
-                            break
-                        if fnmatch.fnmatch(table_name, p):
-                            skip = True
-                            break
-                    if skip:
-                        continue
-
-                # Include filter
-                if include_patterns:
-                    match = False
-                    for p in include_patterns:
-                        if p.endswith("*") and table_name.startswith(p[:-1]):
-                            match = True
-                            break
-                        if fnmatch.fnmatch(table_name, p):
-                            match = True
-                            break
-                    if not match:
-                        continue
-
-                filtered.append((table_name, table_type))
-            tables = []
-            for table_name, table_type in filtered:
-                cols = conn.execute(f"""
-                    SELECT column_name, data_type FROM information_schema.columns
-                    WHERE table_name = '{table_name}'
-                    ORDER BY ordinal_position
-                """).fetchall()
-                tables.append({
-                    "name": table_name,
-                    "type": table_type,
-                    "columns": [{"name": c[0], "type": c[1]} for c in cols],
-                })
-            conn.close()
-            return {"tables": tables}
-        except Exception as e:
-            raise HTTPException(500, f"Cannot read database: {e}")
-    else:
-        raise HTTPException(400, f"Table listing not supported for type: {entry['type']}")
-
-
-@app.post("/api/database/connect")
-async def connect_database(req: DBConnectRequest):
-    """Register a new database connection."""
-    logger.info(f"POST /api/database/connect: name={req.name} type={req.type}")
-    # Check duplicate name
-    if any(d["name"].lower() == req.name.lower() for d in _db_connections):
-        logger.warning(f"Duplicate database name: {req.name}")
-        raise HTTPException(409, f"数据库名称「{req.name}」已存在")
-    db_id = str(uuid.uuid4())[:8]
-    entry = {
-        "id": db_id,
-        "name": req.name or f"{req.type}-{db_id}",
-        "type": req.type,
-        "path": req.path,
-        "connection_string": req.connection_string,
-        "host": req.host,
-        "port": req.port,
-        "user": req.user,
-        "database": req.database,
-        "include_tables": req.include_tables,
-        "exclude_tables": req.exclude_tables,
-        "is_active": False,
-    }
-    _db_connections.append(entry)
-    _save_db_connections_sqlite()
-    return {"ok": True, "id": db_id, "message": f"已添加数据库 {entry['name']}"}
-
-
-@app.post("/api/database/test")
-async def test_database_connection(req: DBConnectRequest):
-    """Test a database connection."""
-    try:
-        if req.type == "duckdb":
-            test_conn = DuckDBConnector(
-                db_path=req.path or ":memory:",
-                include_tables=req.include_tables,
-                exclude_tables=req.exclude_tables,
-            )
-            test_conn.connect()
-            tables = test_conn.get_schema()
-            test_conn.disconnect()
-            return DBTestResult(ok=True, message=f"✅ 连接成功，发现 {len(tables)} 张表")
-        else:
-            return DBTestResult(ok=False, message=f"暂不支持 {req.type} 类型的测试")
-    except Exception as e:
-        return DBTestResult(ok=False, message=f"❌ 连接失败：{e}")
-
-
-@app.delete("/api/database/{db_id}")
-async def disconnect_database(db_id: str):
-    """Remove a registered database."""
-    global _db_connections
-    logger.info(f"DELETE /api/database/{db_id}")
-    _db_connections = [d for d in _db_connections if d["id"] != db_id]
-    _save_db_connections_sqlite()
-    return {"ok": True}
-
-
-@app.patch("/api/database/{db_id}")
-async def update_database(db_id: str, req: Request):
-    """Update database connection settings (e.g. table filters)."""
-    global _db_connections
-    body = await req.json()
-    logger.info(f"PATCH /api/database/{db_id}: include={body.get('include_tables')} exclude={body.get('exclude_tables')}")
-    entry = next((d for d in _db_connections if d["id"] == db_id), None)
-    if not entry:
-        raise HTTPException(404, f"Database '{db_id}' not found")
-
-    if "include_tables" in body:
-        entry["include_tables"] = body["include_tables"]
-    if "exclude_tables" in body:
-        entry["exclude_tables"] = body["exclude_tables"]
-
-    _save_db_connections_sqlite()
-    return {"ok": True, "message": f"已更新 {entry['name']} 的配置"}
-
-
-# ===== Config management =====
-
-
-@app.get("/api/config")
-async def get_config():
-    """Get current runtime configuration."""
-    return {
-        "llm": {
-            "provider": config.llm.provider,
-            "model": config.llm.model,
-            "api_key": "••••••" if config.llm.api_key else "",
-            "api_base": config.llm.api_base or "",
-        },
-        "safety": {
-            "read_only": config.safety.read_only,
-            "require_approval": True,
-            "max_rows": config.safety.max_rows,
-        },
-    }
-
-
-@app.post("/api/config")
-async def update_config(req: ConfigUpdate):
-    """Update runtime configuration."""
-    if req.llm:
-        if "provider" in req.llm:
-            config.llm.provider = req.llm["provider"]
-        if "model" in req.llm:
-            config.llm.model = req.llm["model"]
-        if "api_key" in req.llm and req.llm["api_key"] and req.llm["api_key"] != "••••••":
-            config.llm.api_key = req.llm["api_key"]
-        if "api_base" in req.llm:
-            config.llm.api_base = req.llm["api_base"] or None
-        _save_config_sqlite()
-    if req.safety:
-        if "read_only" in req.safety:
-            config.safety.read_only = req.safety["read_only"]
-        if "max_rows" in req.safety:
-            config.safety.max_rows = req.safety["max_rows"]
-        _save_config_sqlite()
-    return {"ok": True}
-
-
-@app.post("/api/config/llm/test", response_model=LLMTestResult)
-async def test_llm(req: Request):
-    """Test the LLM connection with provided (or saved) config."""
-    body = await req.json() if req.headers.get("content-type") == "application/json" else {}
-    logger.info(f"POST /api/config/llm/test: provider={body.get('provider','?')} model={body.get('model','?')}")
-
-    test_key = body.get("api_key") or config.llm.api_key or os.environ.get("OPENAI_API_KEY", "")
-    test_base = body.get("api_base") or config.llm.api_base or ""
-    test_model = body.get("model") or config.llm.model or "gpt-4o"
-
-    if not test_key:
-        return LLMTestResult(ok=False, message="未设置 API Key")
-
-    try:
-        from openai import AsyncOpenAI
-
-        client_kwargs = {"api_key": test_key}
-        if test_base:
-            client_kwargs["base_url"] = test_base
-
-        client = AsyncOpenAI(**client_kwargs)
-        await client.chat.completions.create(
-            model=test_model,
-            messages=[{"role": "user", "content": "Hello"}],
-            max_tokens=5,
-        )
-        return LLMTestResult(ok=True, message="连接成功")
-    except Exception as e:
-        err = str(e)
-        return LLMTestResult(ok=False, message=err[:200])
 
 
 # ---------------------------------------------------------------------------

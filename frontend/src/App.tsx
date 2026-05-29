@@ -154,35 +154,6 @@ export default function App() {
     } catch { /* 静默 */ }
   }
 
-  // --- 上下文 ---
-  const contextValue = {
-    sessions,
-    activeSessionId,
-    messages,
-    isLoading,
-    databases,
-    activeDbId,
-    schema,
-    llmConfig,
-    safetyConfig,
-    leftOpen,
-    rightOpen,
-    setLeftOpen,
-    setRightOpen,
-    setActiveDbId,
-    setLLMConfig,
-    setSafetyConfig,
-    handleSendMessage,
-    handleSelectSession,
-    handleNewSession,
-    handleRenameSession,
-    handleDeleteSession,
-    loadSessions,
-    loadSchema,
-    loadDatabases,
-    loadConfig,
-  }
-
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* ===== 顶部栏 ===== */}
