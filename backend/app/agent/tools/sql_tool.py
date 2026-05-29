@@ -56,6 +56,16 @@ async def handle_sql_query(
         logger.warning(f"SQL generation failed: {sql}")
         return f"无法生成 SQL：{sql}"
 
+    # Safety: enforce read-only
+    sql_upper = sql.strip().upper()
+    if not sql_upper.startswith("SELECT"):
+        logger.warning(f"Blocked non-SELECT SQL: {sql[:100]}")
+        return "⚠️ 只允许 SELECT 查询。"
+    for keyword in ("DROP", "ALTER", "DELETE", "INSERT", "UPDATE", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"):
+        if keyword in sql_upper:
+            logger.warning(f"Blocked dangerous SQL: {sql[:100]}")
+            return f"⚠️ 查询包含被禁止的关键字 {keyword}。"
+
     # Execute
     try:
         logger.info("Executing SQL...")

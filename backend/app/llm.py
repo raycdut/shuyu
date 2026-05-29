@@ -46,8 +46,9 @@ async def handle_query_database(question: str) -> str:
 
 
 async def call_llm(messages: list[dict], **kwargs) -> object:
-    """Unified LLM call — routes to the configured provider."""
+    """Unified LLM call — routes to the configured provider, with retry."""
     from openai import AsyncOpenAI
+    import asyncio
 
     client_kwargs = {}
     if state.config.llm.api_base:
@@ -62,9 +63,32 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
         kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
     client = AsyncOpenAI(**client_kwargs)
-    response = await client.chat.completions.create(
-        model=state.config.llm.model,
-        messages=messages,
-        **kwargs,
-    )
-    return response
+
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = await client.chat.completions.create(
+                model=state.config.llm.model,
+                messages=messages,
+                timeout=30,
+                **kwargs,
+            )
+            # Log token usage if available
+            if hasattr(response, "usage") and response.usage:
+                u = response.usage
+                logger.info(f"LLM token usage: prompt={u.prompt_tokens}, completion={u.completion_tokens}, total={u.prompt_tokens + u.completion_tokens}")
+            return response
+        except Exception as e:
+            last_error = e
+            err_str = str(e)
+            # Don't retry auth errors or bad requests
+            if "401" in err_str or "403" in err_str or "invalid" in err_str.lower():
+                logger.error(f"LLM call failed (non-retryable): {e}")
+                raise
+            if attempt < 2:
+                wait = 2 ** attempt
+                logger.warning(f"LLM call attempt {attempt + 1} failed, retrying in {wait}s: {e}")
+                await asyncio.sleep(wait)
+
+    logger.error(f"LLM call failed after 3 attempts: {last_error}")
+    raise last_error
