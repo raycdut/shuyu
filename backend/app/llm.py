@@ -7,6 +7,7 @@ import os
 
 from . import state
 from .agent.tools.sql_tool import handle_sql_query
+from .config_store import _save_token_usage
 
 logger = logging.getLogger("shuyu.main")
 
@@ -76,7 +77,8 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
             # Log token usage if available
             if hasattr(response, "usage") and response.usage:
                 u = response.usage
-                logger.info(f"LLM token usage: prompt={u.prompt_tokens}, completion={u.completion_tokens}, total={u.prompt_tokens + u.completion_tokens}")
+                logger.info(f"Token: prompt={u.prompt_tokens}, completion={u.completion_tokens}, total={u.prompt_tokens + u.completion_tokens}")
+                _save_token_usage(u.prompt_tokens, u.completion_tokens)
             return response
         except Exception as e:
             last_error = e

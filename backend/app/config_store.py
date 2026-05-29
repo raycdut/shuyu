@@ -80,6 +80,19 @@ def init_sqlite():
         );
     """)
 
+    # Token usage tracking table
+    state._sqlite.execute("""
+        CREATE TABLE IF NOT EXISTS token_usage (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            model      TEXT NOT NULL,
+            prompt     INTEGER NOT NULL DEFAULT 0,
+            completion INTEGER NOT NULL DEFAULT 0,
+            total      INTEGER NOT NULL DEFAULT 0,
+            session_id TEXT,
+            created_at REAL NOT NULL
+        )
+    """)
+
     # Migrate existing tables: add timeout column if missing
     try:
         state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 120")
@@ -199,6 +212,28 @@ def _migrate_old_config():
                     )
 
         sql.execute("DROP TABLE IF EXISTS config")
+        sql.commit()
+    except Exception:
+        pass
+
+
+# ======================================================================
+# Token usage tracking
+# ======================================================================
+
+
+def _save_token_usage(prompt: int, completion: int, session_id: str | None = None):
+    """Save LLM token usage to SQLite."""
+    import time
+    sql = state._sqlite
+    if sql is None:
+        return
+    try:
+        total = prompt + completion
+        sql.execute(
+            "INSERT INTO token_usage (model, prompt, completion, total, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (state.config.llm.model, prompt, completion, total, session_id, time.time()),
+        )
         sql.commit()
     except Exception:
         pass
