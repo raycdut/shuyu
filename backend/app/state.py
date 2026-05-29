@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
-from .agent.loop import AgentLoop
+from .agent.simple_agent import AgentLoop
 from .agent.tools.registry import ToolRegistry
 from .config import Config
 

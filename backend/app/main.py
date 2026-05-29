@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import state
-from .agent.loop import AgentLoop
+from .agent.simple_agent import AgentLoop
 from .agent.tools.registry import Tool, ToolRegistry
 from .config import load_config
 from .config_store import init_sqlite, load_config_sqlite, load_db_connections_sqlite
