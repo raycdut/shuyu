@@ -71,7 +71,7 @@ async def chat(req: ChatRequest):
 
             agent_messages.insert(0, {
                 "role": "system",
-                "content": f"你可以查询以下数据库。\n\n{schema_text}\n\n根据用户的问题，调用 query_database 工具来查询数据。"
+                "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>根据用户的问题，调用 query_database 工具来查询数据。</instruction>"
             })
         except Exception as e:
             logger.error(f"Failed to load schema for {db_entry['name']}: {e}")

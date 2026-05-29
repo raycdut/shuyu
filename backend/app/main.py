@@ -84,23 +84,27 @@ async def lifespan(app: FastAPI):
         handler=handle_query_database,
     ))
 
-    # 4. Build system prompt
+    # 4. Build system prompt (structured format for thinking models)
     system_prompt = (
-        "你是一个数据分析助手。用户会问你关于数据库中数据的问题。\n\n"
-        "你的工作流程：\n"
-        "1. 理解用户的问题\n"
-        "2. 如果需要查数据，调用 query_database 工具\n"
-        "3. 根据查询结果回答用户\n"
-        "4. 如果用户的问题不明确，主动澄清\n\n"
-        "注意事项：\n"
-        "- 如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段\n"
-        "- 使用中文回答\n"
-        "- 回答简洁，突出关键数据\n"
-        "- 如果工具返回了数据，直接根据数据回答，不要编造"
+        "<instructions>\n"
+        "  <role>data-analyst</role>\n"
+        "  <language>zh-CN</language>\n"
+        "  <workflow>\n"
+        "    <step>1. 理解用户的问题</step>\n"
+        "    <step>2. 如果需要查数据，调用 query_database 工具</step>\n"
+        "    <step>3. 根据查询结果回答用户</step>\n"
+        "    <step>4. 如果用户的问题不明确，主动澄清</step>\n"
+        "  </workflow>\n"
+        "  <rules>\n"
+        "    <rule>如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段</rule>\n"
+        "    <rule>使用中文回答</rule>\n"
+        "    <rule>回答简洁，突出关键数据</rule>\n"
+        "    <rule>如果工具返回了数据，直接根据数据回答，不要编造</rule>\n"
+        f"    <rule>每次查询最多返回 {state.config.safety.max_rows} 行数据</rule>\n"
     )
-    system_prompt += f"\n- 每次查询最多返回 {state.config.safety.max_rows} 行数据"
     if state.config.safety.read_only:
-        system_prompt += "\n- 你只能查询数据，不能修改"
+        system_prompt += "    <rule>你只能查询数据，不能修改</rule>\n"
+    system_prompt += "</instructions>"
 
     # 5. Create agent loop
     logger.info("Creating ReAct agent loop...")
