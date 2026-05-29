@@ -93,7 +93,7 @@ async def chat(req: ChatRequest):
         # Inject schema (always do this — messages accumulate across calls)
         agent_messages.insert(0, {
             "role": "system",
-            "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>根据用户的问题，调用 query_database 工具来查询数据。</instruction>"
+            "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
         })
 
     session.add_message("user", req.message)

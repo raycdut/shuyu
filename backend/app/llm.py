@@ -21,30 +21,14 @@ def build_schema_prompt(tables) -> str:
 
 
 def build_schema_light(tables) -> str:
-    """Table names only with brief purpose — for agent planning."""
-    lines = ["可用表：" if tables else "当前无可查数据\n"]
+    """Table names + column names (no column types/descriptions) — for agent planning."""
+    if not tables:
+        return "当前无可查数据"
+    parts = ["可用表："]
     for t in tables:
-        # Derive purpose from table name
-        raw_name = t.name.lower()
-        desc = {
-            "dim_": "维度",
-            "dim_product": "产品信息（名称、类别、价格）",
-            "dim_customer": "客户信息",
-            "dim_date": "日期维度",
-            "dim_employee": "员工信息",
-            "dim_territory": "销售区域",
-            "dim_sales_person": "销售人员",
-            "dim_vendor": "供应商",
-            "fct_": "事实表",
-            "fct_orders": "订单头（日期、客户、金额）",
-            "fct_order_details": "订单明细（产品、数量）",
-            "fct_sales": "销售记录",
-            "fct_inventory": "库存",
-            "stg_": "中间表",
-        }
-        purpose = desc.get(t.name) or desc.get(raw_name[:4], "数据表")
-        lines.append(f"  {t.name:35s} — {purpose}")
-    return "\n".join(lines)
+        col_names = [c.name for c in t.columns]
+        parts.append(f"  {t.name}({', '.join(col_names[:6])}{'...' if len(col_names)>6 else ''})")
+    return "\n".join(parts)
 
 
 async def handle_query_database(question: str) -> str:

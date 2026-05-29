@@ -100,6 +100,16 @@ function renderContent(text: string) {
 function renderTextLine(line: string, key: number): JSX.Element {
   if (!line.trim()) return <br key={key} />
 
+  // 检测引用 > xxx
+  const quoteMatch = line.match(/^>\s?(.*)/)
+  if (quoteMatch) {
+    return (
+      <div key={key} className="border-l-2 border-celadon/40 pl-3 py-0.5 my-1 text-ink-light italic">
+        {renderInline(quoteMatch[1])}
+      </div>
+    )
+  }
+
   // 检测分隔线 ---
   if (/^---+\s*$/.test(line)) {
     return <hr key={key} className="my-2 border-ink-lighter/20" />
