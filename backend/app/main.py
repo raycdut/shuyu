@@ -21,7 +21,7 @@ from .persistence import init_sqlite
 from .persistence.config import load_config_sqlite
 from .persistence.database import load_db_connections_sqlite
 from .client import call_llm
-from .agent.tools.query_db import handle_query_database
+from .agent.tools.sql_tool import handle_query_database
 from .routes import chat, config as config_route, database, schema, sessions
 from .session.manager import SessionManager
 
@@ -117,7 +117,6 @@ async def lifespan(app: FastAPI):
         )
     if state.config.safety.read_only:
         system_prompt = system_prompt.replace("</rules>", "    <rule>你只能查询数据，不能修改</rule>\n  </rules>")
-    state._system_prompt = system_prompt
     logger.info("System prompt loaded from DB" if state._sqlite and row else "System prompt loaded (fallback)")
     logger.info("Creating ReAct agent loop...")
     state.agent_loop = AgentLoop(

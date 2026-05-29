@@ -83,6 +83,37 @@ async def handle_sql_query(
         return f"SQL 执行失败：{e}\n\n生成的 SQL：\n{sql}"
 
 
+async def handle_query_database(question: str) -> str:
+    """Registered tool handler: wraps handle_sql_query with current state.
+
+    Uses state._active_connector (set per-request in chat route).
+    """
+    from ... import state as _state
+    from ...db.schema import build_schema_prompt as _build_schema
+    from ...client import call_llm as _call_llm
+
+    _logger = logging.getLogger("shuyu.main")
+    _logger.info(f"SQL tool: processing question '{question[:80]}'")
+
+    if _state._active_connector is None:
+        return "⚠️ 没有选中的数据库，无法查询。请先在左侧选择一个数据库。"
+
+    tables = _state._active_connector.get_schema()
+    schema_text = _build_schema(tables)
+
+    async def _call_llm_for_sql(msgs):
+        resp = await _call_llm(msgs)
+        return resp.choices[0].message.content
+
+    return await handle_sql_query(
+        question=question,
+        connector=_state._active_connector,
+        schema_prompt=schema_text,
+        call_llm_func=_call_llm_for_sql,
+        max_rows=_state.config.safety.max_rows,
+    )
+
+
 def create_query_database_tool(connector: DatabaseConnector, call_llm_func: Any, schema_prompt: str):
     """Create a 'query_database' tool for the registry."""
 

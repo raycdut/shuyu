@@ -7,6 +7,7 @@ import sqlite3
 from .agent.simple_agent import AgentLoop
 from .agent.tools.registry import ToolRegistry
 from .config import Config
+from .db.base import DatabaseConnector
 
 # --- Runtime config (loaded from SQLite at startup) ---
 config: Config = None  # type: ignore[assignment]
@@ -33,5 +34,4 @@ _last_sql_queries: list[str] = []
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"
 
-# --- System prompt (loaded from DB prompts table) ---
-_system_prompt: str = ""
+# (intentionally left blank — _system_prompt was set but never read)

@@ -14,5 +14,4 @@ class ChatResponse(BaseModel):
     sql_queries: list[str] = []
 
 
-class SchemaInfo(BaseModel):
-    tables: list[dict]
+# (intentionally left blank — SchemaInfo was unused and removed)
