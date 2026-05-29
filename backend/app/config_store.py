@@ -114,7 +114,7 @@ def init_sqlite():
   <language>zh-CN</language>
   <workflow>
     <step>1. 理解用户的问题</step>
-    <step>2. 如果需要查数据，调用 query_database 工具</step>
+    <step>2. 必须调用 query_database 工具查询数据，不能凭表名猜测</step>
     <step>3. 根据查询结果回答用户</step>
     <step>4. 如果用户的问题不明确，主动澄清</step>
   </workflow>

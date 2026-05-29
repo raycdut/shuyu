@@ -27,6 +27,8 @@ _db_connections: list[dict] = []
 
 # --- Per-request active database connector (set in chat.py) ---
 _active_connector: DatabaseConnector | None = None
+# --- SQL queries executed during current request ---
+_last_sql_queries: list[str] = []
 
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"

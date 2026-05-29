@@ -16,7 +16,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     session_id: str
-    tool_calls: list[dict] = []
+    tool_calls: list = []
+    sql_queries: list[str] = []
 
 
 class SchemaInfo(BaseModel):

@@ -103,6 +103,7 @@ export default function App() {
         role: 'assistant',
         content: res.reply,
         tool_calls: res.tool_calls,
+        sql_queries: res.sql_queries,
       }
       setMessages(prev => [...prev, agentMsg])
       loadSessions() // refresh session list

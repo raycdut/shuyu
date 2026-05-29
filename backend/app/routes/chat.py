@@ -46,8 +46,9 @@ async def chat(req: ChatRequest):
         title = req.message[:30] + ("…" if len(req.message) > 30 else "")
         session.metadata["title"] = title
 
-    # Session-scoped database connection (reuse within same session)
+    # Per-request state
     state._active_connector = None
+    state._last_sql_queries = []
     db_entry = None
     if req.db_id:
         prev_db = session.metadata.get("db_id")
@@ -118,6 +119,7 @@ async def chat(req: ChatRequest):
         reply=content,
         session_id=session_id,
         tool_calls=result.get("tool_calls", []) if 'result' in locals() else [],
+        sql_queries=state._last_sql_queries,
     )
 
 

@@ -3,6 +3,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system'
   content: string
   tool_calls?: ToolCall[]
+  sql_queries?: string[]
 }
 
 export interface ToolCall {
@@ -81,6 +82,7 @@ export interface ChatResponse {
   reply: string
   session_id: string
   tool_calls: ToolCall[]
+  sql_queries: string[]
 }
 
 // ===== 配置 =====

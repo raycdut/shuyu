@@ -21,13 +21,42 @@ def build_schema_prompt(tables) -> str:
 
 
 def build_schema_light(tables) -> str:
-    """Table names + column names (no column types/descriptions) — for agent planning."""
+    """Table names + column names + brief description — for agent planning."""
     if not tables:
         return "当前无可查数据"
+    
+    # Table descriptions (derived from pattern matching)
+    descriptions = {
+        "dim_customer": "客户信息",
+        "dim_product": "产品信息（名称、类别）",
+        "dim_date": "日期维度",
+        "dim_employee": "员工信息",
+        "dim_territory": "销售区域",
+        "dim_sales_person": "销售人员",
+        "dim_vendor": "供应商",
+        "dim_address_type": "地址类型",
+        "dim_contact_type": "联系方式类型",
+        "dim_currency": "币种",
+        "dim_department": "部门",
+        "dim_location": "仓库位置",
+        "dim_sales_reason": "销售原因",
+        "dim_ship_method": "配送方式",
+        "dim_tax_rate": "税率",
+        "dim_unit_measure": "度量单位",
+        "fct_orders": "订单头（日期、客户、总金额）",
+        "fct_order_details": "订单行明细（产品、数量、单价）",
+        "fct_orders_with_reasons": "订单明细+退单原因（含产品、数量、金额、退单原因）",
+        "fct_purchasing": "采购记录",
+        "fct_shopping_cart": "购物车数据",
+        "fct_inventory_transactions": "库存变动记录",
+    }
+    
     parts = ["可用表："]
     for t in tables:
         col_names = [c.name for c in t.columns]
-        parts.append(f"  {t.name}({', '.join(col_names[:6])}{'...' if len(col_names)>6 else ''})")
+        desc = descriptions.get(t.name, "")
+        suffix = f" — {desc}" if desc else ""
+        parts.append(f"  {t.name}({', '.join(col_names[:5])}{'...' if len(col_names)>5 else ''}){suffix}")
     return "\n".join(parts)
 
 

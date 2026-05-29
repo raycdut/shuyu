@@ -30,9 +30,33 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
             🔍 查询了数据库
           </div>
         )}
+
+        {/* 显示 SQL 查询来源 */}
+        {!isUser && message.sql_queries && message.sql_queries.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1">
+            {message.sql_queries.map((sql, i) => (
+              <span key={i} className="text-[10px] bg-smoke text-ink-lighter px-1.5 py-0.5 rounded font-mono"
+                title={sql}>
+                📋 查询 {i + 1}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+/** 提取消息中的 SQL 来源标签 */
+function extractSources(text: string): string[] {
+  const sources: string[] = []
+  const regex = /<!--source:(.*?)-->/g
+  let match
+  while ((match = regex.exec(text)) !== null) {
+    const sql = match[1].trim()
+    if (sql && !sources.includes(sql)) sources.push(sql)
+  }
+  return sources
 }
 
 /** 渲染消息内容：Markdown 表格 + 基本 Markdown 格式 */

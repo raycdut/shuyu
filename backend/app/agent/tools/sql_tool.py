@@ -47,6 +47,11 @@ async def handle_sql_query(
     sql = sql_response.strip()
     logger.info(f"SQL generated ({len(sql)} chars): {sql.replace(chr(10), ' ')}")
 
+    # Track SQL for frontend display
+    from ... import state
+    if state._last_sql_queries is not None:
+        state._last_sql_queries.append(sql)
+
     # Clean up SQL from possible markdown fences
     if sql.startswith("```"):
         sql = sql.split("\n", 1)[1] if "\n" in sql else sql
@@ -71,7 +76,6 @@ async def handle_sql_query(
         logger.info("Executing SQL...")
         result = connector.execute(sql, max_rows=max_rows)
         logger.info(f"SQL done: {result.row_count} rows returned")
-        logger.debug(f"SQL result preview: {result.to_text(max_rows=3)[:200]}")
         return result.to_text(max_rows=20)
     except Exception as e:
         logger.error(f"SQL execution error: {e}")

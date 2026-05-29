@@ -99,7 +99,7 @@ async def lifespan(app: FastAPI):
             "  <language>zh-CN</language>\n"
             "  <workflow>\n"
             "    <step>1. 理解用户的问题</step>\n"
-            "    <step>2. 如果需要查数据，调用 query_database 工具</step>\n"
+            "    <step>2. 必须调用 query_database 工具查询数据，不能凭表名猜测</step>\n"
             "    <step>3. 根据查询结果回答用户</step>\n"
             "    <step>4. 如果用户的问题不明确，主动澄清</step>\n"
             "  </workflow>\n"
