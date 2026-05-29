@@ -14,8 +14,8 @@ def test_config_defaults():
     assert cfg.llm.model == "gpt-4o"
     assert cfg.llm.api_key == ""
     assert cfg.llm.api_base is None
-    assert cfg.database.type == "duckdb"
-    assert cfg.database.path == "./data/analytics.db"
+    assert cfg.database.type == ""
+    assert cfg.database.path == ""
     assert cfg.server.host == "0.0.0.0"
     assert cfg.server.port == 8000
     assert cfg.safety.read_only is True

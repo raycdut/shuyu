@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.agent.loop import AgentLoop
+from app.agent.simple_agent import AgentLoop
 from app.agent.tools.registry import Tool, ToolRegistry
 
 
