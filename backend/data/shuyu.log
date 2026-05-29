@@ -534,3 +534,57 @@
 2026-05-29 08:02:11,474 [shuyu.agent] INFO Agent LLM call iter 1: 1 msgs, 1 tools
 2026-05-29 08:02:11,999 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
 2026-05-29 08:02:14,422 [shuyu.agent] INFO Agent loop: final answer (283 chars)
+2026-05-29 08:10:34,726 [shuyu.main] INFO Starting Shuyu server...
+2026-05-29 08:10:34,727 [shuyu.main] INFO Config loaded: LLM=openai/gpt-4o, DB=duckdb
+2026-05-29 08:10:34,727 [shuyu.main] INFO Initializing SQLite: ./data/config.db
+2026-05-29 08:10:34,731 [shuyu.main] INFO SQLite ready: 1 DB connections loaded
+2026-05-29 08:10:34,731 [shuyu.main] INFO Creating ReAct agent loop...
+2026-05-29 08:10:34,732 [shuyu.session] INFO Loading 19 sessions from SQLite...
+2026-05-29 08:10:34,732 [shuyu.session] INFO Session v4flash-q2: rename '' -> '查询fct_monthly_sales表的行数'
+2026-05-29 08:10:34,733 [shuyu.session] INFO Session v4flash-q1: rename '' -> 'fct_monthly_sales 有多少条记录'
+2026-05-29 08:10:34,733 [shuyu.session] INFO Session v4flash-final: rename '' -> 'fct_monthly_sales 有多少条记录'
+2026-05-29 08:10:34,734 [shuyu.session] INFO Loaded 19 sessions (44 messages)
+2026-05-29 08:10:34,734 [shuyu.main] INFO Shuyu ready — 19 sessions loaded
+2026-05-29 08:10:43,949 [shuyu.main] INFO POST /api/chat  session=v4flash-final3  db=aw01  msg=fct_monthly_sales 有多少条记录...
+2026-05-29 08:10:43,949 [shuyu.db] INFO Connecting to DuckDB: /Users/chendong/Projects/ade-poc/dbt_project/dev.duckdb
+2026-05-29 08:10:43,970 [shuyu.db] INFO DuckDB connected
+2026-05-29 08:10:43,999 [shuyu.main] INFO Connected to AdventureWorks: 6 tables (1208 chars)
+2026-05-29 08:10:44,000 [shuyu.agent] INFO Agent loop started
+2026-05-29 08:10:44,000 [shuyu.agent] INFO Agent LLM call iter 1: 1 msgs, 1 tools
+2026-05-29 08:10:45,837 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:10:48,883 [shuyu.agent] INFO Agent loop: final answer (303 chars)
+2026-05-29 08:12:10,887 [shuyu.main] INFO Starting Shuyu server...
+2026-05-29 08:12:10,888 [shuyu.main] INFO Config loaded: LLM=openai/gpt-4o, DB=duckdb
+2026-05-29 08:12:10,888 [shuyu.main] INFO Initializing SQLite: ./data/config.db
+2026-05-29 08:12:10,892 [shuyu.main] INFO SQLite ready: 1 DB connections loaded
+2026-05-29 08:12:10,892 [shuyu.main] INFO Creating ReAct agent loop...
+2026-05-29 08:12:10,892 [shuyu.session] INFO Loading 20 sessions from SQLite...
+2026-05-29 08:12:10,893 [shuyu.session] INFO Session v4flash-final3: rename '' -> 'fct_monthly_sales 有多少条记录'
+2026-05-29 08:12:10,894 [shuyu.session] INFO Loaded 20 sessions (46 messages)
+2026-05-29 08:12:10,894 [shuyu.main] INFO Shuyu ready — 20 sessions loaded
+2026-05-29 08:12:19,796 [shuyu.main] INFO POST /api/chat  session=v4flash-new  db=aw01  msg=fct_monthly_sales 有多少条记录...
+2026-05-29 08:12:19,796 [shuyu.db] INFO Connecting to DuckDB: /Users/chendong/Projects/ade-poc/dbt_project/dev.duckdb
+2026-05-29 08:12:19,816 [shuyu.db] INFO DuckDB connected
+2026-05-29 08:12:19,845 [shuyu.main] INFO Connected to AdventureWorks: 6 tables (1208 chars)
+2026-05-29 08:12:19,845 [shuyu.agent] INFO Agent loop started
+2026-05-29 08:12:19,846 [shuyu.agent] INFO Agent LLM call iter 1: 2 msgs, 1 tools
+2026-05-29 08:12:21,759 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:12:22,520 [shuyu.agent] INFO Agent loop iter 1: LLM requested 1 tool call(s)
+2026-05-29 08:12:22,520 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "fct_monthly_sales 表中总共有多少条记录"})
+2026-05-29 08:12:22,520 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:12:22,520 [shuyu.main] INFO SQL tool: processing question 'fct_monthly_sales 表中总共有多少条记录'
+2026-05-29 08:12:23,003 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:12:23,808 [shuyu.registry] INFO Tool query_database completed (282 chars)
+2026-05-29 08:12:23,809 [shuyu.agent] INFO   <- Tool result: 282 chars
+2026-05-29 08:12:23,809 [shuyu.agent] INFO Agent LLM call iter 2: 4 msgs, 1 tools
+2026-05-29 08:12:24,243 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:12:25,194 [shuyu.agent] INFO Agent loop iter 2: LLM requested 1 tool call(s)
+2026-05-29 08:12:25,194 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.fct_monthly_sales 表中总共有多少条记录"})
+2026-05-29 08:12:25,195 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:12:25,195 [shuyu.main] INFO SQL tool: processing question 'main_marts.fct_monthly_sales 表中总共有多少条记录'
+2026-05-29 08:12:25,778 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:12:27,028 [shuyu.registry] INFO Tool query_database completed (13 chars)
+2026-05-29 08:12:27,029 [shuyu.agent] INFO   <- Tool result: 13 chars
+2026-05-29 08:12:27,029 [shuyu.agent] INFO Agent LLM call iter 3: 6 msgs, 1 tools
+2026-05-29 08:12:27,439 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:12:28,112 [shuyu.agent] INFO Agent loop: final answer (38 chars)

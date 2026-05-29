@@ -78,6 +78,7 @@ def build_schema_prompt(tables) -> str:
 async def call_llm(messages: list[dict], **kwargs) -> object:
     """Unified LLM call — routes to the configured provider."""
     from openai import AsyncOpenAI
+    import time
 
     client_kwargs = {}
     if config.llm.api_base:
@@ -86,6 +87,10 @@ async def call_llm(messages: list[dict], **kwargs) -> object:
     api_key = config.llm.api_key or os.environ.get("OPENAI_API_KEY", "")
     if api_key:
         client_kwargs["api_key"] = api_key
+
+    # DeepSeek V4 models need thinking mode enabled for tool calling
+    if config.llm.model.startswith("deepseek-v4"):
+        kwargs["extra_body"] = {"thinking": {"type": "enabled"}}
 
     client = AsyncOpenAI(**client_kwargs)
     response = await client.chat.completions.create(
@@ -540,8 +545,9 @@ async def chat(req: ChatRequest):
                 "content": f"注意：你已连接到数据库「{db_entry['name']}」，但无法加载表结构（{e}）。请告知用户。"
             })
 
-    # Add user message to session
+    # Add user message to session AND agent_messages
     session.add_message("user", req.message)
+    agent_messages.append({"role": "user", "content": req.message})
 
     # Run agent loop
     try:

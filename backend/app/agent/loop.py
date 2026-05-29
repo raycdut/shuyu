@@ -76,7 +76,7 @@ class AgentLoop:
             # --- Step 3: Execute tool calls ---
             assistant_msg = {
                 "role": "assistant",
-                "content": response_message.content or "",
+                "content": response_message.content or "Let me check the database...",
                 "tool_calls": [
                     {
                         "id": tc.id,
