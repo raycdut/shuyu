@@ -13,7 +13,7 @@ from .. import state
 from ..agent.tools.registry import Tool
 from ..agent.tools.sql_tool import handle_sql_query
 from ..db.duckdb import DuckDBConnector
-from ..llm import build_schema_prompt, call_llm
+from ..llm import build_schema_light, build_schema_prompt, call_llm
 from ..models.schemas import ChatRequest, ChatResponse
 
 logger = logging.getLogger("shuyu.main")
@@ -66,7 +66,7 @@ async def chat(req: ChatRequest):
             )
             state._active_connector.connect()
             tables = state._active_connector.get_schema()
-            schema_text = build_schema_prompt(tables)
+            schema_text = build_schema_light(tables)
             logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
             agent_messages.insert(0, {
