@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import React, { useState, useRef } from 'react'
 import type { Session, DatabaseInfo, SchemaTable } from '../types'
 import { api } from '../api'
 import DBConnectModal from './DBConnectModal'
@@ -18,7 +18,7 @@ interface SidebarProps {
   onDatabasesChange: () => void
 }
 
-export default function Sidebar({
+const Sidebar = React.memo(function Sidebar({
   open,
   sessions,
   activeSessionId,
@@ -31,15 +31,12 @@ export default function Sidebar({
   onSelectDb,
   onDatabasesChange,
 }: SidebarProps) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editTitle, setEditTitle] = useState('')
   const [showDBModal, setShowDBModal] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [expandedDb, setExpandedDb] = useState<string | null>(null)
   const [dbTrees, setDbTrees] = useState<Record<string, SchemaTable[]>>({})
   const [loadingTree, setLoadingTree] = useState<string | null>(null)
   const [configDb, setConfigDb] = useState<DatabaseInfo | null>(null)
-  const editInputRef = useRef<HTMLInputElement>(null)
 
   // --- 分组会话 ---
   const now = Date.now()
@@ -74,20 +71,6 @@ export default function Sidebar({
       }
       setLoadingTree(null)
     }
-  }
-
-  // --- 重命名 ---
-  const handleDoubleClick = (s: Session) => {
-    setEditingId(s.id)
-    setEditTitle(s.title || '新对话')
-    setTimeout(() => editInputRef.current?.select(), 50)
-  }
-
-  const handleRenameConfirm = () => {
-    if (editingId && editTitle.trim()) {
-      onRenameSession(editingId, editTitle.trim())
-    }
-    setEditingId(null)
   }
 
   // --- 删除 ---
@@ -126,6 +109,7 @@ export default function Sidebar({
             <span className="text-xs text-ink-lighter font-kai tracking-wider">历史会话</span>
             <button
               onClick={onNewSession}
+              aria-label="新建会话"
               className="p-1 rounded-sm text-ink-light hover:text-celadon hover:bg-smoke transition-colors"
               title="新建会话"
             >
@@ -136,13 +120,13 @@ export default function Sidebar({
           </div>
 
           {today.length > 0 && (
-            <>{sectionTitle('今天')}{today.map(s => renderSession(s))}</>
+            <>{sectionTitle('今天')}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
           )}
           {thisWeek.length > 0 && (
-            <>{sectionTitle('本周')}{thisWeek.map(s => renderSession(s))}</>
+            <>{sectionTitle('本周')}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
           )}
           {earlier.length > 0 && (
-            <>{sectionTitle('更早')}{earlier.map(s => renderSession(s))}</>
+            <>{sectionTitle('更早')}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
           )}
           {sessions.length === 0 && (
             <div className="px-3 py-6 text-center text-xs text-ink-lighter font-kai">暂无历史会话</div>
@@ -162,13 +146,13 @@ export default function Sidebar({
                   setDbTrees({});
                   if (activeDbId) {
                     setExpandedDb(null);
-                    // Clear and reload
                     setTimeout(() => toggleDbTree(activeDbId), 50);
                   } else {
                     setExpandedDb(null);
                     onDatabasesChange();
                   }
                 }}
+                aria-label="刷新数据库列表"
                 className="p-1 rounded-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors"
                 title="刷新数据库列表"
               >
@@ -205,6 +189,7 @@ export default function Sidebar({
                 {/* 齿轮按钮 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfigDb(db) }}
+                  aria-label="数据库配置"
                   className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-sm
                     opacity-0 group-hover:opacity-100
                     text-ink-lighter hover:text-celadon hover:bg-smoke
@@ -279,46 +264,9 @@ export default function Sidebar({
     </>
   )
 
-  // --- 渲染单条会话 ---
-  function renderSession(s: Session) {
-    const isActive = s.id === activeSessionId
-    const isEditing = s.id === editingId
-    return (
-      <div key={s.id} className="relative group">
-        {isEditing ? (
-          <input
-            ref={editInputRef}
-            className="w-full px-3 py-1.5 text-sm bg-white ink-border rounded-sm focus:outline-none focus:border-celadon"
-            value={editTitle}
-            onChange={e => setEditTitle(e.target.value)}
-            onBlur={handleRenameConfirm}
-            onKeyDown={e => { if (e.key === 'Enter') handleRenameConfirm(); if (e.key === 'Escape') setEditingId(null) }}
-          />
-        ) : (
-          <button
-            onClick={() => onSelectSession(s.id)}
-            onDoubleClick={() => handleDoubleClick(s)}
-            className={`w-full text-left px-3 py-1.5 text-sm truncate transition-colors
-              ${isActive ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-light hover:bg-smoke'}`}
-          >
-            <span>{s.title || '新对话'}</span>
-            <span className="ml-2 text-xs text-ink-lighter">{s.messages}</span>
-          </button>
-        )}
-        {!isEditing && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(s.id) }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 text-ink-lighter hover:text-cinnabar hover:bg-smoke transition-all duration-200"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-          </button>
-        )}
-      </div>
-    )
-  }
-}
+})
+
+export default Sidebar
 
 // ===== 表树节点 =====
 function DbTableNode({ table }: { table: SchemaTable }) {
@@ -351,3 +299,74 @@ function DbTableNode({ table }: { table: SchemaTable }) {
     </div>
   )
 }
+
+// ===== 会话条目 =====
+const SessionItem = React.memo(function SessionItem({
+  session,
+  isActive,
+  onSelectSession,
+  onRenameSession,
+  onRequestDelete,
+}: {
+  session: Session
+  isActive: boolean
+  onSelectSession: (id: string) => void
+  onRenameSession: (id: string, title: string) => void
+  onRequestDelete: (id: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [editTitle, setEditTitle] = useState(session.title || '')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleDoubleClick = () => {
+    setEditing(true)
+    setEditTitle(session.title || '')
+    setTimeout(() => inputRef.current?.select(), 50)
+  }
+
+  const handleConfirm = () => {
+    if (editTitle.trim()) {
+      onRenameSession(session.id, editTitle.trim())
+    }
+    setEditing(false)
+  }
+
+  return (
+    <div className="relative group">
+      {editing ? (
+        <input
+          ref={inputRef}
+          className="w-full px-3 py-1.5 text-sm bg-white ink-border rounded-sm focus:outline-none focus:border-celadon"
+          value={editTitle}
+          onChange={e => setEditTitle(e.target.value)}
+          onBlur={handleConfirm}
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleConfirm()
+            if (e.key === 'Escape') setEditing(false)
+          }}
+        />
+      ) : (
+        <button
+          onClick={() => onSelectSession(session.id)}
+          onDoubleClick={handleDoubleClick}
+          className={`w-full text-left px-3 py-1.5 text-sm truncate transition-colors
+            ${isActive ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-light hover:bg-smoke'}`}
+        >
+          <span>{session.title || '新对话'}</span>
+          <span className="ml-2 text-xs text-ink-lighter">{session.messages}</span>
+        </button>
+      )}
+      {!editing && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRequestDelete(session.id) }}
+          aria-label="删除会话"
+          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 text-ink-lighter hover:text-cinnabar hover:bg-smoke transition-all duration-200"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </button>
+      )}
+    </div>
+  )
+})

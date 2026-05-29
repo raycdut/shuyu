@@ -104,4 +104,12 @@ export const api = {
   getDatabaseTables(dbId: string): Promise<SchemaResponse> {
     return request(`/database/${dbId}/tables`)
   },
+
+  // ===== 更新数据库配置 =====
+  updateDatabase(dbId: string, data: { include_tables?: string[]; exclude_tables?: string[] }): Promise<void> {
+    return request(`/database/${dbId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
 }

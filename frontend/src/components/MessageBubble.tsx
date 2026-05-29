@@ -1,10 +1,11 @@
+import React from 'react'
 import type { Message } from '../types'
 
 interface MessageBubbleProps {
   message: Message
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const content = renderContent(message.content)
 
@@ -45,19 +46,9 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
       </div>
     </div>
   )
-}
+})
 
-/** 提取消息中的 SQL 来源标签 */
-function extractSources(text: string): string[] {
-  const sources: string[] = []
-  const regex = /<!--source:(.*?)-->/g
-  let match
-  while ((match = regex.exec(text)) !== null) {
-    const sql = match[1].trim()
-    if (sql && !sources.includes(sql)) sources.push(sql)
-  }
-  return sources
-}
+export default MessageBubble
 
 /** 渲染消息内容：Markdown 表格 + 基本 Markdown 格式 */
 function renderContent(text: string) {

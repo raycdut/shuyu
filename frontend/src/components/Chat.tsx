@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { Message, SchemaTable } from '../types'
+import React from 'react'
 import MessageBubble from './MessageBubble'
 
 interface ChatProps {
@@ -15,7 +16,7 @@ const EXAMPLE_QUESTIONS = [
   '帮我分析一下数据',
 ]
 
-export default function Chat({ messages, isLoading, onSend, schema }: ChatProps) {
+const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema }: ChatProps) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -101,8 +102,8 @@ export default function Chat({ messages, isLoading, onSend, schema }: ChatProps)
           </div>
         ) : (
           <>
-            {messages.map((msg, i) => (
-              <MessageBubble key={i} message={msg} />
+            {messages.map(msg => (
+              <MessageBubble key={msg.id} message={msg} />
             ))}
           </>
         )}
@@ -157,4 +158,6 @@ export default function Chat({ messages, isLoading, onSend, schema }: ChatProps)
       </div>
     </div>
   )
-}
+})
+
+export default Chat

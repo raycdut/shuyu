@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { LLMConfig, SafetyConfig } from '../types'
 import { api } from '../api'
+import React from 'react'
 
 interface ConfigPanelProps {
   open: boolean
@@ -29,7 +30,7 @@ const MODELS: Record<string, string[]> = {
   custom: ['custom'],
 }
 
-export default function ConfigPanel({
+const ConfigPanel = React.memo(function ConfigPanel({
   open,
   llmConfig,
   safetyConfig,
@@ -39,6 +40,10 @@ export default function ConfigPanel({
 }: ConfigPanelProps) {
   const [localLLM, setLocalLLM] = useState(llmConfig)
   const [localSafety, setLocalSafety] = useState(safetyConfig)
+
+  // 当 props 更新时同步 local state
+  useEffect(() => { setLocalLLM(llmConfig) }, [llmConfig])
+  useEffect(() => { setLocalSafety(safetyConfig) }, [safetyConfig])
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<string | null>(null)
@@ -115,6 +120,7 @@ export default function ConfigPanel({
             />
             <button
               onClick={() => setShowKey(!showKey)}
+              aria-label={showKey ? '隐藏 API Key' : '显示 API Key'}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-lighter hover:text-ink"
             >
               {showKey ? (
@@ -270,7 +276,7 @@ export default function ConfigPanel({
       </div>
     </aside>
   )
-}
+})
 
 // --- 子组件 ---
 
@@ -283,7 +289,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-function ToggleRow({
+const ToggleRow = React.memo(function ToggleRow({
   label,
   desc,
   checked,
@@ -316,4 +322,6 @@ function ToggleRow({
       </div>
     </div>
   )
-}
+})
+
+export default ConfigPanel

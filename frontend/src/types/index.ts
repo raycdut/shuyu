@@ -1,5 +1,11 @@
 // ===== 消息 =====
+let _msgId = 0
+export function nextMsgId(): string {
+  return `msg_${++_msgId}_${Date.now()}`
+}
+
 export interface Message {
+  id: string
   role: 'user' | 'assistant' | 'system'
   content: string
   tool_calls?: ToolCall[]

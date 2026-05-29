@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Sidebar from './components/Sidebar'
 import Chat from './components/Chat'
 import ConfigPanel from './components/ConfigPanel'
 import StatusBar from './components/StatusBar'
-import { Session, DatabaseInfo, LLMConfig, SafetyConfig, Message } from './types'
+import { Session, DatabaseInfo, LLMConfig, SafetyConfig, Message, nextMsgId } from './types'
 import { api } from './api'
 
 export default function App() {
@@ -27,6 +27,7 @@ export default function App() {
     model: 'gpt-4o',
     api_key: '',
     api_base: '',
+    timeout: 60,
   })
   const [safetyConfig, setSafetyConfig] = useState<SafetyConfig>({
     read_only: true,
@@ -37,6 +38,16 @@ export default function App() {
   // 面板展开
   const [leftOpen, setLeftOpen] = useState(true)
   const [rightOpen, setRightOpen] = useState(true)
+
+  // 全局错误状态
+  const [error, setError] = useState<string | null>(null)
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout>>()
+
+  const showError = useCallback((msg: string) => {
+    setError(msg)
+    clearTimeout(errorTimerRef.current)
+    errorTimerRef.current = setTimeout(() => setError(null), 5000)
+  }, [])
 
   // --- 初始化 ---
   useEffect(() => {
@@ -62,21 +73,27 @@ export default function App() {
     try {
       const data = await api.getSessions()
       setSessions(data.sessions || [])
-    } catch { /* 静默失败 */ }
+    } catch (err: any) {
+      showError(`加载会话失败: ${err.message || '未知错误'}`)
+    }
   }
 
   const loadSchema = async () => {
     try {
       const data = await api.getSchema()
       setSchema(data.tables || [])
-    } catch { /* 静默失败 */ }
+    } catch (err: any) {
+      showError(`加载 Schema 失败: ${err.message || '未知错误'}`)
+    }
   }
 
   const loadDatabases = async () => {
     try {
       const data = await api.getDatabases()
       setDatabases(data.databases || [])
-    } catch { /* 静默失败 */ }
+    } catch (err: any) {
+      showError(`加载数据库列表失败: ${err.message || '未知错误'}`)
+    }
   }
 
   const loadConfig = async () => {
@@ -84,14 +101,16 @@ export default function App() {
       const data = await api.getConfig()
       if (data?.llm) setLLMConfig(prev => ({ ...prev, ...data.llm }))
       if (data?.safety) setSafetyConfig(prev => ({ ...prev, ...data.safety }))
-    } catch { /* 静默失败 */ }
+    } catch (err: any) {
+      showError(`加载配置失败: ${err.message || '未知错误'}`)
+    }
   }
 
   // --- 对话 ---
   const handleSendMessage = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return
 
-    const userMsg: Message = { role: 'user', content: text }
+    const userMsg: Message = { id: nextMsgId(), role: 'user', content: text }
     setMessages(prev => [...prev, userMsg])
     setIsLoading(true)
 
@@ -100,6 +119,7 @@ export default function App() {
       setActiveSessionId(res.session_id)
 
       const agentMsg: Message = {
+        id: nextMsgId(),
         role: 'assistant',
         content: res.reply,
         tool_calls: res.tool_calls,
@@ -109,6 +129,7 @@ export default function App() {
       loadSessions() // refresh session list
     } catch (err: any) {
       const errorMsg: Message = {
+        id: nextMsgId(),
         role: 'assistant',
         content: `抱歉，请求失败：${err.message || '未知错误'}`,
       }
@@ -140,7 +161,9 @@ export default function App() {
     try {
       await api.renameSession(sessionId, title)
       loadSessions()
-    } catch { /* 静默 */ }
+    } catch (err: any) {
+      showError(`重命名失败: ${err.message || '未知错误'}`)
+    }
   }
 
   // --- 删除会话 ---
@@ -152,7 +175,9 @@ export default function App() {
         setMessages([])
       }
       loadSessions()
-    } catch { /* 静默 */ }
+    } catch (err: any) {
+      showError(`删除会话失败: ${err.message || '未知错误'}`)
+    }
   }
 
   return (
@@ -168,6 +193,7 @@ export default function App() {
         <div className="flex items-center gap-4 text-ink-light">
           <button
             onClick={() => setLeftOpen(!leftOpen)}
+            aria-label="切换侧栏"
             className={`p-1 rounded-sm transition-colors hover:bg-smoke ${leftOpen ? 'text-celadon' : ''}`}
             title="切换侧栏"
           >
@@ -178,6 +204,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setRightOpen(!rightOpen)}
+            aria-label="切换配置面板"
             className={`p-1 rounded-sm transition-colors hover:bg-smoke ${rightOpen ? 'text-celadon' : ''}`}
             title="切换配置面板"
           >
@@ -188,6 +215,18 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* ===== 错误提示 Toast ===== */}
+      {error && (
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-cinnabar/10 text-cinnabar text-sm border-b border-cinnabar/20">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="ml-4 p-0.5 hover:bg-cinnabar/10 rounded-sm" aria-label="关闭错误提示">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* ===== 三栏主体 ===== */}
       <div className="flex-1 flex overflow-hidden">

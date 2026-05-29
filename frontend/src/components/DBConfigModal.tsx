@@ -22,15 +22,12 @@ export default function DBConfigModal({ open, db, onClose, onSaved }: DBConfigMo
       const includes = includeText.split(',').map(s => s.trim()).filter(Boolean)
       const excludes = excludeText.split(',').map(s => s.trim()).filter(Boolean)
 
-      // Save via PATCH API
-      await fetch(`/api/database/${db.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ include_tables: includes, exclude_tables: excludes }),
-      })
+      await api.updateDatabase(db.id, { include_tables: includes, exclude_tables: excludes })
       onSaved()
       onClose()
-    } catch { /* 静默 */ }
+    } catch { /* 静默 */ 
+      // Error will be surfaced by parent onDatabasesChange's error handling
+    }
     setSaving(false)
   }
 

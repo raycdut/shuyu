@@ -1,3 +1,5 @@
+import React from 'react'
+
 interface StatusBarProps {
   llmModel: string
   llmConnected: boolean | null
@@ -5,7 +7,7 @@ interface StatusBarProps {
   sessionTitle?: string
 }
 
-export default function StatusBar({ llmModel, llmConnected, dbName, sessionTitle }: StatusBarProps) {
+const StatusBar = React.memo(function StatusBar({ llmModel, llmConnected, dbName, sessionTitle }: StatusBarProps) {
   return (
     <footer className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 bg-white/70 ink-border border-b-0 border-x-0 text-[11px] text-ink-lighter">
       <div className="flex items-center gap-4">
@@ -56,4 +58,6 @@ export default function StatusBar({ llmModel, llmConnected, dbName, sessionTitle
       </div>
     </footer>
   )
-}
+})
+
+export default StatusBar
