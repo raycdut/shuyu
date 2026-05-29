@@ -13,7 +13,7 @@ class LLMConfig(BaseModel):
     model: str = "gpt-4o"
     api_key: str = ""
     api_base: Optional[str] = None
-    timeout: int = 60
+    timeout: int = 120
 
 
 class DatabaseConfig(BaseModel):

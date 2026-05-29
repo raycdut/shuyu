@@ -34,7 +34,7 @@ def init_sqlite():
             model      TEXT NOT NULL DEFAULT 'gpt-4o',
             api_key    TEXT DEFAULT '',
             api_base   TEXT DEFAULT '',
-            timeout    INTEGER DEFAULT 60,
+            timeout    INTEGER DEFAULT 120,
             is_active  INTEGER DEFAULT 0,
             created_at REAL NOT NULL
         );
@@ -82,7 +82,7 @@ def init_sqlite():
 
     # Migrate existing tables: add timeout column if missing
     try:
-        state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 60")
+        state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 120")
     except Exception:
         pass  # column already exists
 
