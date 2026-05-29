@@ -401,3 +401,136 @@
 2026-05-29 07:57:55,436 [shuyu.agent] INFO Agent LLM call iter 5: 17 msgs, 1 tools, tool_choice=auto
 2026-05-29 07:57:55,855 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
 2026-05-29 07:57:58,616 [shuyu.agent] INFO Agent loop: final answer (665 chars)
+2026-05-29 08:00:35,310 [shuyu.main] INFO Starting Shuyu server...
+2026-05-29 08:00:35,310 [shuyu.main] INFO Config loaded: LLM=openai/gpt-4o, DB=duckdb
+2026-05-29 08:00:35,310 [shuyu.main] INFO Initializing SQLite: ./data/config.db
+2026-05-29 08:00:35,314 [shuyu.main] INFO SQLite ready: 1 DB connections loaded
+2026-05-29 08:00:35,314 [shuyu.main] INFO Creating ReAct agent loop...
+2026-05-29 08:00:35,315 [shuyu.session] INFO Loading 16 sessions from SQLite...
+2026-05-29 08:00:35,315 [shuyu.session] INFO Session test-concrete: rename '' -> '2023年哪个月销售额最高？是多少？'
+2026-05-29 08:00:35,316 [shuyu.session] INFO Session test-final: rename '' -> 'fct_monthly_sales 有多少条记录'
+2026-05-29 08:00:35,316 [shuyu.session] INFO Loaded 16 sessions (38 messages)
+2026-05-29 08:00:35,316 [shuyu.main] INFO Shuyu ready — 16 sessions loaded
+2026-05-29 08:00:41,011 [shuyu.main] INFO POST /api/chat  session=v4flash-final  db=aw01  msg=fct_monthly_sales 有多少条记录...
+2026-05-29 08:00:41,012 [shuyu.db] INFO Connecting to DuckDB: /Users/chendong/Projects/ade-poc/dbt_project/dev.duckdb
+2026-05-29 08:00:41,032 [shuyu.db] INFO DuckDB connected
+2026-05-29 08:00:41,063 [shuyu.main] INFO Connected to AdventureWorks: 6 tables (1208 chars)
+2026-05-29 08:00:41,064 [shuyu.agent] INFO Agent loop started
+2026-05-29 08:00:41,064 [shuyu.agent] INFO Agent LLM call iter 1: 1 msgs, 1 tools
+2026-05-29 08:00:42,856 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:00:45,957 [shuyu.agent] INFO Agent loop iter 1: LLM requested 6 tool call(s)
+2026-05-29 08:00:45,957 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "各表的数据行数是多少？"})
+2026-05-29 08:00:45,957 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:00:45,957 [shuyu.main] INFO SQL tool: processing question '各表的数据行数是多少？'
+2026-05-29 08:00:46,428 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:00:48,817 [shuyu.registry] INFO Tool query_database completed (636 chars)
+2026-05-29 08:00:48,818 [shuyu.agent] INFO   <- Tool result: 636 chars
+2026-05-29 08:00:48,818 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "fct_monthly_sales 表中的最早和最晚月份是什么？总销售额和总订单数是多少？"})
+2026-05-29 08:00:48,818 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:00:48,818 [shuyu.main] INFO SQL tool: processing question 'fct_monthly_sales 表中的最早和最晚月份是什么？总销售额和总订单数是多少？'
+2026-05-29 08:00:49,267 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:00:51,090 [shuyu.registry] INFO Tool query_database completed (330 chars)
+2026-05-29 08:00:51,091 [shuyu.agent] INFO   <- Tool result: 330 chars
+2026-05-29 08:00:51,091 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "fct_product_sales 表中的最早和最晚订单日期是什么？总销售额、总订单数、总销量是多少？"})
+2026-05-29 08:00:51,091 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:00:51,091 [shuyu.main] INFO SQL tool: processing question 'fct_product_sales 表中的最早和最晚订单日期是什么？总销售额、总订单数、总销量是多少？'
+2026-05-29 08:00:51,540 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:00:53,836 [shuyu.registry] INFO Tool query_database completed (364 chars)
+2026-05-29 08:00:53,836 [shuyu.agent] INFO   <- Tool result: 364 chars
+2026-05-29 08:00:53,836 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "dim_product 表中有多少产品？分布在哪些类别和子类别？"})
+2026-05-29 08:00:53,836 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:00:53,836 [shuyu.main] INFO SQL tool: processing question 'dim_product 表中有多少产品？分布在哪些类别和子类别？'
+2026-05-29 08:00:54,292 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:00:59,091 [shuyu.registry] INFO Tool query_database completed (374 chars)
+2026-05-29 08:00:59,092 [shuyu.agent] INFO   <- Tool result: 374 chars
+2026-05-29 08:00:59,092 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "dim_territory 表中有哪些销售区域？"})
+2026-05-29 08:00:59,092 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:00:59,092 [shuyu.main] INFO SQL tool: processing question 'dim_territory 表中有哪些销售区域？'
+2026-05-29 08:00:59,536 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:01,178 [shuyu.registry] INFO Tool query_database completed (227 chars)
+2026-05-29 08:01:01,178 [shuyu.agent] INFO   <- Tool result: 227 chars
+2026-05-29 08:01:01,178 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "fct_shipping 表中的数据范围是什么？平均配送天数是多少？准时率是多少？"})
+2026-05-29 08:01:01,179 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:01,179 [shuyu.main] INFO SQL tool: processing question 'fct_shipping 表中的数据范围是什么？平均配送天数是多少？准时率是多少？'
+2026-05-29 08:01:01,632 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:04,997 [shuyu.registry] INFO Tool query_database completed (373 chars)
+2026-05-29 08:01:04,997 [shuyu.agent] INFO   <- Tool result: 373 chars
+2026-05-29 08:01:04,998 [shuyu.agent] INFO Agent LLM call iter 2: 8 msgs, 1 tools
+2026-05-29 08:01:05,428 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:08,282 [shuyu.agent] INFO Agent loop iter 2: LLM requested 6 tool call(s)
+2026-05-29 08:01:08,282 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts 数据库中各表的数据行数是多少？"})
+2026-05-29 08:01:08,282 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:08,282 [shuyu.main] INFO SQL tool: processing question 'main_marts 数据库中各表的数据行数是多少？'
+2026-05-29 08:01:08,722 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:13,958 [shuyu.registry] INFO Tool query_database completed (636 chars)
+2026-05-29 08:01:13,958 [shuyu.agent] INFO   <- Tool result: 636 chars
+2026-05-29 08:01:13,958 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.fct_monthly_sales 表中的最早和最晚月份是什么？总销售额和总订单数是多少？"})
+2026-05-29 08:01:13,958 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:13,959 [shuyu.main] INFO SQL tool: processing question 'main_marts.fct_monthly_sales 表中的最早和最晚月份是什么？总销售额和总订单数是多少？'
+2026-05-29 08:01:14,835 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:17,223 [shuyu.registry] INFO Tool query_database completed (122 chars)
+2026-05-29 08:01:17,223 [shuyu.agent] INFO   <- Tool result: 122 chars
+2026-05-29 08:01:17,223 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.fct_product_sales 表中的最早和最晚订单日期是什么？总销售额、总订单数、总销量是多少？"})
+2026-05-29 08:01:17,223 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:17,223 [shuyu.main] INFO SQL tool: processing question 'main_marts.fct_product_sales 表中的最早和最晚订单日期是什么？总销售额、总订单数、总销量是多少？'
+2026-05-29 08:01:18,597 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:21,490 [shuyu.registry] INFO Tool query_database completed (130 chars)
+2026-05-29 08:01:21,490 [shuyu.agent] INFO   <- Tool result: 130 chars
+2026-05-29 08:01:21,490 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.dim_product 表中有多少产品？分布在哪些类别和子类别？"})
+2026-05-29 08:01:21,490 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:21,490 [shuyu.main] INFO SQL tool: processing question 'main_marts.dim_product 表中有多少产品？分布在哪些类别和子类别？'
+2026-05-29 08:01:21,935 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:28,658 [shuyu.registry] INFO Tool query_database completed (578 chars)
+2026-05-29 08:01:28,658 [shuyu.agent] INFO   <- Tool result: 578 chars
+2026-05-29 08:01:28,658 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.dim_territory 表中有哪些销售区域？"})
+2026-05-29 08:01:28,658 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:28,658 [shuyu.main] INFO SQL tool: processing question 'main_marts.dim_territory 表中有哪些销售区域？'
+2026-05-29 08:01:29,165 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:30,932 [shuyu.registry] INFO Tool query_database completed (226 chars)
+2026-05-29 08:01:30,933 [shuyu.agent] INFO   <- Tool result: 226 chars
+2026-05-29 08:01:30,933 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.fct_shipping 表中的数据范围是什么？平均配送天数是多少？准时率是多少？"})
+2026-05-29 08:01:30,933 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:30,933 [shuyu.main] INFO SQL tool: processing question 'main_marts.fct_shipping 表中的数据范围是什么？平均配送天数是多少？准时率是多少？'
+2026-05-29 08:01:31,517 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:34,592 [shuyu.registry] INFO Tool query_database completed (97 chars)
+2026-05-29 08:01:34,593 [shuyu.agent] INFO   <- Tool result: 97 chars
+2026-05-29 08:01:34,593 [shuyu.agent] INFO Agent LLM call iter 3: 15 msgs, 1 tools
+2026-05-29 08:01:35,177 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:37,608 [shuyu.agent] INFO Agent loop iter 3: LLM requested 3 tool call(s)
+2026-05-29 08:01:37,608 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.dim_territory 表中的所有数据"})
+2026-05-29 08:01:37,609 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:37,609 [shuyu.main] INFO SQL tool: processing question 'main_marts.dim_territory 表中的所有数据'
+2026-05-29 08:01:38,064 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:39,383 [shuyu.registry] INFO Tool query_database completed (209 chars)
+2026-05-29 08:01:39,383 [shuyu.agent] INFO   <- Tool result: 209 chars
+2026-05-29 08:01:39,383 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.dim_product 表中所有产品的类别和子类别分布，显示所有行"})
+2026-05-29 08:01:39,383 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:39,383 [shuyu.main] INFO SQL tool: processing question 'main_marts.dim_product 表中所有产品的类别和子类别分布，显示所有行'
+2026-05-29 08:01:39,961 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:42,335 [shuyu.registry] INFO Tool query_database completed (1011 chars)
+2026-05-29 08:01:42,335 [shuyu.agent] INFO   <- Tool result: 1011 chars
+2026-05-29 08:01:42,335 [shuyu.agent] INFO   -> Calling tool: query_database({"question": "main_marts.dim_ship_method 表中有哪些配送方式？"})
+2026-05-29 08:01:42,335 [shuyu.registry] INFO Executing tool: query_database
+2026-05-29 08:01:42,335 [shuyu.main] INFO SQL tool: processing question 'main_marts.dim_ship_method 表中有哪些配送方式？'
+2026-05-29 08:01:43,034 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:44,861 [shuyu.registry] INFO Tool query_database completed (298 chars)
+2026-05-29 08:01:44,861 [shuyu.agent] INFO   <- Tool result: 298 chars
+2026-05-29 08:01:44,861 [shuyu.agent] INFO Agent LLM call iter 4: 19 msgs, 1 tools
+2026-05-29 08:01:45,419 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:01:51,636 [shuyu.agent] INFO Agent loop: final answer (774 chars)
+2026-05-29 08:02:01,094 [shuyu.main] INFO POST /api/chat  session=v4flash-q1  db=aw01  msg=fct_monthly_sales 有多少条记录...
+2026-05-29 08:02:01,094 [shuyu.db] INFO Connecting to DuckDB: /Users/chendong/Projects/ade-poc/dbt_project/dev.duckdb
+2026-05-29 08:02:01,110 [shuyu.db] INFO DuckDB connected
+2026-05-29 08:02:01,139 [shuyu.main] INFO Connected to AdventureWorks: 6 tables (1208 chars)
+2026-05-29 08:02:01,140 [shuyu.agent] INFO Agent loop started
+2026-05-29 08:02:01,140 [shuyu.agent] INFO Agent LLM call iter 1: 1 msgs, 1 tools
+2026-05-29 08:02:01,581 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:02:03,820 [shuyu.agent] INFO Agent loop: final answer (266 chars)
+2026-05-29 08:02:11,429 [shuyu.main] INFO POST /api/chat  session=v4flash-q2  db=aw01  msg=查询fct_monthly_sales表的行数...
+2026-05-29 08:02:11,429 [shuyu.db] INFO Connecting to DuckDB: /Users/chendong/Projects/ade-poc/dbt_project/dev.duckdb
+2026-05-29 08:02:11,445 [shuyu.db] INFO DuckDB connected
+2026-05-29 08:02:11,473 [shuyu.main] INFO Connected to AdventureWorks: 6 tables (1208 chars)
+2026-05-29 08:02:11,474 [shuyu.agent] INFO Agent loop started
+2026-05-29 08:02:11,474 [shuyu.agent] INFO Agent LLM call iter 1: 1 msgs, 1 tools
+2026-05-29 08:02:11,999 [httpx] INFO HTTP Request: POST https://api.deepseek.com/chat/completions "HTTP/1.1 200 OK"
+2026-05-29 08:02:14,422 [shuyu.agent] INFO Agent loop: final answer (283 chars)
