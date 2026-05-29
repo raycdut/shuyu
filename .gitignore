@@ -1,9 +1,9 @@
 node_modules/
 dist/
 .env
-*.db*
 __pycache__/
 *.pyc
 .DS_Store
+backend/data/
 *.db-shm
 *.db-wal
