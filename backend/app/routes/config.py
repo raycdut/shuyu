@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request
 from .. import state
 from ..config_store import save_config_sqlite
 from ..llm import call_llm
-from ..models.schemas import ConfigUpdate, LLMTestResult
+from ..models.config import ConfigUpdate, LLMTestResult
 
 logger = logging.getLogger("shuyu.main")
 

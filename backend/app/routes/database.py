@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from .. import state
 from ..config_store import save_db_connections_sqlite
 from ..db.duckdb import DuckDBConnector
-from ..models.schemas import DBConnectRequest, DBTestResult
+from ..models.database import DBConnectRequest, DBTestResult
 
 logger = logging.getLogger("shuyu.main")
 

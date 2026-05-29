@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from .. import state
-from ..models.schemas import SessionMessagesResponse, SessionRenameRequest
+from ..models.session import SessionMessagesResponse, SessionRenameRequest
 
 router = APIRouter()
 
