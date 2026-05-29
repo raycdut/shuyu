@@ -14,7 +14,9 @@ from .. import state
 from ..agent.tools.registry import Tool
 from ..agent.tools.sql_tool import handle_sql_query
 from ..db.duckdb import DuckDBConnector
-from ..llm import build_schema_light, build_schema_prompt, call_llm
+from ..db.schema import build_schema_light
+from ..db.schema import build_schema_prompt
+from ..client import call_llm
 from ..models.chat import ChatRequest, ChatResponse
 
 logger = logging.getLogger("shuyu.main")

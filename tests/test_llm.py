@@ -20,7 +20,7 @@ async def test_call_llm_with_key(mocker):
     ]
     mocker.patch("openai.AsyncOpenAI", return_value=mock_client)
 
-    from app.llm import call_llm
+    from app.client import call_llm
     result = await call_llm([{"role": "user", "content": "hi"}])
     assert result.choices[0].message.content == "hello"
 
@@ -37,7 +37,7 @@ async def test_call_llm_falls_back_to_env(mocker, monkeypatch):
     mock_client = mocker.AsyncMock()
     mocker.patch("openai.AsyncOpenAI", return_value=mock_client)
 
-    from app.llm import call_llm
+    from app.client import call_llm
     await call_llm([{"role": "user", "content": "hi"}])
     assert mock_client.chat.completions.create.called
 
@@ -53,7 +53,7 @@ async def test_call_llm_deepseek_thinking(mocker):
     mock_client = mocker.AsyncMock()
     mocker.patch("openai.AsyncOpenAI", return_value=mock_client)
 
-    from app.llm import call_llm
+    from app.client import call_llm
     await call_llm([{"role": "user", "content": "hi"}], temperature=0.5)
 
     # Verify extra_body thinking was passed
@@ -71,7 +71,7 @@ async def test_call_llm_no_key_no_env(mocker, monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     state.config.llm = LLMConfig(api_key="", model="gpt-4o")
 
-    from app.llm import call_llm
+    from app.client import call_llm
 
     # Mock AsyncOpenAI to raise when no key provided
     mocker.patch("openai.AsyncOpenAI", side_effect=ValueError("No api key provided"))

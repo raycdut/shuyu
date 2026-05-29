@@ -5,13 +5,9 @@ from __future__ import annotations
 import pytest
 
 from app.config import Config
-from app.config_store import (
-    init_sqlite,
-    load_config_sqlite,
-    save_config_sqlite,
-    load_db_connections_sqlite,
-    save_db_connections_sqlite,
-)
+from app.persistence import init_sqlite
+from app.persistence.config import load_config_sqlite, save_config_sqlite
+from app.persistence.database import load_db_connections_sqlite, save_db_connections_sqlite
 
 
 @pytest.fixture(autouse=True)

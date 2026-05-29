@@ -17,8 +17,11 @@ from . import state
 from .agent.simple_agent import AgentLoop
 from .agent.tools.registry import Tool, ToolRegistry
 from .config import load_config
-from .config_store import init_sqlite, load_config_sqlite, load_db_connections_sqlite
-from .llm import call_llm, handle_query_database
+from .persistence import init_sqlite
+from .persistence.config import load_config_sqlite
+from .persistence.database import load_db_connections_sqlite
+from .client import call_llm
+from .agent.tools.query_db import handle_query_database
 from .routes import chat, config as config_route, database, schema, sessions
 from .session.manager import SessionManager
 
