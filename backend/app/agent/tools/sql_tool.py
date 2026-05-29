@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from ...db.base import DatabaseConnector
+
+logger = logging.getLogger("shuyu.sql")
 
 
 async def handle_sql_query(
@@ -42,6 +45,7 @@ async def handle_sql_query(
 
     sql_response = await call_llm_func(messages)
     sql = sql_response.strip()
+    logger.info(f"SQL generated ({len(sql)} chars): {sql[:200]}")
 
     # Clean up SQL from possible markdown fences
     if sql.startswith("```"):
@@ -49,13 +53,19 @@ async def handle_sql_query(
         sql = sql.rsplit("```", 1)[0] if "```" in sql else sql
 
     if sql.upper().startswith("UNABLE"):
+        logger.warning(f"SQL generation failed: {sql}")
         return f"无法生成 SQL：{sql}"
 
     # Execute
     try:
+        logger.info("Executing SQL...")
         result = connector.execute(sql, max_rows=max_rows)
+        logger.info(f"SQL done: {result.row_count} rows returned")
+        logger.debug(f"SQL result preview: {result.to_text(max_rows=3)[:200]}")
         return result.to_text(max_rows=20)
     except Exception as e:
+        logger.error(f"SQL execution error: {e}")
+        logger.debug(f"Failed SQL: {sql}")
         return f"SQL 执行失败：{e}\n\n生成的 SQL：\n{sql}"
 
 
