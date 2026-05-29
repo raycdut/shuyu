@@ -17,7 +17,7 @@ class LLMConfig(BaseModel):
 
 
 class DatabaseConfig(BaseModel):
-    type: str = "duckdb"
+    type: str = ""
     path: str = ""
     host: Optional[str] = None
     port: Optional[int] = None
