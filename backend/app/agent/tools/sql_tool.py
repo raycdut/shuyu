@@ -45,7 +45,7 @@ async def handle_sql_query(
 
     sql_response = await call_llm_func(messages)
     sql = sql_response.strip()
-    logger.info(f"SQL generated ({len(sql)} chars): {sql}")
+    logger.info(f"SQL generated ({len(sql)} chars): {sql.replace(chr(10), ' ')}")
 
     # Clean up SQL from possible markdown fences
     if sql.startswith("```"):
