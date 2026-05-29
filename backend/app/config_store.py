@@ -93,6 +93,44 @@ def init_sqlite():
         )
     """)
 
+    # Prompts table with versioning
+    state._sqlite.execute("""
+        CREATE TABLE IF NOT EXISTS prompts (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL DEFAULT 'default',
+            content    TEXT NOT NULL,
+            version    INTEGER NOT NULL DEFAULT 1,
+            is_active  INTEGER NOT NULL DEFAULT 1,
+            created_at REAL NOT NULL
+        )
+    """)
+
+    # Seed default prompt if empty
+    count = state._sqlite.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
+    if count == 0:
+        import time as _t
+        default_prompt = """<instructions>
+  <role>data-analyst</role>
+  <language>zh-CN</language>
+  <workflow>
+    <step>1. 理解用户的问题</step>
+    <step>2. 如果需要查数据，调用 query_database 工具</step>
+    <step>3. 根据查询结果回答用户</step>
+    <step>4. 如果用户的问题不明确，主动澄清</step>
+  </workflow>
+  <rules>
+    <rule>如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段</rule>
+    <rule>使用中文回答</rule>
+    <rule>回答简洁，突出关键数据</rule>
+    <rule>如果工具返回了数据，直接根据数据回答，不要编造</rule>
+  </rules>
+</instructions>"""
+        state._sqlite.execute(
+            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
+            ("default", default_prompt, _t.time()),
+        )
+        state._sqlite.commit()
+
     # Migrate existing tables: add timeout column if missing
     try:
         state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 120")

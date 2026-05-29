@@ -90,3 +90,64 @@ async def test_llm(req: Request):
     except Exception as e:
         err = str(e)
         return LLMTestResult(ok=False, message=err[:200])
+
+
+# ===== Prompt management =====
+
+
+@router.get("/api/prompts")
+async def list_prompts():
+    """List all prompt versions."""
+    if state._sqlite is None:
+        return {"prompts": []}
+    rows = state._sqlite.execute(
+        "SELECT id, name, version, is_active, created_at FROM prompts ORDER BY created_at DESC"
+    ).fetchall()
+    return {
+        "prompts": [
+            {"id": r[0], "name": r[1], "version": r[2], "is_active": bool(r[3]), "created_at": r[4]}
+            for r in rows
+        ]
+    }
+
+
+@router.get("/api/prompts/{prompt_id}")
+async def get_prompt(prompt_id: int):
+    """Get a specific prompt version."""
+    if state._sqlite is None:
+        return {"error": "no db"}
+    row = state._sqlite.execute(
+        "SELECT id, name, content, version, is_active, created_at FROM prompts WHERE id = ?",
+        (prompt_id,),
+    ).fetchone()
+    if not row:
+        return {"error": "not found"}
+    return {"id": row[0], "name": row[1], "content": row[2], "version": row[3], "is_active": bool(row[4]), "created_at": row[5]}
+
+
+@router.put("/api/prompts")
+async def upsert_prompt(req: Request):
+    """Create or update the active prompt (creates a new version)."""
+    body = await req.json()
+    content = body.get("content", "")
+    name = body.get("name", "default")
+    import time
+
+    if state._sqlite is None:
+        return {"ok": False, "error": "no db"}
+
+    # Get current max version
+    row = state._sqlite.execute(
+        "SELECT MAX(version) FROM prompts WHERE name = ?", (name,)
+    ).fetchone()
+    new_version = (row[0] or 0) + 1
+
+    # Deactivate old versions
+    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (name,))
+    # Insert new version as active
+    state._sqlite.execute(
+        "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
+        (name, content, new_version, time.time()),
+    )
+    state._sqlite.commit()
+    return {"ok": True, "version": new_version}

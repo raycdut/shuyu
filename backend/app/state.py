@@ -30,3 +30,6 @@ _active_connector: DatabaseConnector | None = None
 
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"
+
+# --- System prompt (loaded from DB prompts table) ---
+_system_prompt: str = ""
