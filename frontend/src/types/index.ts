@@ -89,6 +89,7 @@ export interface LLMConfig {
   model: string
   api_key: string
   api_base: string
+  timeout: number
 }
 
 export interface SafetyConfig {

@@ -26,6 +26,7 @@ async def get_config():
             "model": state.config.llm.model,
             "api_key": "••••••" if state.config.llm.api_key else "",
             "api_base": state.config.llm.api_base or "",
+            "timeout": state.config.llm.timeout,
         },
         "safety": {
             "read_only": state.config.safety.read_only,
@@ -47,6 +48,8 @@ async def update_config(req: ConfigUpdate):
             state.config.llm.api_key = req.llm["api_key"]
         if "api_base" in req.llm:
             state.config.llm.api_base = req.llm["api_base"] or None
+        if "timeout" in req.llm:
+            state.config.llm.timeout = int(req.llm["timeout"])
         save_config_sqlite()
     if req.safety:
         if "read_only" in req.safety:

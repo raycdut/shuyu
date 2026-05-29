@@ -34,6 +34,7 @@ def init_sqlite():
             model      TEXT NOT NULL DEFAULT 'gpt-4o',
             api_key    TEXT DEFAULT '',
             api_base   TEXT DEFAULT '',
+            timeout    INTEGER DEFAULT 60,
             is_active  INTEGER DEFAULT 0,
             created_at REAL NOT NULL
         );
@@ -79,6 +80,12 @@ def init_sqlite():
         );
     """)
 
+    # Migrate existing tables: add timeout column if missing
+    try:
+        state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 60")
+    except Exception:
+        pass  # column already exists
+
 
 # ======================================================================
 # Config load / save
@@ -94,13 +101,14 @@ def load_config_sqlite():
         _migrate_old_config()
 
         row = sql.execute(
-            "SELECT provider, model, api_key, api_base FROM llm_providers WHERE is_active = 1"
+            "SELECT provider, model, api_key, api_base, timeout FROM llm_providers WHERE is_active = 1"
         ).fetchone()
         if row:
             state.config.llm.provider = row[0] or "openai"
             state.config.llm.model = row[1] or "gpt-4o"
             state.config.llm.api_key = row[2] or ""
             state.config.llm.api_base = row[3] or ""
+            state.config.llm.timeout = row[4] or 60
 
         rows = sql.execute("SELECT key, value FROM settings").fetchall()
         for key, value in rows:
@@ -124,16 +132,16 @@ def save_config_sqlite():
         ).fetchone()
         if existing:
             sql.execute(
-                "UPDATE llm_providers SET provider=?, model=?, api_key=?, api_base=? WHERE id=?",
+                "UPDATE llm_providers SET provider=?, model=?, api_key=?, api_base=?, timeout=? WHERE id=?",
                 (state.config.llm.provider, state.config.llm.model,
-                 state.config.llm.api_key, state.config.llm.api_base or "", existing[0]),
+                 state.config.llm.api_key, state.config.llm.api_base or "", state.config.llm.timeout, existing[0]),
             )
         else:
             sql.execute(
-                "INSERT INTO llm_providers (name, provider, model, api_key, api_base, is_active, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                "INSERT INTO llm_providers (name, provider, model, api_key, api_base, timeout, is_active, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
                 (state.config.llm.provider, state.config.llm.provider, state.config.llm.model,
-                 state.config.llm.api_key, state.config.llm.api_base or "", time.time()),
+                 state.config.llm.api_key, state.config.llm.api_base or "", state.config.llm.timeout, time.time()),
             )
 
         sql.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",

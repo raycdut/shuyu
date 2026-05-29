@@ -151,6 +151,17 @@ export default function ConfigPanel({
           </select>
         </Section>
 
+        <Section title="超时 (秒)">
+          <input
+            type="number"
+            value={localLLM.timeout}
+            onChange={e => setLocalLLM({ ...localLLM, timeout: parseInt(e.target.value) || 60 })}
+            className="ink-input text-sm"
+            min={5}
+            max={300}
+          />
+        </Section>
+
         {/* 测试连接 */}
         <div className="flex gap-2 items-center mb-5">
           <button
