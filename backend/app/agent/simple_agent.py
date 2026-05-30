@@ -118,8 +118,24 @@ class AgentLoop:
 
             elapsed = time.time() - start_time
 
-        # Max iterations reached — return last assistant message or summary
+        # Max iterations reached — build summary of what was done
+        tool_summary = []
+        for msg in conversation:
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                for tc in msg["tool_calls"]:
+                    try:
+                        args = json.loads(tc["function"]["arguments"])
+                        q = args.get("question", "")[:60]
+                        tool_summary.append(q)
+                    except Exception:
+                        pass
+        summary = "\n".join(f"  · {q}" for q in tool_summary[:5])
+        remaining = len(tool_summary) - 5
+        if remaining > 0:
+            summary += f"\n  · ...还有 {remaining} 次查询"
+
+        msg = f"抱歉，处理时间过长，无法完成。\n\n已执行的查询：\n{summary}\n\n建议把问题拆成更小的步骤再问。"
         return {
             "role": "assistant",
-            "content": "抱歉，处理太久了，请简化一下问题再试。",
+            "content": msg,
         }

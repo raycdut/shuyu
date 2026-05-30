@@ -22,7 +22,7 @@ def build_schema_light(tables) -> str:
         "dim_date": "日期维度",
         "dim_employee": "员工信息",
         "dim_territory": "销售区域",
-        "dim_sales_person": "销售员信息（无姓名，需 JOIN int_sales_person_detail 或 int_person_detail）",
+        "dim_sales_person": "销售人员",
         "dim_vendor": "供应商",
         "dim_address_type": "地址类型",
         "dim_contact_type": "联系方式类型",
@@ -39,9 +39,6 @@ def build_schema_light(tables) -> str:
         "fct_purchasing": "采购记录",
         "fct_shopping_cart": "购物车数据",
         "fct_inventory_transactions": "库存变动记录",
-        "int_person_detail": "人员详细信息（含 full_name 姓名、职位）",
-        "int_employee_overview": "员工总览（含姓名、部门、职位）",
-        "int_sales_person_detail": "销售员详细信息（含姓名、区域、业绩）",
     }
 
     parts = ["可用表："]
