@@ -287,13 +287,7 @@ const Sidebar = React.memo(function Sidebar({
             <p className="text-xs text-ink-lighter mb-4 font-kai">此操作不可恢复，共 {sessions.length} 个会话将被删除。</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowClearConfirm(false)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">取消</button>
-              <button onClick={async () => {
-                try {
-                  await fetch('/api/sessions', { method: 'DELETE' })
-                  setShowClearConfirm(false)
-                  if (onClearAllSessions) onClearAllSessions()
-                } catch { /* ignore */ }
-              }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">清空</button>
+              <button onClick={() => { setShowClearConfirm(false); if (onClearAllSessions) onClearAllSessions() }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">清空</button>
             </div>
           </div>
         </div>

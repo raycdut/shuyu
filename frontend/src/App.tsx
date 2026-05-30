@@ -303,7 +303,17 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onSelectDb={setActiveDbId}
           onDatabasesChange={loadDatabases}
-          onClearAllSessions={() => { handleNewSession(); loadSessions() }}
+          onClearAllSessions={async () => {
+            handleNewSession()
+            try {
+              const res = await fetch('/api/sessions', { method: 'DELETE' })
+              if (!res.ok) throw new Error(`HTTP ${res.status}`)
+              loadSessions()
+            } catch (err: any) {
+              showError(`清空会话失败: ${err.message || '未知错误'}`)
+              loadSessions()
+            }
+          }}
         />
 
         {/* 分隔线 */}
