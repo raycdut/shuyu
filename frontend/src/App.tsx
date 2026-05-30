@@ -16,6 +16,7 @@ export default function App() {
   // 数据库
   const [databases, setDatabases] = useState<DatabaseInfo[]>([])
   const [activeDbId, setActiveDbId] = useState<string | null>(null)
+  const [mode, setMode] = useState('fast')
   const [schema, setSchema] = useState<{ name: string; columns: { name: string; type: string }[] }[]>([])
 
   // LLM 连接状态
@@ -115,7 +116,7 @@ export default function App() {
     setIsLoading(true)
 
     try {
-      const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined)
+      const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
       setActiveSessionId(res.session_id)
 
       const agentMsg: Message = {
@@ -249,12 +250,14 @@ export default function App() {
         {leftOpen && <div className="w-px bg-tea flex-shrink-0" />}
 
         {/* 中栏 — 聊天 */}
-        <Chat
-          messages={messages}
-          isLoading={isLoading}
-          onSend={handleSendMessage}
-          schema={schema}
-        />
+              <Chat
+                messages={messages}
+                isLoading={isLoading}
+                onSend={handleSendMessage}
+                schema={schema}
+                mode={mode}
+                onModeChange={setMode}
+              />
 
         {/* 分隔线 */}
         {rightOpen && <div className="w-px bg-tea flex-shrink-0" />}

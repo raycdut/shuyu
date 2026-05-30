@@ -14,6 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import state
+from .agent.advanced_agent import AdvancedAgent
 from .agent.simple_agent import SimpleAgent
 from .agent.tools.registry import Tool, ToolRegistry
 from .config import load_config
@@ -121,7 +122,12 @@ async def lifespan(app: FastAPI):
     logger.info("Creating ReAct agent loop...")
     state.agent_loop = SimpleAgent(
         tool_registry=state.tool_registry,
-        call_llm_func=lambda **kw: call_llm(**kw),
+        call_llm_func=call_llm,
+        system_prompt=system_prompt,
+    )
+    state.advanced_agent = AdvancedAgent(
+        tool_registry=state.tool_registry,
+        call_llm_func=call_llm,
         system_prompt=system_prompt,
     )
 

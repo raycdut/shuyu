@@ -82,6 +82,8 @@ export interface DBConnectRequest {
 export interface ChatRequest {
   message: string
   session_id?: string
+  db_id?: string
+  mode?: string
 }
 
 export interface ChatResponse {

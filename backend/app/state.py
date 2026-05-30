@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from .agent.simple_agent import SimpleAgent
+from .agent.advanced_agent import AdvancedAgent
 from .agent.tools.registry import ToolRegistry
 from .config import Config
 from .db.base import DatabaseConnector
@@ -15,6 +16,7 @@ config: Config = None  # type: ignore[assignment]
 # --- Tool registry + agent loop ---
 tool_registry: ToolRegistry = None  # type: ignore[assignment]
 agent_loop: SimpleAgent = None  # type: ignore[assignment]
+advanced_agent: AdvancedAgent = None  # type: ignore[assignment]
 connector = None  # legacy, always None in new architecture
 
 # --- Session management ---

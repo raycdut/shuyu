@@ -8,6 +8,8 @@ interface ChatProps {
   isLoading: boolean
   onSend: (text: string) => void
   schema: SchemaTable[]
+  mode: string
+  onModeChange: (mode: string) => void
 }
 
 const EXAMPLE_QUESTIONS = [

@@ -30,7 +30,7 @@ async def chat(req: ChatRequest):
     if state.agent_loop is None:
         raise HTTPException(503, "Agent not initialized")
 
-    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  db={req.db_id or 'none'}  msg={req.message[:50]}...")
+    logger.info(f"POST /api/chat  session={req.session_id or 'new'}  db={req.db_id or 'none'}  mode={req.mode}  msg={req.message[:50]}...")
 
     # Check API key
     if not state.config.llm.api_key and not os.environ.get("OPENAI_API_KEY"):
@@ -103,8 +103,12 @@ async def chat(req: ChatRequest):
     session.add_message("user", req.message)
     agent_messages.append({"role": "user", "content": req.message})
 
+    # Run agent (fast or quality mode)
+    agent = state.advanced_agent if req.mode == "quality" else state.agent_loop
+    logger.info(f"Using agent: {'quality' if req.mode == 'quality' else 'fast'} mode")
+
     try:
-        result = await state.agent_loop.run(agent_messages)
+        result = await agent.run(agent_messages)
         content = result.get("content", "")
 
         # Post-process: ensure [QN] markers appear when SQL was executed

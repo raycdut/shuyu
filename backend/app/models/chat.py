@@ -5,6 +5,7 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str | None = None
     db_id: str | None = None
+    mode: str = "fast"  # "fast" | "quality"
 
 
 class ChatResponse(BaseModel):
