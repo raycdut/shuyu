@@ -16,7 +16,7 @@ from .. import state
 from ..agent.tools.registry import Tool
 from ..agent.tools.sql_tool import handle_sql_query
 from ..db.duckdb import DuckDBConnector
-from ..db.schema import build_schema_prompt
+from ..db.schema import build_schema_light, build_schema_prompt
 from ..client import call_llm
 from ..models.chat import ChatRequest, ChatResponse
 
@@ -80,7 +80,7 @@ async def chat(req: ChatRequest):
                 )
                 state._active_connector.connect()
                 tables = state._active_connector.get_schema()
-                schema_text = build_schema_prompt(tables)
+                schema_text = build_schema_light(tables)
                 logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
                 # Cache in session
@@ -94,10 +94,18 @@ async def chat(req: ChatRequest):
                     "content": f"注意：你已连接到数据库「{db_entry['name']}」，但无法加载表结构（{e}）。请告知用户。"
                 })
 
-        # Inject schema (always do this — messages accumulate across calls)
+        # Inject schema — use full schema for quality mode, light for fast mode
+        inject_schema = schema_text
+        if req.mode == "quality" and db_entry:
+            try:
+                tables = state._active_connector.get_schema() if state._active_connector else []
+                if tables:
+                    inject_schema = build_schema_prompt(tables)
+            except Exception:
+                pass
         agent_messages.insert(0, {
             "role": "system",
-            "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
+            "content": f"<database name=\"{db_entry['name']}\">\n{inject_schema}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
         })
 
     session.add_message("user", req.message)
@@ -182,10 +190,11 @@ async def chat_stream(req: ChatRequest):
                     )
                     state._active_connector.connect()
                     tables = state._active_connector.get_schema()
-                    schema_text = build_schema_prompt(tables)
+                    # Use full schema for quality mode
+                    s_text = build_schema_prompt(tables) if req.mode == "quality" else build_schema_light(tables)
                     agent_messages.insert(0, {
                         "role": "system",
-                        "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
+                        "content": f"<database name=\"{db_entry['name']}\">\n{s_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
                     })
                 except Exception as e:
                     agent_messages.insert(0, {
