@@ -5,11 +5,13 @@ export function nextMsgId(): string {
 }
 
 export interface Message {
-  id: string
+  id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
   tool_calls?: ToolCall[]
   sql_queries?: string[]
+  isPlan?: boolean
+  planContent?: string
 }
 
 export interface ToolCall {

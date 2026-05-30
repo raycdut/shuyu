@@ -62,8 +62,6 @@ class AdvancedAgent:
 
         # ============ Phase 1: Plan (no tools) ============
         logger.info("AdvancedAgent: Phase 1 — Plan")
-        if progress_callback:
-            await progress_callback({"type": "plan", "content": "📋 正在制定分析计划..."})
         plan_response = await self.call_llm(
             messages=[
                 {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
@@ -73,6 +71,8 @@ class AdvancedAgent:
         )
         plan_text = self._extract_content(plan_response)
         logger.info(f"AdvancedAgent: Plan generated ({len(plan_text)} chars)")
+        if progress_callback:
+            await progress_callback({"type": "plan", "content": plan_text, "collapsible": True})
 
         # Add plan to conversation as context
         conversation.append({"role": "assistant", "content": plan_text})

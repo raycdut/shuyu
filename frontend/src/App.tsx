@@ -145,7 +145,17 @@ export default function App() {
             try {
               const event = JSON.parse(line.slice(6))
 
-              if (event.type === 'plan') {
+              if (event.type === 'plan' && event.collapsible) {
+                // 可折叠的分析计划
+                const planId = `plan-${nextMsgId()}`
+                setMessages(prev => [...prev, {
+                  id: planId,
+                  role: 'assistant',
+                  content: '',
+                  isPlan: true,
+                  planContent: event.content,
+                }])
+              } else if (event.type === 'plan') {
                 setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📋 ${event.content}` }])
               } else if (event.type === 'query') {
                 setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `🔍 ${event.content}` }])
@@ -156,7 +166,7 @@ export default function App() {
               } else if (event.type === 'thinking') {
                 // skip thinking message
               }
-            } catch { /* skip malformed events */ }
+            } catch { /* skip */ }
           }
         }
         setActiveSessionId(activeSessionId || 'stream-' + Date.now().toString(36))
