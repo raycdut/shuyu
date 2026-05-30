@@ -3,6 +3,12 @@
 # Environment variables (e.g. LLM_API_KEY) override these values.
 
 storage:
+  # SQLite database path for config/sessions/messages.
+  # Default:  (auto-resolved to PROJECT_ROOT/backend/data/config.db)
+  # Use absolute paths if you change it, NOT relative paths (they depend on
+  # the working directory when the server starts).
+  # path: /absolute/path/to/your/config.db
+
   # Log rotation: "day" for daily files, "hour" for hourly files
   log_interval: day
 
