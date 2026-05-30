@@ -151,6 +151,15 @@ class AdvancedAgent:
                 })
                 break
 
+            # Exit loop if probing individual entities (territory/customer one at a time)
+            if iteration > 2:
+                entity_questions = sum(1 for m in conversation 
+                    if m.get("role") == "tool" and len(m.get("content","")) > 100)
+                # After getting 3+ results, break and let ReAct answer
+                if entity_questions >= 3:
+                    logger.warning(f"AdvancedAgent: Already have {entity_questions} data results, breaking loop")
+                    break
+
             logger.info(f"AdvancedAgent: ReAct iteration {iteration} — {len(normalized['tool_calls'])} tool call(s)")
 
             # Execute tools (parallel)
