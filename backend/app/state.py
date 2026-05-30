@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import sqlite3
+from typing import TYPE_CHECKING
 
-from .agent.simple_agent import SimpleAgent
-from .agent.advanced_agent import AdvancedAgent
 from .agent.tools.registry import ToolRegistry
 from .config import Config
 from .db.base import DatabaseConnector
+
+if TYPE_CHECKING:
+    from .agent.simple_agent import SimpleAgent
+    from .agent.advanced_agent import AdvancedAgent
 
 # --- Runtime config (loaded from SQLite at startup) ---
 config: Config = None  # type: ignore[assignment]
