@@ -103,6 +103,17 @@ class AdvancedAgent:
                 conversation.append({"role": "assistant", "content": normalized["content"]})
                 break
 
+            # Exit loop if we already have enough data (>200 chars) and LLM is still probing
+            if iteration > 1:
+                tool_count = sum(1 for m in conversation if m.get("role") == "tool" and len(m.get("content","")) > 200)
+                if tool_count >= 2 and len(normalized["tool_calls"]) > 0:
+                    # Check if the LLM is asking about a table/column schema (probing)
+                    questions = [tc.get("arguments","") for tc in normalized["tool_calls"]]
+                    probing = any("字段" in q or "列名" in q or "column" in q.lower() or "describe" in q.lower() for q in questions)
+                    if probing:
+                        logger.warning(f"AdvancedAgent: Data already retrieved, breaking probing loop")
+                        break
+
             logger.info(f"AdvancedAgent: ReAct iteration {iteration} — {len(normalized['tool_calls'])} tool call(s)")
 
             # Execute tools (parallel)
