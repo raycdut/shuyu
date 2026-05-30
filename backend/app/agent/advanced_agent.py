@@ -152,13 +152,24 @@ class AdvancedAgent:
                 break
 
             # Exit loop if probing individual entities (territory/customer one at a time)
-            if iteration > 2:
-                entity_questions = sum(1 for m in conversation 
-                    if m.get("role") == "tool" and len(m.get("content","")) > 100)
-                # After getting 3+ results, break and let ReAct answer
-                if entity_questions >= 3:
-                    logger.warning(f"AdvancedAgent: Already have {entity_questions} data results, breaking loop")
-                    break
+
+            # Detect schema probing loop: if LLM keeps inspecting columns after getting data
+            if iteration > 4:
+                tool_msgs = [m for m in conversation if m.get("role") == "tool"]
+                has_data = any(len(m.get("content", "")) > 300 for m in tool_msgs)
+                if has_data:
+                    # Check if newest tool calls are schema questions
+                    questions = []
+                    for tc in normalized.get("tool_calls", []):
+                        try:
+                            q = json.loads(tc.get("arguments", "{}")).get("question", "")
+                            questions.append(q)
+                        except Exception:
+                            pass
+                    if questions and all("字段" in q or "列名" in q or "column" in q.lower() or "describe" in q.lower() for q in questions):
+                        logger.warning(f"AdvancedAgent: Already have data, breaking schema-probing loop")
+                        conversation.append({"role": "system", "content": "你已经收集了足够的数据，请根据已有查询结果直接回答用户的问题。"})
+                        break
 
             logger.info(f"AdvancedAgent: ReAct iteration {iteration} — {len(normalized['tool_calls'])} tool call(s)")
 
@@ -196,11 +207,12 @@ class AdvancedAgent:
                 tool_data_accumulated += len(r["content"])
 
         # ============ Phase 3: Reflect ============
-        # Decide whether to skip Reflect:
-        # - Skip only if ReAct produced a non-looped final answer AND has substantive data
+        # Skip Reflect if ReAct produced a non-plan final answer
+        # Find the latest ReAct final answer (skip plan messages)
         final_react = None
         for msg in reversed(conversation):
-            if msg.get("role") == "assistant" and not msg.get("tool_calls"):
+            if (msg.get("role") == "assistant" and not msg.get("tool_calls")
+                    and not msg.get("content", "").startswith("## 分析")):
                 final_react = msg["content"]
                 break
 
