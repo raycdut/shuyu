@@ -1,4 +1,4 @@
-"""Configuration — defaults only, persisted via SQLite."""
+"""Configuration — defaults + YAML file + env var overrides."""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 # Project root = backend/app/config.py -> backend/ -> ../
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_CONFIG_FILE = PROJECT_ROOT / "config.yaml"
 
 
 class LLMConfig(BaseModel):
@@ -28,7 +29,9 @@ class SafetyConfig(BaseModel):
 
 
 class StorageConfig(BaseModel):
-    path: str = str(_PROJECT_ROOT / "backend" / "data" / "config.db")
+    path: str = str(PROJECT_ROOT / "backend" / "data" / "config.db")
+    log_interval: str = "day"
+    log_retention_days: int = 30
 
 
 class Config(BaseModel):
@@ -38,9 +41,24 @@ class Config(BaseModel):
 
 
 def load_config() -> Config:
-    """Create config from defaults + environment variable overrides."""
+    """Load config: 1) Python defaults → 2) config.yaml → 3) env overrides."""
     raw: dict = {}
 
+    # --- Phase 1: Load from YAML file ---
+    yaml_path = _CONFIG_FILE
+    if yaml_path.exists():
+        try:
+            import yaml
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f) or {}
+                for section, values in data.items():
+                    if isinstance(values, dict):
+                        raw.setdefault(section, {}).update(values)
+        except Exception as e:
+            import logging
+            logging.getLogger("shuyu.main").warning(f"Failed to load config.yaml: {e}")
+
+    # --- Phase 2: Environment overrides ---
     env_map = {
         ("llm", "api_key"): "LLM_API_KEY",
         ("llm", "provider"): "LLM_PROVIDER",

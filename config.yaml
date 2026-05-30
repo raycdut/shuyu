@@ -1,0 +1,10 @@
+# Shuyu configuration
+# Edit this file and restart the backend to apply changes.
+# Environment variables (e.g. LLM_API_KEY) override these values.
+
+storage:
+  # Log rotation: "day" for daily files, "hour" for hourly files
+  log_interval: day
+
+  # Number of rotated log files to keep (oldest are auto-deleted)
+  log_retention_days: 30

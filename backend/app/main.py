@@ -43,8 +43,17 @@ for name in ("shuyu.main", "shuyu.session", "shuyu.agent", "shuyu.registry", "sh
 
 
 def _setup_logging():
-    """Configure file + stderr logging (after uvicorn starts)."""
+    """Configure file + stderr logging (after uvicorn starts).
+
+    Log file rotates based on storage.log_interval config:
+    - "hour" → one file per hour (shuyu.YYYY-MM-DD_HH.log)
+    - "day"  → one file per day  (shuyu.YYYY-MM-DD.log)
+    """
     import logging as _logging
+    from logging.handlers import TimedRotatingFileHandler
+
+    from .config import PROJECT_ROOT
+
     root = _logging.getLogger()
     # Remove uvicorn handlers
     for h in list(root.handlers):
@@ -52,7 +61,23 @@ def _setup_logging():
     # Add our handlers
     root.setLevel(_logging.INFO)
     fmt = _logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
-    fh = _logging.FileHandler("./data/shuyu.log")
+
+    log_dir = PROJECT_ROOT / "backend" / "data"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = str(log_dir / "shuyu.log")
+
+    interval = state.config.storage.log_interval
+    when = "H" if interval == "hour" else "MIDNIGHT"
+    suffix = "%Y-%m-%d_%H" if interval == "hour" else "%Y-%m-%d"
+    retention = state.config.storage.log_retention_days
+
+    fh = TimedRotatingFileHandler(
+        log_path,
+        when=when,
+        interval=1,
+        backupCount=retention,
+    )
+    fh.suffix = suffix
     fh.setFormatter(fmt)
     root.addHandler(fh)
     sh = _logging.StreamHandler()
@@ -64,9 +89,9 @@ def _setup_logging():
 async def lifespan(app: FastAPI):
     global config, connector, tool_registry, agent_loop, session_manager, schema_prompt
 
-    # 0. Setup logging
-    _setup_logging()
+    # 0. Load config first (logging setup needs it)
     state.config = load_config()
+    _setup_logging()
     logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}")
 
     # 2. Init SQLite persistence
