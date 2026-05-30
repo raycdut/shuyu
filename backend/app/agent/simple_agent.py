@@ -106,8 +106,12 @@ class SimpleAgent:
 
                 # Execute the tool
                 logger.info(f"  -> Calling tool: {tool_name}({json.dumps(arguments, ensure_ascii=False)[:100]})")
-                result = await self.tool_registry.call_tool(tool_name, arguments)
-                logger.info(f"  <- Tool result: {len(result)} chars")
+                try:
+                    result = await self.tool_registry.call_tool(tool_name, arguments)
+                    logger.info(f"  <- Tool result: {len(result)} chars")
+                except Exception as e:
+                    result = f"工具 {tool_name} 执行失败：{e}\n请调整参数后重试。"
+                    logger.error(f"  <- Tool error: {e}")
 
                 # Add tool result to conversation
                 conversation.append({
