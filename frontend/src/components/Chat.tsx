@@ -128,66 +128,68 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
       </div>
 
       {/* 输入区域 */}
-      <div className="flex-shrink-0 px-4 pt-3 pb-2 bg-white/60 ink-border border-b-0 border-x-0">
+      <div className="flex-shrink-0 px-4 pt-3 pb-2 bg-white/60 border-t border-tea/50">
         <div className="max-w-4xl mx-auto">
-          {/* 输入框 */}
-          <textarea
-            ref={inputRef}
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="输入你的问题…"
-            rows={1}
-            className="w-full ink-input resize-none min-h-[52px] max-h-[200px] py-3 px-4 text-sm leading-relaxed rounded-xl"
-            disabled={isLoading}
-          />
-          {/* 底部工具栏 */}
-          <div className="flex items-center justify-between mt-2">
-            {/* 左侧：模式切换 */}
-            <div className="flex items-center gap-2">
+          {/* 统一输入框容器 */}
+          <div className="ink-border rounded-xl overflow-hidden bg-white focus-within:border-celadon/60 transition-colors">
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="给 Shuyu 发送消息"
+              rows={1}
+              className="w-full bg-transparent resize-none min-h-[52px] max-h-[180px] py-3 px-4 text-sm leading-relaxed outline-none"
+              disabled={isLoading}
+            />
+            {/* 底部工具栏 */}
+            <div className="flex items-center justify-between px-3 pb-2.5">
+              {/* 左侧：模式切换 */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => onModeChange('fast')}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
+                    mode === 'fast'
+                      ? 'bg-celadon/15 text-celadon-dark font-medium'
+                      : 'text-ink-lighter hover:text-ink hover:bg-smoke'
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                  </svg>
+                  快速
+                </button>
+                <button
+                  onClick={() => onModeChange('quality')}
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full transition-colors ${
+                    mode === 'quality'
+                      ? 'bg-celadon/15 text-celadon-dark font-medium'
+                      : 'text-ink-lighter hover:text-ink hover:bg-smoke'
+                  }`}
+                >
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  深度分析
+                </button>
+              </div>
+              {/* 右侧：发送按钮 */}
               <button
-                onClick={() => onModeChange('fast')}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full transition-colors ${
-                  mode === 'fast'
-                    ? 'bg-celadon/20 text-celadon-dark font-medium'
-                    : 'text-ink-lighter hover:text-ink'
+                onClick={handleSend}
+                disabled={!input.trim() || isLoading}
+                className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all ${
+                  input.trim() && !isLoading
+                    ? 'bg-celadon text-white shadow-sm hover:shadow-md active:scale-95'
+                    : 'bg-smoke text-ink-lighter cursor-not-allowed'
                 }`}
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
                 </svg>
-                快速
-              </button>
-              <button
-                onClick={() => onModeChange('quality')}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full transition-colors ${
-                  mode === 'quality'
-                    ? 'bg-celadon/20 text-celadon-dark font-medium'
-                    : 'text-ink-lighter hover:text-ink'
-                }`}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 6v6l4 2" />
-                </svg>
-                深度分析
               </button>
             </div>
-            {/* 右侧：发送按钮 */}
-            <button
-              onClick={handleSend}
-              disabled={!input.trim() || isLoading}
-              className={`flex items-center justify-center w-9 h-9 rounded-xl transition-all ${
-                input.trim() && !isLoading
-                  ? 'bg-celadon text-white shadow-sm hover:shadow-md'
-                  : 'bg-smoke text-ink-lighter cursor-not-allowed'
-              }`}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="22" y1="2" x2="11" y2="13" />
-                <polygon points="22 2 15 22 11 13 2 9 22 2" />
-              </svg>
-            </button>
           </div>
         </div>
       </div>
