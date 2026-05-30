@@ -306,7 +306,7 @@ export default function App() {
           onClearAllSessions={async () => {
             handleNewSession()
             try {
-              const res = await fetch('/api/sessions', { method: 'DELETE' })
+              const res = await fetch('/api/sessions/clear', { method: 'POST' })
               if (!res.ok) throw new Error(`HTTP ${res.status}`)
               loadSessions()
             } catch (err: any) {

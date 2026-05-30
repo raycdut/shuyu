@@ -49,8 +49,8 @@ async def rename_session(session_id: str, req: SessionRenameRequest):
     return {"ok": True}
 
 
-@router.delete("/api/sessions")
-async def delete_all_sessions():
+@router.post("/api/sessions/clear")
+async def clear_all_sessions():
     """Delete ALL sessions."""
     if state.session_manager is None:
         raise HTTPException(503, "Session manager not initialized")
