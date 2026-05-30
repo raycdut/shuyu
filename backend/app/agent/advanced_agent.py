@@ -1,9 +1,11 @@
-"""Advanced Agent — Plan → ReAct → Reflect.
+"""Advanced Agent — Plan → Reflect → Execute → Report → Reflect.
 
 Quality mode for complex analysis:
 1. Plan: LLM creates an analysis plan (no tools)
-2. ReAct: Executes the plan step by step (tools available)
-3. Reflect: Reviews results and produces final summary (no tools)
+2. Reflect on Plan: Review plan for correctness, feasibility; iterate if needed
+3. Execute: Step-by-step execution with per-step result validation
+4. Report: Generate final report from collected data
+5. Reflect on Report: Review report quality, supplement if needed
 """
 
 from __future__ import annotations
@@ -11,9 +13,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any, Callable
 
-from .. import state
 from .tools.registry import ToolRegistry
 
 logger = logging.getLogger("shuyu.agent")
@@ -22,14 +24,14 @@ PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库
 
 ## 严格规则
 - 不要查询数据，只制定计划
-- **每步必须写出具体 SQL 思路**，包括表名、关联字段、聚合方式
-- **如果一条 SQL 能解决问题，不要拆成多步**
+- 每步必须写出具体 SQL 思路，包括表名、关联字段、聚合方式
+- 如果一条 SQL 能解决问题，不要拆成多步
 - 必须按下面的格式输出
 
 ## 输出格式
 
 ## 分析目标
-[一句话说明]
+[一句话说明用户想分析什么]
 
 ## 分析步骤
 1. **第一步**：[SQL 思路：FROM 哪个表 JOIN 哪个表，用什么字段 GROUP BY/ORDER BY] — [原因]
@@ -37,17 +39,50 @@ PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库
 ...
 """
 
-REFLECT_PROMPT = """回顾刚才的分析过程和结果：
-1. 所有查询是否成功执行？
-2. 结果是否能回答用户的问题？
-3. 有没有什么有趣的发现或异常？
+PLAN_REFLECT_PROMPT = """你是数据分析规划审核专家。请检查下面的分析计划是否合理。
 
-如果已经充分回答了用户的问题，输出汇总报告。
-如果缺少关键信息，请告知用户。"""
+检查清单：
+1. 分析目标是否准确反映了用户的问题？
+2. 每个分析步骤的 SQL 思路是否可行？（表名、关联字段、聚合方式是否合理）
+3. 步骤顺序是否正确？（后面的步骤是否依赖前面的结果？）
+4. 有没有多余的步骤？（一条 SQL 能解决的问题，不应该拆成多步）
+5. 有没有遗漏重要的分析维度？
+
+请输出：
+
+## 审核结论
+[合理 / 需要修改]
+
+## 问题列表
+- [如果有问题，逐条列出]
+
+## 修改建议
+- [如果有问题，给出具体的修改建议]
+
+如果审核结论是「合理」，则直接输出「审核结论：合理」即可。"""
+
+REPORT_REFLECT_PROMPT = """你是数据分析报告审核专家。请检查下面的分析报告。
+
+检查清单：
+1. 报告是否直接回应了用户的原始问题？
+2. 报告中的数据是否有具体的数值支持（不应该是模糊描述）？
+3. 有没有明显的遗漏或错误？
+4. 是否有有趣的发现值得提及？
+
+## 审核结论
+[通过 / 需要补充]
+
+## 问题
+- [如果有问题，逐条列出]
+
+## 需要补充的查询
+- [如果需要额外数据才能完善报告，写出具体的查询思路]
+
+如果审核通过，直接输出「审核结论：通过」即可。"""
 
 
 class AdvancedAgent:
-    """Plan → ReAct → Reflect agent for complex analysis."""
+    """Plan → Reflect → Execute → Report → Reflect agent for complex analysis."""
 
     def __init__(
         self,
@@ -63,16 +98,14 @@ class AdvancedAgent:
         self._tool_history: list[tuple[str, dict]] = []
         self._sql_queries: list[str] = []
 
+    # ------------------------------------------------------------------
+    # Loop detection
+    # ------------------------------------------------------------------
+
     def _is_stuck(self, tool_name: str, arguments: dict) -> bool:
-        """Detect if the agent is calling the same tool with similar args repeatedly.
-
-        Ported from SimpleAgent.is_stuck to provide loop detection in ReAct phase.
-        """
         self._tool_history.append((tool_name, arguments))
-
         if len(self._tool_history) < 4:
             return False
-
         last_3 = self._tool_history[-3:]
         if all(t[0] == tool_name for t in last_3):
             questions = [t[1].get("question", "") for t in last_3]
@@ -81,42 +114,299 @@ class AdvancedAgent:
                 return True
         return False
 
+    # ------------------------------------------------------------------
+    # Main pipeline
+    # ------------------------------------------------------------------
+
     async def run(self, messages: list[dict], progress_callback: Callable | None = None) -> dict:
-        """Run the full Plan → ReAct → Reflect pipeline."""
+        """Run the full Plan → Reflect → Execute → Report → Reflect pipeline."""
         conversation = list(messages)
         self._tool_history.clear()
         self._sql_queries.clear()
 
-        # ============ Phase 1: Plan (no tools) ============
+        # ============ Phase 1: Plan generation ============
+        plan_text = await self._phase_plan(conversation, progress_callback)
+
+        # ============ Phase 1.5: Plan reflection (iterate if needed) ============
+        plan_text = await self._phase_plan_reflect(plan_text, conversation, progress_callback)
+
+        # ============ Phase 2: Step-by-step execution ============
+        # Extract steps from the plan for granular progress tracking
+        steps = self._parse_plan_steps(plan_text)
+        all_data_ok = await self._phase_execute(plan_text, steps, conversation, progress_callback)
+
+        # ============ Phase 3: Report generation ============
+        final = await self._phase_report(conversation, progress_callback)
+
+        # ============ Phase 4: Report reflection (iterate if needed) ============
+        final = await self._phase_report_reflect(final, conversation, progress_callback)
+
+        if progress_callback:
+            await progress_callback({"type": "done", "content": final})
+
+        return {
+            "role": "assistant",
+            "content": final,
+            "tool_calls": [],
+            "sql_queries": self._sql_queries,
+        }
+
+    # ------------------------------------------------------------------
+    # Phase 1: Plan
+    # ------------------------------------------------------------------
+
+    async def _phase_plan(self, conversation: list, progress_callback: Callable | None) -> str:
         logger.info("AdvancedAgent: Phase 1 — Plan")
-        plan_response = await self.call_llm(
+        response = await self.call_llm(
             messages=[
                 {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
                 *conversation,
             ],
-            tools=None,  # no tools during planning
+            tools=None,
         )
-        plan_text = self._extract_content(plan_response)
+        plan_text = self._extract_content(response)
         logger.info(f"AdvancedAgent: Plan generated ({len(plan_text)} chars)")
-        if progress_callback:
-            await progress_callback({"type": "plan", "content": plan_text, "collapsible": True})
+        return plan_text
 
-        # Add plan to conversation as context
-        conversation.append({"role": "assistant", "content": plan_text})
+    # ------------------------------------------------------------------
+    # Phase 1.5: Plan reflection
+    # ------------------------------------------------------------------
 
-        # ============ Phase 2: ReAct (with tools) ============
-        logger.info("AdvancedAgent: Phase 2 — ReAct")
+    async def _phase_plan_reflect(
+        self, plan_text: str, conversation: list, progress_callback: Callable | None
+    ) -> str:
+        """Reflect on the plan, iterate up to 3 times if issues found."""
+        max_rounds = 3
+        current_plan = plan_text
+
+        for round_num in range(max_rounds):
+            logger.info(f"AdvancedAgent: Phase 1.5 — Plan reflect (round {round_num + 1})")
+
+            reflect_response = await self.call_llm(
+                messages=[
+                    {"role": "system", "content": PLAN_REFLECT_PROMPT},
+                    {"role": "assistant", "content": f"## 分析计划\n{current_plan}"},
+                ],
+                tools=None,
+            )
+            reflect_text = self._extract_content(reflect_response)
+            logger.info(f"AdvancedAgent: Plan reflect result ({len(reflect_text)} chars)")
+
+            # Check if plan is approved
+            if "审核结论" in reflect_text and "合理" in reflect_text:
+                # Check for explicit "需要修改" — if both appear, "需要修改" wins
+                if "需要修改" not in reflect_text.split("审核结论")[-1][:50]:
+                    logger.info("AdvancedAgent: Plan approved after reflection")
+                    if progress_callback:
+                        await progress_callback({
+                            "type": "plan_reflect",
+                            "content": "✅ 计划审核通过",
+                            "collapsible": True,
+                        })
+                    break
+
+            # Plan needs revision — regenerate with feedback
+            logger.info(f"AdvancedAgent: Plan needs revision (round {round_num + 1})")
+            if progress_callback:
+                await progress_callback({
+                    "type": "plan_reflect",
+                    "content": f"🔄 计划需要修改（第 {round_num + 1} 轮）",
+                    "collapsible": True,
+                })
+
+            if round_num < max_rounds - 1:
+                # Regenerate plan with reflection feedback
+                response = await self.call_llm(
+                    messages=[
+                        {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
+                        *conversation,
+                        {"role": "assistant", "content": current_plan},
+                        {"role": "user", "content": f"请根据以下审核意见修改分析计划：\n{reflect_text}"},
+                    ],
+                    tools=None,
+                )
+                current_plan = self._extract_content(response)
+                logger.info(f"AdvancedAgent: Plan revised ({len(current_plan)} chars)")
+
+        # Show final plan to frontend
         if progress_callback:
-            await progress_callback({"type": "react", "content": "🔍 正在按计划执行查询..."})
-        exec_prompt = f"你正在执行以下分析计划：\n{plan_text}\n\n按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。\n注意：不要重复查询已经获取过的数据。"
+            await progress_callback({"type": "plan", "content": current_plan, "collapsible": True})
+
+        conversation.append({"role": "assistant", "content": current_plan})
+        return current_plan
+
+    # ------------------------------------------------------------------
+    # Phase 2: Step-by-step execution
+    # ------------------------------------------------------------------
+
+    def _parse_plan_steps(self, plan_text: str) -> list[str]:
+        """Extract individual steps from the plan."""
+        steps = []
+        # Match lines like "1. **第一步**:" or "1. **Step 1**:" or "- **第一步**:"
+        in_steps = False
+        for line in plan_text.split("\n"):
+            step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*[:：]?\s*(.*)", line)
+            if step_match:
+                in_steps = True
+                steps.append(step_match.group(1).strip())
+            elif in_steps and re.match(r"^\s*\d+\.", line):
+                # Another numbered line that might be a header, not a step
+                pass
+            elif in_steps and line.strip() and not line.strip().startswith("#"):
+                # Continuation of the last step
+                if steps and not line.strip().startswith("-"):
+                    steps[-1] += " " + line.strip()
+        return steps
+
+    async def _phase_execute(
+        self,
+        plan_text: str,
+        steps: list[str],
+        conversation: list,
+        progress_callback: Callable | None,
+    ) -> bool:
+        """Execute plan steps one by one with per-step result validation."""
+        logger.info(f"AdvancedAgent: Phase 2 — Execute ({len(steps)} steps)")
+
+        if not steps:
+            # Fallback: use the full plan as context for the old ReAct loop
+            return await self._execute_freeform(plan_text, conversation, progress_callback)
+
+        all_ok = True
+        completed = 0
+
+        for step_idx, step_desc in enumerate(steps):
+            step_num = step_idx + 1
+            logger.info(f"AdvancedAgent: Executing step {step_num}/{len(steps)}: {step_desc[:80]}")
+
+            if progress_callback:
+                await progress_callback({
+                    "type": "step",
+                    "content": f"📋 第 {step_num}/{len(steps)} 步: {step_desc[:100]}",
+                    "step": step_num,
+                    "total": len(steps),
+                })
+
+            step_prompt = (
+                f"你正在执行分析计划的第 {step_num} 步。\n"
+                f"当前步骤：{step_desc}\n\n"
+                f"完整计划：\n{plan_text}\n\n"
+                f"执行这一步，调用 query_database 工具查询。"
+                f"完成后输出这一步的阶段性发现。"
+            )
+
+            step_ok = await self._execute_step(step_prompt, conversation, progress_callback)
+
+            if step_ok:
+                completed += 1
+                if progress_callback:
+                    await progress_callback({
+                        "type": "step_done",
+                        "content": f"✅ 第 {step_num} 步完成",
+                        "step": step_num,
+                    })
+            else:
+                all_ok = False
+                if progress_callback:
+                    await progress_callback({
+                        "type": "step_done",
+                        "content": f"⚠️ 第 {step_num} 步执行异常，已跳过",
+                        "step": step_num,
+                    })
+
+        logger.info(f"AdvancedAgent: Execution complete ({completed}/{len(steps)} steps OK)")
+        return all_ok
+
+    async def _execute_step(
+        self,
+        step_prompt: str,
+        conversation: list,
+        progress_callback: Callable | None,
+    ) -> bool:
+        """Execute a single plan step with result validation."""
+        tools_def = self.tool_registry.to_openai_tools()
+        max_attempts = 2
+        step_conversation = list(conversation)
+
+        for attempt in range(max_attempts):
+            response = await self.call_llm(
+                messages=[
+                    {"role": "system", "content": step_prompt},
+                    *step_conversation,
+                ],
+                tools=tools_def,
+            )
+
+            normalized = self._normalize(response)
+
+            if not normalized["tool_calls"]:
+                # LLM decided to answer directly — likely a summary, accept it
+                conversation.append({"role": "assistant", "content": normalized["content"]})
+                # If content is substantial, consider it successful
+                return len(normalized.get("content", "")) > 30
+
+            # Execute tool calls
+            assistant_msg = {
+                "role": "assistant",
+                "content": normalized["content"] or "Executing step...",
+                "tool_calls": [
+                    {"id": tc["id"], "type": "function",
+                     "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+                    for tc in normalized["tool_calls"]
+                ],
+            }
+            step_conversation.append(assistant_msg)
+
+            results = await asyncio.gather(*[
+                self._execute_tool(tc, progress_callback) for tc in normalized["tool_calls"]
+            ])
+
+            for r in results:
+                step_conversation.append({
+                    "role": "tool",
+                    "tool_call_id": r["tool_call_id"],
+                    "content": r["content"],
+                })
+
+            # Validate result quality
+            has_data = any(len(r.get("content", "")) > 50 for r in results)
+            has_error = any("执行失败" in r.get("content", "") or "错误" in r.get("content", "") for r in results)
+
+            if has_data and not has_error:
+                # Step executed successfully
+                # Merge step conversation into main conversation
+                conversation.extend(step_conversation[len(conversation):])
+                return True
+
+            if has_error and attempt < max_attempts - 1:
+                logger.warning(f"AdvancedAgent: Step failed, retrying (attempt {attempt + 1})")
+                step_conversation.append({
+                    "role": "user",
+                    "content": "上一步查询失败了，请换一种查询方式重试，或者直接告知用户无法获取该数据。",
+                })
+                continue
+
+            # Failed after max attempts — still merge what we have
+            conversation.extend(step_conversation[len(conversation):])
+            return False
+
+        return False
+
+    async def _execute_freeform(
+        self,
+        plan_text: str,
+        conversation: list,
+        progress_callback: Callable | None,
+    ) -> bool:
+        """Fallback: original free-form ReAct loop when steps can't be parsed."""
+        exec_prompt = (
+            f"你正在执行以下分析计划：\n{plan_text}\n\n"
+            f"按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。\n"
+            f"注意：不要重复查询已经获取过的数据。"
+        )
         tools_def = self.tool_registry.to_openai_tools()
 
-        iteration = 0
-        tool_data_accumulated = 0  # total bytes of meaningful tool result data
-
-        while iteration < self.max_iterations:
-            iteration += 1
-
+        for iteration in range(1, self.max_iterations + 1):
             response = await self.call_llm(
                 messages=[
                     {"role": "system", "content": exec_prompt},
@@ -128,55 +418,26 @@ class AdvancedAgent:
             normalized = self._normalize(response)
 
             if not normalized["tool_calls"]:
-                logger.info(f"AdvancedAgent: ReAct iteration {iteration} — final answer")
                 conversation.append({"role": "assistant", "content": normalized["content"]})
-                break
+                return True
 
-            # Loop detection: if is_stuck returns True, break the ReAct loop
-            # and let Reflect phase handle the incomplete answer
-            tool_looping = False
+            # Loop detection
+            loop_detected = False
             for tc in normalized["tool_calls"]:
                 try:
                     args = json.loads(tc.get("arguments", "{}"))
                 except json.JSONDecodeError:
                     args = {}
                 if self._is_stuck(tc["name"], args):
-                    tool_looping = True
+                    loop_detected = True
                     break
-            if tool_looping:
-                logger.warning(f"AdvancedAgent: Loop detected at iteration {iteration}, breaking to Reflect")
-                conversation.append({
-                    "role": "assistant",
-                    "content": "已获取了足够的数据，准备汇总分析结果。"
-                })
+            if loop_detected:
+                conversation.append({"role": "assistant", "content": "已获取了足够的数据。"})
                 break
 
-            # Exit loop if probing individual entities (territory/customer one at a time)
-
-            # Detect schema probing loop: if LLM keeps inspecting columns after getting data
-            if iteration > 4:
-                tool_msgs = [m for m in conversation if m.get("role") == "tool"]
-                has_data = any(len(m.get("content", "")) > 300 for m in tool_msgs)
-                if has_data:
-                    # Check if newest tool calls are schema questions
-                    questions = []
-                    for tc in normalized.get("tool_calls", []):
-                        try:
-                            q = json.loads(tc.get("arguments", "{}")).get("question", "")
-                            questions.append(q)
-                        except Exception:
-                            pass
-                    if questions and all("字段" in q or "列名" in q or "column" in q.lower() or "describe" in q.lower() for q in questions):
-                        logger.warning(f"AdvancedAgent: Already have data, breaking schema-probing loop")
-                        conversation.append({"role": "system", "content": "你已经收集了足够的数据，请根据已有查询结果直接回答用户的问题。"})
-                        break
-
-            logger.info(f"AdvancedAgent: ReAct iteration {iteration} — {len(normalized['tool_calls'])} tool call(s)")
-
-            # Execute tools (parallel)
             assistant_msg = {
                 "role": "assistant",
-                "content": normalized["content"] or "Let me check the database...",
+                "content": normalized["content"] or "Executing...",
                 "tool_calls": [
                     {"id": tc["id"], "type": "function",
                      "function": {"name": tc["name"], "arguments": tc["arguments"]}}
@@ -185,78 +446,184 @@ class AdvancedAgent:
             }
             conversation.append(assistant_msg)
 
-            async def execute_one(tc: dict) -> dict:
-                tool_name = tc["name"]
-                try:
-                    args = json.loads(tc["arguments"])
-                except json.JSONDecodeError:
-                    args = {}
-                try:
-                    result = await self.tool_registry.call_tool(tool_name, args)
-                    logger.info(f"  <- Tool result: {len(result)} chars")
-                    if progress_callback:
-                        q = json.dumps(args, ensure_ascii=False)[:80]
-                        await progress_callback({"type": "query", "content": f"📊 查询完成: {q}"})
-                    return {"tool_call_id": tc["id"], "content": result}
-                except Exception as e:
-                    return {"tool_call_id": tc["id"], "content": f"工具执行失败：{e}"}
+            results = await asyncio.gather(*[
+                self._execute_tool(tc, progress_callback) for tc in normalized["tool_calls"]
+            ])
 
-            results = await asyncio.gather(*[execute_one(tc) for tc in normalized["tool_calls"]])
             for r in results:
-                conversation.append({"role": "tool", "tool_call_id": r["tool_call_id"], "content": r["content"]})
-                tool_data_accumulated += len(r["content"])
+                conversation.append({
+                    "role": "tool",
+                    "tool_call_id": r["tool_call_id"],
+                    "content": r["content"],
+                })
 
-        # ============ Phase 3: Reflect ============
-        # Skip Reflect if ReAct produced a non-plan final answer
-        # Find the latest ReAct final answer (skip plan messages)
-        final_react = None
-        for msg in reversed(conversation):
-            if (msg.get("role") == "assistant" and not msg.get("tool_calls")
-                    and not msg.get("content", "").startswith("## 分析")):
-                final_react = msg["content"]
-                break
+        return True  # Best effort
 
-        has_data = tool_data_accumulated > 0
-        has_plan_text = len(plan_text) > 50
+    # ------------------------------------------------------------------
+    # Phase 3: Report
+    # ------------------------------------------------------------------
 
-        # Skip Reflect only when: ReAct produced a meaningful answer, data was collected,
-        # and the answer mentions concrete numbers/results (not just a loop break message)
-        if final_react and has_data and len(final_react) > 50 and "已获取了足够的数据" not in final_react:
-            logger.info(
-                f"AdvancedAgent: Skipping Reflect "
-                f"(ReAct answer: {len(final_react)} chars, data: {tool_data_accumulated} bytes)"
-            )
-            final = final_react
-        else:
-            logger.info(
-                f"AdvancedAgent: Phase 3 — Reflect "
-                f"(final_react={len(final_react) if final_react else 0} chars, "
-                f"data={tool_data_accumulated} bytes)"
-            )
-            if progress_callback:
-                await progress_callback({"type": "summarize", "content": "📝 正在汇总分析结果..."})
+    async def _phase_report(self, conversation: list, progress_callback: Callable | None) -> str:
+        """Generate final report from collected data."""
+        logger.info("AdvancedAgent: Phase 3 — Report")
+
+        if progress_callback:
+            await progress_callback({"type": "summarize", "content": "📝 正在生成分析报告..."})
+
+        response = await self.call_llm(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是数据分析报告撰写专家。根据已有查询结果，生成一份完整的分析报告。\n\n"
+                        "要求：\n"
+                        "1. 直接回答用户的原始问题\n"
+                        "2. 使用具体的数据和数值（不要模糊描述）\n"
+                        "3. 结构清晰，使用表格展示数据\n"
+                        "4. 包含关键发现和结论"
+                    ),
+                },
+                *conversation,
+            ],
+            tools=None,
+        )
+        report = self._extract_content(response)
+        logger.info(f"AdvancedAgent: Report generated ({len(report)} chars)")
+        return report
+
+    # ------------------------------------------------------------------
+    # Phase 4: Report reflection
+    # ------------------------------------------------------------------
+
+    async def _phase_report_reflect(
+        self,
+        report: str,
+        conversation: list,
+        progress_callback: Callable | None,
+    ) -> str:
+        """Reflect on the report, iterate up to 2 times if issues found."""
+        current_report = report
+
+        for round_num in range(2):
+            logger.info(f"AdvancedAgent: Phase 4 — Report reflect (round {round_num + 1})")
+
             reflect_response = await self.call_llm(
                 messages=[
-                    {"role": "system", "content": REFLECT_PROMPT},
-                    *conversation,
+                    {"role": "system", "content": REPORT_REFLECT_PROMPT},
+                    {"role": "assistant", "content": current_report},
+                    *[m for m in conversation if m["role"] in ("user",)][-1:],  # Last user query
                 ],
                 tools=None,
             )
-            final = self._extract_content(reflect_response)
-            logger.info(f"AdvancedAgent: Reflect complete ({len(final)} chars)")
+            reflect_text = self._extract_content(reflect_response)
+            logger.info(f"AdvancedAgent: Report reflect result ({len(reflect_text)} chars)")
 
-        if progress_callback:
-            await progress_callback({"type": "done", "content": final, "sql_queries": state._last_sql_queries})
+            # Check if report is approved
+            if "审核结论" in reflect_text and "通过" in reflect_text:
+                if "需要补充" not in reflect_text.split("审核结论")[-1][:50]:
+                    logger.info("AdvancedAgent: Report approved after reflection")
+                    if progress_callback:
+                        await progress_callback({
+                            "type": "report_reflect",
+                            "content": "✅ 报告审核通过",
+                        })
+                    break
 
-        return {
-            "role": "assistant",
-            "content": final,
-            "tool_calls": [],
-            "sql_queries": self._sql_queries,
-        }
+            logger.info(f"AdvancedAgent: Report needs revision (round {round_num + 1})")
+            if progress_callback:
+                await progress_callback({
+                    "type": "report_reflect",
+                    "content": "🔄 报告需要补充 ...",
+                })
+
+            # Try to supplement with additional queries
+            if round_num < 1:
+                issues_text = reflect_text
+                supplement_response = await self.call_llm(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "根据审核意见，你需要补充查询来完善报告。\n"
+                                f"审核意见：\n{issues_text}\n\n"
+                                "请调用 query_database 工具执行需要的补充查询。如果不需要查询，直接输出补充后的报告。"
+                            ),
+                        },
+                        *conversation,
+                    ],
+                    tools=self.tool_registry.to_openai_tools(),
+                )
+                supp_normalized = self._normalize(supplement_response)
+
+                if supp_normalized["tool_calls"]:
+                    # Execute supplement queries
+                    supp_msg = {
+                        "role": "assistant",
+                        "content": supp_normalized["content"] or "补充查询中...",
+                        "tool_calls": [
+                            {"id": tc["id"], "type": "function",
+                             "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+                            for tc in supp_normalized["tool_calls"]
+                        ],
+                    }
+                    conversation.append(supp_msg)
+
+                    supp_results = await asyncio.gather(*[
+                        self._execute_tool(tc, progress_callback) for tc in supp_normalized["tool_calls"]
+                    ])
+                    for r in supp_results:
+                        conversation.append({
+                            "role": "tool",
+                            "tool_call_id": r["tool_call_id"],
+                            "content": r["content"],
+                        })
+
+                # Regenerate report with new data
+                response = await self.call_llm(
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "根据所有查询结果（包括补充查询），重新生成一份完整的分析报告。",
+                        },
+                        *conversation,
+                    ],
+                    tools=None,
+                )
+                current_report = self._extract_content(response)
+                logger.info(f"AdvancedAgent: Report regenerated ({len(current_report)} chars)")
+
+        return current_report
 
     # ------------------------------------------------------------------
-    # Helpers
+    # Tool execution helper
+    # ------------------------------------------------------------------
+
+    async def _execute_tool(self, tc: dict, progress_callback: Callable | None) -> dict:
+        """Execute a single tool call and return the result."""
+        tool_name = tc["name"]
+        try:
+            args = json.loads(tc.get("arguments", "{}"))
+        except json.JSONDecodeError:
+            args = {}
+        try:
+            result = await self.tool_registry.call_tool(tool_name, args)
+            logger.info(f"  <- Tool result: {len(result)} chars")
+            if progress_callback:
+                q = json.dumps(args, ensure_ascii=False)[:80]
+                await progress_callback({"type": "query", "content": f"📊 查询: {q}"})
+            # Track SQL queries from the global state
+            from .. import state as _state
+            if _state._last_sql_queries:
+                self._sql_queries.extend(_state._last_sql_queries)
+                _state._last_sql_queries.clear()
+            return {"tool_call_id": tc["id"], "content": result}
+        except Exception as e:
+            err_msg = f"工具执行失败：{e}"
+            logger.error(f"  <- Tool error: {e}")
+            return {"tool_call_id": tc["id"], "content": err_msg}
+
+    # ------------------------------------------------------------------
+    # LLM response helpers
     # ------------------------------------------------------------------
 
     def _normalize(self, raw_response) -> dict:
