@@ -3,12 +3,15 @@
 The agent:
 1. Receives a user message
 2. Decides whether to call a tool or respond directly
-3. If calling a tool: executes it, observes the result, repeats from 2
+3. If calling a tool: executes it (parallel), observes the result, repeats from 2
 4. If responding: formats and returns the answer
+5. Loop detection: prevents repeated similar tool calls
+6. Context compression: summarizes old conversation after 3 iterations
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -34,15 +37,88 @@ class SimpleAgent:
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
 
+    # ------------------------------------------------------------------
+    # Normalize LLM response (provider-agnostic)
+    # ------------------------------------------------------------------
+
+    def _normalize(self, raw_response) -> dict:
+        """Convert any provider's response to a standard dict."""
+        if hasattr(raw_response, "choices"):
+            msg = raw_response.choices[0].message
+            tool_calls = []
+            if msg.tool_calls:
+                for tc in msg.tool_calls:
+                    tool_calls.append({
+                        "id": tc.id,
+                        "name": tc.function.name,
+                        "arguments": tc.function.arguments,
+                    })
+            return {
+                "content": msg.content or "",
+                "tool_calls": tool_calls,
+                "reasoning_content": getattr(msg, "reasoning_content", None),
+            }
+        raise ValueError(f"Unsupported LLM response type: {type(raw_response)}")
+
+    # ------------------------------------------------------------------
+    # Loop detection — prevent repeating the same tool call
+    # ------------------------------------------------------------------
+
+    def _is_stuck(self, tool_name: str, arguments: dict) -> bool:
+        """Detect if the agent is calling the same tool with similar args repeatedly."""
+        if not hasattr(self, "_tool_history"):
+            self._tool_history = []
+        self._tool_history.append((tool_name, arguments))
+
+        if len(self._tool_history) < 4:
+            return False
+
+        # Last 3 calls same tool
+        last_3 = self._tool_history[-3:]
+        if all(t[0] == tool_name for t in last_3):
+            questions = [t[1].get("question", "") for t in last_3]
+            # Check if questions are similar (all mention the same entities)
+            if len(set(questions)) < 2:
+                logger.warning(f"Loop detected: {tool_name} called 3x with similar questions")
+                return True
+        return False
+
+    # ------------------------------------------------------------------
+    # Context compression — summarize old conversation mid-loop
+    # ------------------------------------------------------------------
+
+    def _compress_history(self, conversation: list) -> list:
+        """Compress older messages when conversation grows too long."""
+        if len(conversation) < 8:
+            return conversation
+
+        # Keep: first system/schema message + last 4 messages
+        keep_front = conversation[:1]   # system message
+        keep_end = conversation[-4:]    # last 2 exchanges
+        removed = len(conversation) - len(keep_front) - len(keep_end)
+
+        return keep_front + [
+            {"role": "system", "content": f"历史上下文已压缩，已省略中间 {removed} 条消息。当前对话继续。"}
+        ] + keep_end
+
+    # ------------------------------------------------------------------
+    # Main loop
+    # ------------------------------------------------------------------
+
     async def run(self, messages: list[dict]) -> dict:
         """Run the agent loop on a conversation."""
         iteration = 0
         conversation = list(messages)
+        self._tool_history = []
         logger.info("Agent loop started")
 
         while iteration < self.max_iterations:
             iteration += 1
             start_time = time.time()
+
+            # Compress history every 3 iterations
+            if iteration > 1 and iteration % 3 == 0:
+                conversation = self._compress_history(conversation)
 
             # --- Step 1: Call LLM ---
             tools_def = self.tool_registry.to_openai_tools()
@@ -55,74 +131,79 @@ class SimpleAgent:
                 tools=self.tool_registry.to_openai_tools() if tools_def else None,
             )
 
-            response_message = response.choices[0].message
+            normalized = self._normalize(response)
 
             # --- Step 2: Check if LLM wants to call a tool ---
-            if not response_message.tool_calls:
-                logger.info(f"Agent loop: final answer ({len(response_message.content or '')} chars)")
+            if not normalized["tool_calls"]:
+                logger.info(f"Agent loop: final answer ({len(normalized['content'])} chars)")
                 result = {
                     "role": "assistant",
-                    "content": response_message.content or "",
+                    "content": normalized["content"],
                     "tool_calls": [],
                 }
-                # Preserve DeepSeek reasoning_content
-                rc = getattr(response_message, "reasoning_content", None)
-                if rc:
-                    result["reasoning_content"] = rc
+                if normalized["reasoning_content"]:
+                    result["reasoning_content"] = normalized["reasoning_content"]
                 return result
 
-            logger.info(f"Agent loop iter {iteration}: LLM requested {len(response_message.tool_calls)} tool call(s)")
+            logger.info(f"Agent loop iter {iteration}: LLM requested {len(normalized['tool_calls'])} tool call(s)")
 
-            # --- Step 3: Execute tool calls ---
+            # --- Step 3: Execute tool calls (parallel) ---
             assistant_msg = {
                 "role": "assistant",
-                "content": response_message.content or "Let me check the database...",
+                "content": normalized["content"] or "Let me check the database...",
                 "tool_calls": [
                     {
-                        "id": tc.id,
+                        "id": tc["id"],
                         "type": "function",
                         "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
                         },
                     }
-                    for tc in response_message.tool_calls
+                    for tc in normalized["tool_calls"]
                 ],
             }
-
-            # Preserve DeepSeek reasoning_content
-            rc = getattr(response_message, "reasoning_content", None)
-            if rc:
-                assistant_msg["reasoning_content"] = rc
+            if normalized["reasoning_content"]:
+                assistant_msg["reasoning_content"] = normalized["reasoning_content"]
 
             conversation.append(assistant_msg)
 
-            for tool_call in response_message.tool_calls:
-                tool_name = tool_call.function.name
+            # Execute all tool calls in parallel
+            async def execute_one(tc: dict) -> dict:
+                tool_name = tc["name"]
                 try:
-                    arguments = json.loads(tool_call.function.arguments)
+                    arguments = json.loads(tc["arguments"])
                 except json.JSONDecodeError:
                     arguments = {}
 
-                # Execute the tool
+                # Loop detection
+                if self._is_stuck(tool_name, arguments):
+                    return {
+                        "tool_call_id": tc["id"],
+                        "content": f"⚠️ 你已经在反复查询同一类数据（{tool_name}）。如果找不到结果，请直接告知用户无法获取该数据。",
+                    }
+
                 logger.info(f"  -> Calling tool: {tool_name}({json.dumps(arguments, ensure_ascii=False)[:100]})")
                 try:
                     result = await self.tool_registry.call_tool(tool_name, arguments)
                     logger.info(f"  <- Tool result: {len(result)} chars")
+                    return {"tool_call_id": tc["id"], "content": result}
                 except Exception as e:
-                    result = f"工具 {tool_name} 执行失败：{e}\n请调整参数后重试。"
+                    err = f"工具 {tool_name} 执行失败：{e}\n请调整参数后重试。"
                     logger.error(f"  <- Tool error: {e}")
+                    return {"tool_call_id": tc["id"], "content": err}
 
-                # Add tool result to conversation
+            results = await asyncio.gather(*[execute_one(tc) for tc in normalized["tool_calls"]])
+            for r in results:
                 conversation.append({
                     "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
+                    "tool_call_id": r["tool_call_id"],
+                    "content": r["content"],
                 })
 
             elapsed = time.time() - start_time
 
-        # Max iterations reached — build summary of what was done
+        # Max iterations reached — build summary
         tool_summary = []
         for msg in conversation:
             if msg.get("role") == "assistant" and msg.get("tool_calls"):
@@ -139,7 +220,4 @@ class SimpleAgent:
             summary += f"\n  · ...还有 {remaining} 次查询"
 
         msg = f"抱歉，处理时间过长，无法完成。\n\n已执行的查询：\n{summary}\n\n建议把问题拆成更小的步骤再问。"
-        return {
-            "role": "assistant",
-            "content": msg,
-        }
+        return {"role": "assistant", "content": msg}
