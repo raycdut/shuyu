@@ -78,7 +78,7 @@ async def handle_sql_query(
         result = connector.execute(sql, max_rows=max_rows)
         logger.info(f"SQL done: {result.row_count} rows returned")
         result_text = result.to_text(max_rows=20)
-        return f"[Q{qn}]\n{result_text}"
+        return f"数据来源标记:[Q{qn}]\n{result_text}"
     except Exception as e:
         logger.error(f"SQL execution error: {e}")
         logger.debug(f"Failed SQL: {sql}")
