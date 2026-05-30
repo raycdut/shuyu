@@ -56,12 +56,14 @@ class AdvancedAgent:
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
 
-    async def run(self, messages: list[dict]) -> dict:
+    async def run(self, messages: list[dict], progress_callback: Callable | None = None) -> dict:
         """Run the full Plan → ReAct → Reflect pipeline."""
         conversation = list(messages)
 
         # ============ Phase 1: Plan (no tools) ============
         logger.info("AdvancedAgent: Phase 1 — Plan")
+        if progress_callback:
+            await progress_callback({"type": "plan", "content": "📋 正在制定分析计划..."})
         plan_response = await self.call_llm(
             messages=[
                 {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
@@ -77,6 +79,8 @@ class AdvancedAgent:
 
         # ============ Phase 2: ReAct (with tools) ============
         logger.info("AdvancedAgent: Phase 2 — ReAct")
+        if progress_callback:
+            await progress_callback({"type": "react", "content": "🔍 正在按计划执行查询..."})
         exec_prompt = f"你正在执行以下分析计划：\n{plan_text}\n\n按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。"
         tools_def = self.tool_registry.to_openai_tools()
 
@@ -124,6 +128,9 @@ class AdvancedAgent:
                 try:
                     result = await self.tool_registry.call_tool(tool_name, args)
                     logger.info(f"  <- Tool result: {len(result)} chars")
+                    if progress_callback:
+                        q = json.dumps(args, ensure_ascii=False)[:80]
+                        await progress_callback({"type": "query", "content": f"📊 查询完成: {q}"})
                     return {"tool_call_id": tc["id"], "content": result}
                 except Exception as e:
                     return {"tool_call_id": tc["id"], "content": f"工具执行失败：{e}"}
@@ -135,6 +142,8 @@ class AdvancedAgent:
 
         # ============ Phase 3: Reflect (no tools) ============
         logger.info("AdvancedAgent: Phase 3 — Reflect")
+        if progress_callback:
+            await progress_callback({"type": "summarize", "content": "📝 正在汇总分析结果..."})
         reflect_response = await self.call_llm(
             messages=[
                 {"role": "system", "content": REFLECT_PROMPT},
@@ -144,6 +153,9 @@ class AdvancedAgent:
         )
         final = self._extract_content(reflect_response)
         logger.info(f"AdvancedAgent: Reflect complete ({len(final)} chars)")
+
+        if progress_callback:
+            await progress_callback({"type": "done", "content": final})
 
         return {"role": "assistant", "content": final, "tool_calls": []}
 

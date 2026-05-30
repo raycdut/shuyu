@@ -116,18 +116,65 @@ export default function App() {
     setIsLoading(true)
 
     try {
-      const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
-      setActiveSessionId(res.session_id)
+      if (mode === 'quality') {
+        // 深度分析模式：SSE 流式显示进度
+        const resp = await fetch('/api/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            session_id: activeSessionId || null,
+            db_id: activeDbId || null,
+            mode: 'quality'
+          }),
+        })
+        const reader = resp.body!.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
 
-      const agentMsg: Message = {
-        id: nextMsgId(),
-        role: 'assistant',
-        content: res.reply,
-        tool_calls: res.tool_calls,
-        sql_queries: res.sql_queries,
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue
+            try {
+              const event = JSON.parse(line.slice(6))
+
+              if (event.type === 'plan') {
+                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📋 ${event.content}` }])
+              } else if (event.type === 'query') {
+                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `🔍 ${event.content}` }])
+              } else if (event.type === 'summarize') {
+                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📝 ${event.content}` }])
+              } else if (event.type === 'done') {
+                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: event.content }])
+              } else if (event.type === 'thinking') {
+                // skip thinking message
+              }
+            } catch { /* skip malformed events */ }
+          }
+        }
+        setActiveSessionId(activeSessionId || 'stream-' + Date.now().toString(36))
+      } else {
+        // 快速模式：原有逻辑
+        const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
+        setActiveSessionId(res.session_id)
+
+        const agentMsg: Message = {
+          id: nextMsgId(),
+          role: 'assistant',
+          content: res.reply,
+          tool_calls: res.tool_calls,
+          sql_queries: res.sql_queries,
+        }
+        setMessages(prev => [...prev, agentMsg])
       }
-      setMessages(prev => [...prev, agentMsg])
-      loadSessions() // refresh session list
+      loadSessions()
     } catch (err: any) {
       const errorMsg: Message = {
         id: nextMsgId(),
