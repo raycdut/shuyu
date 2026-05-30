@@ -191,7 +191,11 @@ class AdvancedAgent:
     async def _phase_plan_reflect(
         self, plan_text: str, conversation: list, progress_callback: Callable | None
     ) -> str:
-        """Reflect on the plan, iterate up to 3 times if issues found."""
+        """Reflect on the plan, iterate up to 3 times if issues found.
+
+        If all rounds fail, ask the user for more information instead of
+        pushing through with a weak plan.
+        """
         max_rounds = 3
         current_plan = plan_text
 
@@ -232,19 +236,48 @@ class AdvancedAgent:
                     "collapsible": True,
                 })
 
-            if round_num < max_rounds - 1:
-                # Regenerate plan with reflection feedback
-                response = await self.call_llm(
+            if round_num == max_rounds - 1:
+                # All rounds failed — ask user for more information instead of
+                # pushing through with a flawed plan
+                logger.warning("AdvancedAgent: Plan failed all reflection rounds — requesting user input")
+                clarification = await self.call_llm(
                     messages=[
-                        {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
+                        {
+                            "role": "system",
+                            "content": (
+                                "你已多次尝试制定分析计划，但每次审核都发现问题。"
+                                "可能是因为用户的提问信息不足，无法制定合理的计划。\n\n"
+                                "请输出一段温和的说明，告诉用户当前的信息不足以制定完整的分析计划，"
+                                "并请用户提供更多信息：\n"
+                                "1. 具体想分析什么维度和指标\n"
+                                "2. 关注的时间范围\n"
+                                "3. 是否需要对比\n"
+                                "4. 其他帮助明确分析方向的信息\n\n"
+                                "注意：不要输出计划内容，只输出要求补充信息的说明。"
+                            ),
+                        },
                         *conversation,
                         {"role": "assistant", "content": current_plan},
-                        {"role": "user", "content": f"请根据以下审核意见修改分析计划：\n{reflect_text}"},
+                        {"role": "user", "content": f"审核意见：{reflect_text}"},
                     ],
                     tools=None,
                 )
-                current_plan = self._extract_content(response)
-                logger.info(f"AdvancedAgent: Plan revised ({len(current_plan)} chars)")
+                current_plan = self._extract_content(clarification)
+                logger.info(f"AdvancedAgent: Requesting user clarification ({len(current_plan)} chars)")
+                break
+
+            # Regenerate plan with reflection feedback
+            response = await self.call_llm(
+                messages=[
+                    {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
+                    *conversation,
+                    {"role": "assistant", "content": current_plan},
+                    {"role": "user", "content": f"请根据以下审核意见修改分析计划：\n{reflect_text}"},
+                ],
+                tools=None,
+            )
+            current_plan = self._extract_content(response)
+            logger.info(f"AdvancedAgent: Plan revised ({len(current_plan)} chars)")
 
         # Show final plan to frontend
         if progress_callback:
@@ -447,7 +480,8 @@ class AdvancedAgent:
             # Validate result quality
             has_data = any(len(r.get("content", "")) > 50 for r in results)
             has_error = any("执行失败" in r.get("content", "") or "错误" in r.get("content", "") for r in results)
-            logger.info(f"AdvancedAgent: Step attempt {attempt + 1} — has_data={has_data}, has_error={has_error}, tool_results=[{', '.join(f'{len(r.get("content",""))}ch' for r in results)}]")
+            sizes = ", ".join(f"{len(r.get('content', ''))}ch" for r in results)
+            logger.info(f"AdvancedAgent: Step attempt {attempt + 1} — has_data={has_data}, has_error={has_error}, tool_results=[{sizes}]")
 
             if has_data and not has_error:
                 # Step executed successfully

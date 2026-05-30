@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+# Project root = backend/app/config.py -> backend/ -> ../
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 class LLMConfig(BaseModel):
@@ -24,7 +28,7 @@ class SafetyConfig(BaseModel):
 
 
 class StorageConfig(BaseModel):
-    path: str = "./data/config.db"
+    path: str = str(_PROJECT_ROOT / "backend" / "data" / "config.db")
 
 
 class Config(BaseModel):
