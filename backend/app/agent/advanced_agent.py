@@ -13,15 +13,17 @@ import json
 import logging
 from typing import Any, Callable
 
+from .. import state
 from .tools.registry import ToolRegistry
 
 logger = logging.getLogger("shuyu.agent")
 
-PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库结构，制定详细的分析计划。
+PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库结构，制定分析计划。
 
 ## 严格规则
 - 不要查询数据，只制定计划
 - 不要写 SQL，只写分析思路
+- **如果一条 SQL 能解决问题，不要拆成多步**
 - 必须按下面的格式输出，不要自己发挥
 
 ## 输出格式（必须严格遵守）
@@ -30,9 +32,8 @@ PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库
 [一句话说明用户想分析什么]
 
 ## 分析步骤
-1. **第一步**：[分析思路，比如：按客户 group by 汇总订单数量，找出购买商品最多的客户] — [原因]
-2. **第二步**：[分析思路，比如：用上一步的客户ID去查订单明细表，获取购买的产品名称和数量] — [原因]
-3. **第三步**：[分析思路] — [原因]
+1. **第一步**：[分析思路] — [原因]
+2. **第二步**：[可选，只有确实需要多步时才写]
 ...
 """
 
@@ -224,7 +225,7 @@ class AdvancedAgent:
             logger.info(f"AdvancedAgent: Reflect complete ({len(final)} chars)")
 
         if progress_callback:
-            await progress_callback({"type": "done", "content": final})
+            await progress_callback({"type": "done", "content": final, "sql_queries": state._last_sql_queries})
 
         return {
             "role": "assistant",

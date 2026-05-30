@@ -162,7 +162,7 @@ export default function App() {
               } else if (event.type === 'summarize') {
                 setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📝 ${event.content}` }])
               } else if (event.type === 'done') {
-                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: event.content }])
+                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: event.content, sql_queries: event.sql_queries || [] }])
               } else if (event.type === 'session_id') {
                 setActiveSessionId(event.session_id)
               } else if (event.type === 'thinking') {
