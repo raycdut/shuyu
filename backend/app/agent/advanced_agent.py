@@ -282,7 +282,7 @@ class AdvancedAgent:
             if progress_callback:
                 await progress_callback({
                     "type": "step",
-                    "content": f"📋 第 {step_num}/{len(steps)} 步: {step_desc[:100]}",
+                    "content": f"📋 第 {step_num}/{len(steps)} 步: {step_desc}",
                     "step": step_num,
                     "total": len(steps),
                 })
