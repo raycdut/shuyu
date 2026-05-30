@@ -158,6 +158,17 @@ class SessionManager:
         if sess:
             sess.title = title
 
+    def clear_all(self) -> int:
+        """Delete ALL sessions from memory and SQLite. Returns count of deleted sessions."""
+        count = len(self._sessions)
+        self._sessions.clear()
+        if self._sqlite:
+            self._sqlite.execute("DELETE FROM messages")
+            self._sqlite.execute("DELETE FROM sessions")
+            self._sqlite.commit()
+        logger.info(f"Cleared all {count} sessions")
+        return count
+
     def cleanup_expired(self) -> None:
         now = time.time()
         expired = [

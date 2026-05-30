@@ -303,6 +303,7 @@ export default function App() {
           onDeleteSession={handleDeleteSession}
           onSelectDb={setActiveDbId}
           onDatabasesChange={loadDatabases}
+          onClearAllSessions={() => { handleNewSession(); loadSessions() }}
         />
 
         {/* 分隔线 */}

@@ -16,6 +16,7 @@ interface SidebarProps {
   onDeleteSession: (id: string) => void
   onSelectDb: (id: string | null) => void
   onDatabasesChange: () => void
+  onClearAllSessions?: () => void
 }
 
 const Sidebar = React.memo(function Sidebar({
@@ -30,9 +31,11 @@ const Sidebar = React.memo(function Sidebar({
   onDeleteSession,
   onSelectDb,
   onDatabasesChange,
+  onClearAllSessions,
 }: SidebarProps) {
   const [showDBModal, setShowDBModal] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [expandedDb, setExpandedDb] = useState<string | null>(null)
   const [dbTrees, setDbTrees] = useState<Record<string, SchemaTable[]>>({})
   const [loadingTree, setLoadingTree] = useState<string | null>(null)
@@ -107,16 +110,30 @@ const Sidebar = React.memo(function Sidebar({
         <div className="flex-1 overflow-y-auto">
           <div className="flex items-center justify-between px-3 py-2">
             <span className="text-xs text-ink-lighter font-kai tracking-wider">历史会话</span>
-            <button
-              onClick={onNewSession}
-              aria-label="新建会话"
-              className="p-1 rounded-sm text-ink-light hover:text-celadon hover:bg-smoke transition-colors"
-              title="新建会话"
-            >
+            <div className="flex items-center gap-1">
+              {sessions.length > 0 && (
+                <button
+                  onClick={() => setShowClearConfirm(true)}
+                  aria-label="清空所有会话"
+                  className="p-1 rounded-sm text-ink-lighter hover:text-cinnabar hover:bg-smoke transition-colors"
+                  title="清空所有会话"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                  </svg>
+                </button>
+              )}
+              <button
+                onClick={onNewSession}
+                aria-label="新建会话"
+                className="p-1 rounded-sm text-ink-light hover:text-celadon hover:bg-smoke transition-colors"
+                title="新建会话"
+              >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
+            </div>
           </div>
 
           {today.length > 0 && (
@@ -257,6 +274,26 @@ const Sidebar = React.memo(function Sidebar({
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirmDeleteId(null)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">取消</button>
               <button onClick={() => handleDelete(confirmDeleteId)} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 清空所有会话确认 */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={() => setShowClearConfirm(false)}>
+          <div className="bg-paper-light paper-shadow-md rounded-sm p-6 max-w-sm mx-4" onClick={e => e.stopPropagation()}>
+            <p className="text-sm text-ink mb-2">确定要清空所有会话？</p>
+            <p className="text-xs text-ink-lighter mb-4 font-kai">此操作不可恢复，共 {sessions.length} 个会话将被删除。</p>
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowClearConfirm(false)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">取消</button>
+              <button onClick={async () => {
+                try {
+                  await fetch('/api/sessions', { method: 'DELETE' })
+                  setShowClearConfirm(false)
+                  if (onClearAllSessions) onClearAllSessions()
+                } catch { /* ignore */ }
+              }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">清空</button>
             </div>
           </div>
         </div>
