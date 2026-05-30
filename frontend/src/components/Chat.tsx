@@ -18,7 +18,7 @@ const EXAMPLE_QUESTIONS = [
   '帮我分析一下数据',
 ]
 
-const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema }: ChatProps) {
+const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mode, onModeChange }: ChatProps) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -152,10 +152,31 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema }: C
             发送
           </button>
         </div>
-        <div className="text-center mt-1.5">
-          <span className="text-[10px] text-ink-lighter font-kai">
-            Ctrl+Enter 发送
-          </span>
+        {/* 模式切换 */}
+        <div className="flex items-center justify-between mt-2 max-w-4xl mx-auto">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onModeChange('fast')}
+              className={`text-xs px-2 py-0.5 rounded-sm transition-colors ${
+                mode === 'fast'
+                  ? 'bg-celadon/20 text-celadon-dark font-medium'
+                  : 'text-ink-lighter hover:text-ink'
+              }`}
+            >
+              ⚡ 快速
+            </button>
+            <button
+              onClick={() => onModeChange('quality')}
+              className={`text-xs px-2 py-0.5 rounded-sm transition-colors ${
+                mode === 'quality'
+                  ? 'bg-celadon/20 text-celadon-dark font-medium'
+                  : 'text-ink-lighter hover:text-ink'
+              }`}
+            >
+              🎯 深度分析
+            </button>
+          </div>
+          <span className="text-[10px] text-ink-lighter font-kai">Ctrl+Enter 发送</span>
         </div>
       </div>
     </div>
