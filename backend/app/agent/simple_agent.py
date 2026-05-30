@@ -36,6 +36,7 @@ class SimpleAgent:
         self.call_llm = call_llm_func
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
+        self._tool_history: list[tuple[str, dict]] = []
 
     # ------------------------------------------------------------------
     # Normalize LLM response (provider-agnostic)
@@ -64,10 +65,8 @@ class SimpleAgent:
     # Loop detection — prevent repeating the same tool call
     # ------------------------------------------------------------------
 
-    def _is_stuck(self, tool_name: str, arguments: dict) -> bool:
+    def is_stuck(self, tool_name: str, arguments: dict) -> bool:
         """Detect if the agent is calling the same tool with similar args repeatedly."""
-        if not hasattr(self, "_tool_history"):
-            self._tool_history = []
         self._tool_history.append((tool_name, arguments))
 
         if len(self._tool_history) < 4:
@@ -121,7 +120,7 @@ class SimpleAgent:
         """Run the agent loop on a conversation."""
         iteration = 0
         conversation = list(messages)
-        self._tool_history = []
+        self._tool_history.clear()
         logger.info("Agent loop started")
 
         while iteration < self.max_iterations:
@@ -189,7 +188,7 @@ class SimpleAgent:
                     arguments = {}
 
                 # Loop detection
-                if self._is_stuck(tool_name, arguments):
+                if self.is_stuck(tool_name, arguments):
                     return {
                         "tool_call_id": tc["id"],
                         "content": f"⚠️ 你已经在反复查询同一类数据（{tool_name}）。如果找不到结果，请直接告知用户无法获取该数据。",

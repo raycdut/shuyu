@@ -8,6 +8,7 @@ Quality mode for complex analysis:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Callable
@@ -58,10 +59,32 @@ class AdvancedAgent:
         self.call_llm = call_llm_func
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
+        self._tool_history: list[tuple[str, dict]] = []
+        self._sql_queries: list[str] = []
+
+    def _is_stuck(self, tool_name: str, arguments: dict) -> bool:
+        """Detect if the agent is calling the same tool with similar args repeatedly.
+
+        Ported from SimpleAgent.is_stuck to provide loop detection in ReAct phase.
+        """
+        self._tool_history.append((tool_name, arguments))
+
+        if len(self._tool_history) < 4:
+            return False
+
+        last_3 = self._tool_history[-3:]
+        if all(t[0] == tool_name for t in last_3):
+            questions = [t[1].get("question", "") for t in last_3]
+            if len(set(questions)) < 2:
+                logger.warning(f"AdvancedAgent: Loop detected — {tool_name} called 3x with similar questions")
+                return True
+        return False
 
     async def run(self, messages: list[dict], progress_callback: Callable | None = None) -> dict:
         """Run the full Plan → ReAct → Reflect pipeline."""
         conversation = list(messages)
+        self._tool_history.clear()
+        self._sql_queries.clear()
 
         # ============ Phase 1: Plan (no tools) ============
         logger.info("AdvancedAgent: Phase 1 — Plan")
@@ -84,10 +107,12 @@ class AdvancedAgent:
         logger.info("AdvancedAgent: Phase 2 — ReAct")
         if progress_callback:
             await progress_callback({"type": "react", "content": "🔍 正在按计划执行查询..."})
-        exec_prompt = f"你正在执行以下分析计划：\n{plan_text}\n\n按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。"
+        exec_prompt = f"你正在执行以下分析计划：\n{plan_text}\n\n按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。\n注意：不要重复查询已经获取过的数据。"
         tools_def = self.tool_registry.to_openai_tools()
 
         iteration = 0
+        tool_data_accumulated = 0  # total bytes of meaningful tool result data
+
         while iteration < self.max_iterations:
             iteration += 1
 
@@ -106,22 +131,28 @@ class AdvancedAgent:
                 conversation.append({"role": "assistant", "content": normalized["content"]})
                 break
 
-            # Exit loop if we already have enough data (>200 chars) and LLM is still probing
-            if iteration > 1:
-                tool_count = sum(1 for m in conversation if m.get("role") == "tool" and len(m.get("content","")) > 200)
-                if tool_count >= 2 and len(normalized["tool_calls"]) > 0:
-                    # Check if the LLM is asking about a table/column schema (probing)
-                    questions = [tc.get("arguments","") for tc in normalized["tool_calls"]]
-                    probing = any("字段" in q or "列名" in q or "column" in q.lower() or "describe" in q.lower() for q in questions)
-                    if probing:
-                        logger.warning(f"AdvancedAgent: Data already retrieved, breaking probing loop")
-                        break
+            # Loop detection: if is_stuck returns True, break the ReAct loop
+            # and let Reflect phase handle the incomplete answer
+            tool_looping = False
+            for tc in normalized["tool_calls"]:
+                try:
+                    args = json.loads(tc.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                if self._is_stuck(tc["name"], args):
+                    tool_looping = True
+                    break
+            if tool_looping:
+                logger.warning(f"AdvancedAgent: Loop detected at iteration {iteration}, breaking to Reflect")
+                conversation.append({
+                    "role": "assistant",
+                    "content": "已获取了足够的数据，准备汇总分析结果。"
+                })
+                break
 
             logger.info(f"AdvancedAgent: ReAct iteration {iteration} — {len(normalized['tool_calls'])} tool call(s)")
 
             # Execute tools (parallel)
-            from .simple_agent import SimpleAgent
-
             assistant_msg = {
                 "role": "assistant",
                 "content": normalized["content"] or "Let me check the database...",
@@ -149,24 +180,37 @@ class AdvancedAgent:
                 except Exception as e:
                     return {"tool_call_id": tc["id"], "content": f"工具执行失败：{e}"}
 
-            import asyncio
             results = await asyncio.gather(*[execute_one(tc) for tc in normalized["tool_calls"]])
             for r in results:
                 conversation.append({"role": "tool", "tool_call_id": r["tool_call_id"], "content": r["content"]})
+                tool_data_accumulated += len(r["content"])
 
-        # ============ Phase 3: Reflect (no tools) — only if needed ============
-        # If ReAct already produced a good answer, skip Reflect
+        # ============ Phase 3: Reflect ============
+        # Decide whether to skip Reflect:
+        # - Skip only if ReAct produced a non-looped final answer AND has substantive data
         final_react = None
         for msg in reversed(conversation):
             if msg.get("role") == "assistant" and not msg.get("tool_calls"):
                 final_react = msg["content"]
                 break
 
-        if final_react and len(final_react) > 200:
-            logger.info(f"AdvancedAgent: Skipping Reflect (ReAct answer is sufficient: {len(final_react)} chars)")
+        has_data = tool_data_accumulated > 0
+        has_plan_text = len(plan_text) > 50
+
+        # Skip Reflect only when: ReAct produced a meaningful answer, data was collected,
+        # and the answer mentions concrete numbers/results (not just a loop break message)
+        if final_react and has_data and len(final_react) > 50 and "已获取了足够的数据" not in final_react:
+            logger.info(
+                f"AdvancedAgent: Skipping Reflect "
+                f"(ReAct answer: {len(final_react)} chars, data: {tool_data_accumulated} bytes)"
+            )
             final = final_react
         else:
-            logger.info("AdvancedAgent: Phase 3 — Reflect")
+            logger.info(
+                f"AdvancedAgent: Phase 3 — Reflect "
+                f"(final_react={len(final_react) if final_react else 0} chars, "
+                f"data={tool_data_accumulated} bytes)"
+            )
             if progress_callback:
                 await progress_callback({"type": "summarize", "content": "📝 正在汇总分析结果..."})
             reflect_response = await self.call_llm(
@@ -182,7 +226,12 @@ class AdvancedAgent:
         if progress_callback:
             await progress_callback({"type": "done", "content": final})
 
-        return {"role": "assistant", "content": final, "tool_calls": []}
+        return {
+            "role": "assistant",
+            "content": final,
+            "tool_calls": [],
+            "sql_queries": self._sql_queries,
+        }
 
     # ------------------------------------------------------------------
     # Helpers

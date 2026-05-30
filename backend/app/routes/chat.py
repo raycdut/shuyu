@@ -112,9 +112,12 @@ async def chat(req: ChatRequest):
         result = await agent.run(agent_messages)
         content = result.get("content", "")
 
+        # Collect SQL queries — AdvancedAgent returns them in result, SimpleAgent uses global state
+        sql_queries = result.get("sql_queries") or state._last_sql_queries or []
+
         # Post-process: ensure [QN] markers appear when SQL was executed
-        if state._last_sql_queries and not re.search(r"\[Q\d+\]", content):
-            q_count = len(state._last_sql_queries)
+        if sql_queries and not re.search(r"\[Q\d+\]", content):
+            q_count = len(sql_queries)
             if q_count > 1:
                 content += f"\n---\n💡 以上数据来自 {q_count} 次查询"
             elif q_count == 1:
@@ -135,7 +138,7 @@ async def chat(req: ChatRequest):
         reply=content,
         session_id=session_id,
         tool_calls=result.get("tool_calls", []) if 'result' in locals() else [],
-        sql_queries=state._last_sql_queries,
+        sql_queries=result.get("sql_queries") or state._last_sql_queries or [],
     )
 
 
@@ -209,14 +212,22 @@ async def chat_stream(req: ChatRequest):
             if req.mode == "quality":
                 # Stream progress events
                 done_event = None
-                while True:
-                    event = await progress_queue.get()
-                    yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                    if event.get("type") == "done":
-                        done_event = event
-                        break
-                    elif event.get("type") == "error":
-                        break
+                try:
+                    while True:
+                        event = await progress_queue.get()
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                        if event.get("type") == "done":
+                            done_event = event
+                            break
+                        elif event.get("type") == "error":
+                            break
+                finally:
+                    # Ensure agent_task is properly cleaned up
+                    agent_task.cancel()
+                    try:
+                        await agent_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
 
                 content = done_event["content"] if done_event else ""
             else:
