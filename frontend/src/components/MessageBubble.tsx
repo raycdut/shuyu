@@ -7,6 +7,32 @@ interface MessageBubbleProps {
 
 const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
+  const [planOpen, setPlanOpen] = React.useState(false)
+
+  // 可折叠的分析计划
+  if (message.isPlan) {
+    return (
+      <div className="flex justify-start mb-4">
+        <div className="bubble-agent max-w-lg">
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="text-xs text-celadon-dark font-kai">📋 分析计划</span>
+          </div>
+          <div
+            className="text-xs text-ink-lighter font-kai cursor-pointer flex items-center gap-1 select-none"
+            onClick={() => setPlanOpen(!planOpen)}
+          >
+            {planOpen ? '▼ 收起' : '▶ 点击展开'}
+          </div>
+          {planOpen && (
+            <div className="mt-2 text-sm leading-relaxed text-ink whitespace-pre-wrap">
+              {renderContent(message.planContent || '')}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   const content = renderContent(message.content)
 
   return (
