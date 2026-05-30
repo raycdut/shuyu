@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 # Project root = backend/app/config.py -> backend/ -> ../
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_CONFIG_FILE = PROJECT_ROOT / "config.yaml"
+_CONFIG_FILE = PROJECT_ROOT / "backend" / "config.yaml"
 
 
 class LLMConfig(BaseModel):
