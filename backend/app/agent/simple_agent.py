@@ -92,14 +92,26 @@ class SimpleAgent:
         if len(conversation) < 8:
             return conversation
 
-        # Keep: first system/schema message + last 4 messages
-        keep_front = conversation[:1]   # system message
-        keep_end = conversation[-4:]    # last 2 exchanges
-        removed = len(conversation) - len(keep_front) - len(keep_end)
+        # Find safe cut point: keep last 2 complete exchange pairs
+        # (assistant+tool_calls → tool results → next round)
+        exchange_count = 0
+        cut_idx = len(conversation)
+        for i in range(len(conversation) - 1, -1, -1):
+            msg = conversation[i]
+            if msg.get("role") == "assistant" and msg.get("tool_calls"):
+                exchange_count += 1
+                if exchange_count >= 2:
+                    cut_idx = i
+                    break
 
-        return keep_front + [
+        if cut_idx >= len(conversation) - 2:
+            return conversation
+
+        keep = conversation[:1] + conversation[cut_idx:]
+        removed = len(conversation) - len(keep)
+        return keep[:1] + [
             {"role": "system", "content": f"历史上下文已压缩，已省略中间 {removed} 条消息。当前对话继续。"}
-        ] + keep_end
+        ] + keep[1:]
 
     # ------------------------------------------------------------------
     # Main loop
