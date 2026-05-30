@@ -163,13 +163,15 @@ export default function App() {
                 setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📝 ${event.content}` }])
               } else if (event.type === 'done') {
                 setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: event.content }])
+              } else if (event.type === 'session_id') {
+                setActiveSessionId(event.session_id)
               } else if (event.type === 'thinking') {
                 // skip thinking message
               }
             } catch { /* skip */ }
           }
         }
-        setActiveSessionId(activeSessionId || 'stream-' + Date.now().toString(36))
+        // session_id is set by the 'session_id' SSE event during streaming
       } else {
         // 快速模式：原有逻辑
         const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
@@ -195,7 +197,7 @@ export default function App() {
     } finally {
       setIsLoading(false)
     }
-  }, [activeSessionId, activeDbId, isLoading])
+  }, [activeSessionId, activeDbId, isLoading, mode])
 
   // --- 选择会话 ---
   const handleSelectSession = async (sessionId: string) => {

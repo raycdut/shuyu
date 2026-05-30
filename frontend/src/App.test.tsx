@@ -56,7 +56,7 @@ describe('App', () => {
 
   it('renders chat input area', () => {
     render(<App />)
-    expect(screen.getByPlaceholderText('输入你的问题…')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('给 Shuyu 发送消息')).toBeInTheDocument()
   })
 
   it('shows example questions in empty state', () => {
@@ -74,11 +74,9 @@ describe('App', () => {
     })
 
     render(<App />)
-    const input = screen.getByPlaceholderText('输入你的问题…')
-    const sendBtn = screen.getByText('发送')
-
+    const input = screen.getByPlaceholderText('给 Shuyu 发送消息')
     fireEvent.change(input, { target: { value: '帮我查一下数据' } })
-    fireEvent.click(sendBtn)
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
 
     // User message should appear
     expect(await screen.findByText('帮我查一下数据')).toBeInTheDocument()
@@ -90,11 +88,9 @@ describe('App', () => {
     mockApi.sendMessage.mockRejectedValue(new Error('网络错误'))
 
     render(<App />)
-    const input = screen.getByPlaceholderText('输入你的问题…')
-    const sendBtn = screen.getByText('发送')
-
+    const input = screen.getByPlaceholderText('给 Shuyu 发送消息')
     fireEvent.change(input, { target: { value: '查数据' } })
-    fireEvent.click(sendBtn)
+    fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
 
     expect(await screen.findByText(/请求失败/)).toBeInTheDocument()
     expect(screen.getByText(/网络错误/)).toBeInTheDocument()
@@ -138,7 +134,7 @@ describe('App', () => {
     })
 
     render(<App />)
-    const input = screen.getByPlaceholderText('输入你的问题…')
+    const input = screen.getByPlaceholderText('给 Shuyu 发送消息')
 
     fireEvent.change(input, { target: { value: 'Ctrl+Enter 发送测试' } })
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })

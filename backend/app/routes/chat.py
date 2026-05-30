@@ -230,6 +230,8 @@ async def chat_stream(req: ChatRequest):
                         pass
 
                 content = done_event["content"] if done_event else ""
+                # Send session_id so frontend can continue the conversation
+                yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id})}\n\n"
             else:
                 # Fast mode: wait then return
                 result = await agent_task
