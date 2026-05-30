@@ -49,6 +49,7 @@ async def handle_sql_query(
 
     # Track SQL for frontend display
     from ... import state
+    qn = len(state._last_sql_queries) + 1
     if state._last_sql_queries is not None:
         state._last_sql_queries.append(sql)
 
@@ -76,7 +77,8 @@ async def handle_sql_query(
         logger.info("Executing SQL...")
         result = connector.execute(sql, max_rows=max_rows)
         logger.info(f"SQL done: {result.row_count} rows returned")
-        return result.to_text(max_rows=20)
+        result_text = result.to_text(max_rows=20)
+        return f"[Q{qn}]\n{result_text}"
     except Exception as e:
         logger.error(f"SQL execution error: {e}")
         logger.debug(f"Failed SQL: {sql}")

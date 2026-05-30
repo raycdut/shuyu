@@ -164,13 +164,25 @@ function renderTextLine(line: string, key: number): JSX.Element {
   return <div key={key} className="mb-0.5">{renderInline(line)}</div>
 }
 
-/** 渲染行内 Markdown：加粗、斜体、行内代码 */
+/** 渲染行内 Markdown：加粗、斜体、行内代码、查询标记 */
 function renderInline(text: string): JSX.Element[] {
   const parts: JSX.Element[] = []
   let remaining = text
   let idx = 0
 
   while (remaining.length > 0) {
+    // 查询标记 [Q1] [Q2]
+    const qMatch = remaining.match(/\[Q(\d+)\]/)
+    if (qMatch && qMatch.index !== undefined) {
+      if (qMatch.index > 0) parts.push(<span key={idx++}>{qMatch.input?.slice(0, qMatch.index)}</span>)
+      parts.push(
+        <span key={idx++} className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-celadon/20 text-celadon-dark text-[10px] font-bold leading-none">
+          {qMatch[1]}
+        </span>
+      )
+      remaining = remaining.slice((qMatch.index || 0) + qMatch[0].length)
+      continue
+    }
     // 行内代码 `code`
     const codeMatch = remaining.match(/`([^`]+)`/)
     if (codeMatch && codeMatch.index !== undefined) {
