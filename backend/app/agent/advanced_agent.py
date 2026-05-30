@@ -140,19 +140,30 @@ class AdvancedAgent:
             for r in results:
                 conversation.append({"role": "tool", "tool_call_id": r["tool_call_id"], "content": r["content"]})
 
-        # ============ Phase 3: Reflect (no tools) ============
-        logger.info("AdvancedAgent: Phase 3 — Reflect")
-        if progress_callback:
-            await progress_callback({"type": "summarize", "content": "📝 正在汇总分析结果..."})
-        reflect_response = await self.call_llm(
-            messages=[
-                {"role": "system", "content": REFLECT_PROMPT},
-                *conversation,
-            ],
-            tools=None,
-        )
-        final = self._extract_content(reflect_response)
-        logger.info(f"AdvancedAgent: Reflect complete ({len(final)} chars)")
+        # ============ Phase 3: Reflect (no tools) — only if needed ============
+        # If ReAct already produced a good answer, skip Reflect
+        final_react = None
+        for msg in reversed(conversation):
+            if msg.get("role") == "assistant" and not msg.get("tool_calls"):
+                final_react = msg["content"]
+                break
+
+        if final_react and len(final_react) > 200:
+            logger.info(f"AdvancedAgent: Skipping Reflect (ReAct answer is sufficient: {len(final_react)} chars)")
+            final = final_react
+        else:
+            logger.info("AdvancedAgent: Phase 3 — Reflect")
+            if progress_callback:
+                await progress_callback({"type": "summarize", "content": "📝 正在汇总分析结果..."})
+            reflect_response = await self.call_llm(
+                messages=[
+                    {"role": "system", "content": REFLECT_PROMPT},
+                    *conversation,
+                ],
+                tools=None,
+            )
+            final = self._extract_content(reflect_response)
+            logger.info(f"AdvancedAgent: Reflect complete ({len(final)} chars)")
 
         if progress_callback:
             await progress_callback({"type": "done", "content": final})
