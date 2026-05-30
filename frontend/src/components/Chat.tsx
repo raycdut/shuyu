@@ -128,8 +128,9 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
       </div>
 
       {/* 输入区域 */}
-      <div className="flex-shrink-0 px-4 py-3 bg-white/60 ink-border border-b-0 border-x-0">
-        <div className="flex items-end gap-2 max-w-4xl mx-auto">
+      <div className="flex-shrink-0 px-4 pt-3 pb-2 bg-white/60 ink-border border-b-0 border-x-0">
+        <div className="max-w-4xl mx-auto">
+          {/* 输入框 */}
           <textarea
             ref={inputRef}
             value={input}
@@ -137,46 +138,57 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
             onKeyDown={handleKeyDown}
             placeholder="输入你的问题…"
             rows={1}
-            className="flex-1 ink-input resize-none min-h-[56px] max-h-[200px] py-3 px-3 text-sm leading-relaxed"
+            className="w-full ink-input resize-none min-h-[52px] max-h-[200px] py-3 px-4 text-sm leading-relaxed rounded-xl"
             disabled={isLoading}
           />
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || isLoading}
-            className="btn-celadon flex items-center gap-1.5 h-[40px]"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="22" y1="2" x2="11" y2="13" />
-              <polygon points="22 2 15 22 11 13 2 9 22 2" />
-            </svg>
-            发送
-          </button>
-        </div>
-        {/* 模式切换 */}
-        <div className="flex items-center justify-between mt-2 max-w-4xl mx-auto">
-          <div className="flex items-center gap-2">
+          {/* 底部工具栏 */}
+          <div className="flex items-center justify-between mt-2">
+            {/* 左侧：模式切换 */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onModeChange('fast')}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full transition-colors ${
+                  mode === 'fast'
+                    ? 'bg-celadon/20 text-celadon-dark font-medium'
+                    : 'text-ink-lighter hover:text-ink'
+                }`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                </svg>
+                快速
+              </button>
+              <button
+                onClick={() => onModeChange('quality')}
+                className={`flex items-center gap-1.5 text-xs px-3 py-1 rounded-full transition-colors ${
+                  mode === 'quality'
+                    ? 'bg-celadon/20 text-celadon-dark font-medium'
+                    : 'text-ink-lighter hover:text-ink'
+                }`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
+                深度分析
+              </button>
+            </div>
+            {/* 右侧：发送按钮 */}
             <button
-              onClick={() => onModeChange('fast')}
-              className={`text-xs px-2 py-0.5 rounded-sm transition-colors ${
-                mode === 'fast'
-                  ? 'bg-celadon/20 text-celadon-dark font-medium'
-                  : 'text-ink-lighter hover:text-ink'
+              onClick={handleSend}
+              disabled={!input.trim() || isLoading}
+              className={`flex items-center justify-center w-9 h-9 rounded-xl transition-all ${
+                input.trim() && !isLoading
+                  ? 'bg-celadon text-white shadow-sm hover:shadow-md'
+                  : 'bg-smoke text-ink-lighter cursor-not-allowed'
               }`}
             >
-              ⚡ 快速
-            </button>
-            <button
-              onClick={() => onModeChange('quality')}
-              className={`text-xs px-2 py-0.5 rounded-sm transition-colors ${
-                mode === 'quality'
-                  ? 'bg-celadon/20 text-celadon-dark font-medium'
-                  : 'text-ink-lighter hover:text-ink'
-              }`}
-            >
-              🎯 深度分析
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
             </button>
           </div>
-          <span className="text-[10px] text-ink-lighter font-kai">Ctrl+Enter 发送</span>
         </div>
       </div>
     </div>
