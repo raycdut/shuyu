@@ -20,23 +20,38 @@ from .tools.registry import ToolRegistry
 
 logger = logging.getLogger("shuyu.agent")
 
-PLAN_PROMPT = """你是数据分析规划师。根据用户的问题和数据库结构，制定分析计划。
+PLAN_PROMPT = """你是数据分析规划师。根据用户的提问和下方数据库结构，制定分析计划。
+
+## 可用数据库
+<database_schema>
+请在下方 `<database>` 标签中查找可用的表和字段。
+</database_schema>
 
 ## 严格规则
-- 不要查询数据，只制定计划
-- 每步必须写出具体 SQL 思路，包括表名、关联字段、聚合方式
-- 如果一条 SQL 能解决问题，不要拆成多步
-- 必须按下面的格式输出
+- 只使用上方 `<database>` 中列出的表和字段，不要编造不存在的表或字段
+- 输出完整的、可直接执行的 SQL，写在 ```sql 代码块中
+- 如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分
+- 如果表结构不足以回答问题，输出「缺少必要数据：xxx」
+- 不要调用工具，只写计划
 
-## 输出格式
+## 输出格式（必须严格遵循）
 
 ## 分析目标
 [一句话说明用户想分析什么]
 
 ## 分析步骤
-1. **第一步**：[SQL 思路：FROM 哪个表 JOIN 哪个表，用什么字段 GROUP BY/ORDER BY] — [原因]
-2. **第二步**：[可选，只有确实需要多步时才写]
-...
+1. **第 1 步**
+   - 目的：[为什么查这个]
+   - SQL：
+   ```sql
+   你的完整 SQL，可直接执行
+   ```
+2. **第 2 步**（可选）
+   - 目的：
+   - SQL：
+   ```sql
+   ...
+   ```
 """
 
 PLAN_REFLECT_PROMPT = """你是数据分析规划审核专家。请检查下面的分析计划是否合理。
@@ -239,23 +254,67 @@ class AdvancedAgent:
     # Phase 2: Step-by-step execution
     # ------------------------------------------------------------------
 
-    def _parse_plan_steps(self, plan_text: str) -> list[str]:
-        """Extract individual steps from the plan."""
+    def _parse_plan_steps(self, plan_text: str) -> list[dict]:
+        """Extract steps + SQL from the plan.
+
+        Returns list of dicts: [{"purpose": str, "sql": str | None}]
+        """
         steps = []
-        # Match lines like "1. **第一步**:" or "1. **Step 1**:" or "- **第一步**:"
-        in_steps = False
+        current_purpose = None
+        in_code_block = False
+        code_buffer = []
+
         for line in plan_text.split("\n"):
-            step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*[:：]?\s*(.*)", line)
+            # Detect ```sql or ``` code block start/end
+            if line.strip().startswith("```"):
+                if in_code_block:
+                    # End of code block
+                    sql = "\n".join(code_buffer).strip()
+                    if current_purpose is not None and sql:
+                        steps.append({"purpose": current_purpose, "sql": sql})
+                    elif sql:
+                        # SQL without a preceding purpose line — still capture it
+                        steps.append({"purpose": sql[:80], "sql": sql})
+                    code_buffer = []
+                    in_code_block = False
+                else:
+                    in_code_block = True
+                    code_buffer = []
+                continue
+
+            if in_code_block:
+                code_buffer.append(line)
+                continue
+
+            # Match step header like "1. **第 1 步**" or "1. **Step 1**"
+            step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*", line)
             if step_match:
-                in_steps = True
-                steps.append(step_match.group(1).strip())
-            elif in_steps and re.match(r"^\s*\d+\.", line):
-                # Another numbered line that might be a header, not a step
-                pass
-            elif in_steps and line.strip() and not line.strip().startswith("#"):
-                # Continuation of the last step
-                if steps and not line.strip().startswith("-"):
-                    steps[-1] += " " + line.strip()
+                current_purpose = line[step_match.end():].strip()
+                # Remove leading dash or colon
+                current_purpose = re.sub(r"^[:：\s-]+\s*", "", current_purpose)
+                # Check if the rest of the line has purpose text
+                if not current_purpose:
+                    current_purpose = f"Step {len(steps) + 1}"
+                continue
+
+            # Detect "- 目的：xxx" lines
+            purpose_match = re.match(r"^\s*-\s*目的[:：]?\s*(.*)", line)
+            if purpose_match and purpose_match.group(1).strip():
+                current_purpose = purpose_match.group(1).strip()
+                continue
+
+        # If the plan has no code blocks, fall back to the old text-based extraction
+        if not steps:
+            in_steps = False
+            for line in plan_text.split("\n"):
+                step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*[:：]?\s*(.*)", line)
+                if step_match:
+                    in_steps = True
+                    steps.append({"purpose": step_match.group(1).strip(), "sql": None})
+                elif in_steps and line.strip() and not line.strip().startswith("#"):
+                    if steps and not line.strip().startswith("-"):
+                        steps[-1]["purpose"] += " " + line.strip()
+
         return steps
 
     async def _phase_execute(
@@ -275,11 +334,15 @@ class AdvancedAgent:
         all_ok = True
         completed = 0
 
-        for step_idx, step_desc in enumerate(steps):
+        for step_idx, step in enumerate(steps):
             step_num = step_idx + 1
-            logger.info(f"AdvancedAgent: Executing step {step_num}/{len(steps)}: {step_desc[:80]}")
+            purpose = step.get("purpose", "")
+            sql = step.get("sql")
+            display = sql[:80] + "..." if sql else purpose[:80]
+            logger.info(f"AdvancedAgent: Executing step {step_num}/{len(steps)}: {display}")
 
             if progress_callback:
+                step_desc = purpose if purpose else (sql[:100] if sql else "")
                 await progress_callback({
                     "type": "step",
                     "content": f"📋 第 {step_num}/{len(steps)} 步: {step_desc}",
@@ -287,13 +350,23 @@ class AdvancedAgent:
                     "total": len(steps),
                 })
 
-            step_prompt = (
-                f"你正在执行分析计划的第 {step_num} 步。\n"
-                f"当前步骤：{step_desc}\n\n"
-                f"完整计划：\n{plan_text}\n\n"
-                f"执行这一步，调用 query_database 工具查询。"
-                f"完成后输出这一步的阶段性发现。"
-            )
+            if sql:
+                # Plan already has SQL — inject it directly
+                step_prompt = (
+                    f"你正在执行分析计划的第 {step_num} 步。\n"
+                    f"目的：{purpose}\n\n"
+                    f"计划的 SQL（请直接使用，不要修改）：\n"
+                    f"```sql\n{sql}\n```\n\n"
+                    f"调用 query_database 工具执行上述 SQL，完成后输出这一步的发现。"
+                )
+            else:
+                step_prompt = (
+                    f"你正在执行分析计划的第 {step_num} 步。\n"
+                    f"当前步骤：{purpose}\n\n"
+                    f"完整计划：\n{plan_text}\n\n"
+                    f"执行这一步，调用 query_database 工具查询。"
+                    f"完成后输出这一步的阶段性发现。"
+                )
 
             step_ok = await self._execute_step(step_prompt, conversation, progress_callback)
 

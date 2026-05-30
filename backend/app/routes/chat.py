@@ -16,7 +16,6 @@ from .. import state
 from ..agent.tools.registry import Tool
 from ..agent.tools.sql_tool import handle_sql_query
 from ..db.duckdb import DuckDBConnector
-from ..db.schema import build_schema_light
 from ..db.schema import build_schema_prompt
 from ..client import call_llm
 from ..models.chat import ChatRequest, ChatResponse
@@ -81,7 +80,7 @@ async def chat(req: ChatRequest):
                 )
                 state._active_connector.connect()
                 tables = state._active_connector.get_schema()
-                schema_text = build_schema_light(tables)
+                schema_text = build_schema_prompt(tables)
                 logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
                 # Cache in session
@@ -183,7 +182,7 @@ async def chat_stream(req: ChatRequest):
                     )
                     state._active_connector.connect()
                     tables = state._active_connector.get_schema()
-                    schema_text = build_schema_light(tables)
+                    schema_text = build_schema_prompt(tables)
                     agent_messages.insert(0, {
                         "role": "system",
                         "content": f"<database name=\"{db_entry['name']}\">\n{schema_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
