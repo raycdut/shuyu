@@ -19,7 +19,7 @@ from .tools.registry import ToolRegistry
 logger = logging.getLogger("shuyu.agent")
 
 
-class AgentLoop:
+class SimpleAgent:
     """Simple ReAct agent loop with tool calling support."""
 
     def __init__(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 
@@ -105,6 +106,14 @@ async def chat(req: ChatRequest):
     try:
         result = await state.agent_loop.run(agent_messages)
         content = result.get("content", "")
+
+        # Post-process: ensure [QN] markers appear when SQL was executed
+        if state._last_sql_queries and not re.search(r"\[Q\d+\]", content):
+            q_count = len(state._last_sql_queries)
+            if q_count > 1:
+                content += f"\n---\n💡 以上数据来自 {q_count} 次查询"
+            elif q_count == 1:
+                content = content.replace("数据", f"[Q1]数据", 1) if "数据" in content else content
     except Exception as e:
         content = f"❌ 请求失败：{e}"
     finally:

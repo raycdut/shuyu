@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import state
-from .agent.simple_agent import AgentLoop
+from .agent.simple_agent import SimpleAgent
 from .agent.tools.registry import Tool, ToolRegistry
 from .config import load_config
 from .persistence import init_sqlite
@@ -119,7 +119,7 @@ async def lifespan(app: FastAPI):
         system_prompt = system_prompt.replace("</rules>", "    <rule>你只能查询数据，不能修改</rule>\n  </rules>")
     logger.info("System prompt loaded from DB" if state._sqlite and row else "System prompt loaded (fallback)")
     logger.info("Creating ReAct agent loop...")
-    state.agent_loop = AgentLoop(
+    state.agent_loop = SimpleAgent(
         tool_registry=state.tool_registry,
         call_llm_func=lambda **kw: call_llm(**kw),
         system_prompt=system_prompt,

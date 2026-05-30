@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app.agent.simple_agent import AgentLoop
+from app.agent.simple_agent import SimpleAgent
 from app.agent.tools.registry import Tool, ToolRegistry
 
 
@@ -50,7 +50,7 @@ async def test_direct_answer_no_tool_call(tool_registry):
             choices = [FakeChoice()]
         return FakeResp()
 
-    loop = AgentLoop(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    loop = SimpleAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
     result = await loop.run([{"role": "user", "content": "你好"}])
     assert result["content"] == "你好！我是助手。"
 
@@ -92,7 +92,7 @@ async def test_single_tool_call(tool_registry):
             "message": type("M", (), {"content": "ECHO: hello", "tool_calls": None})()
         })()]})()
 
-    loop = AgentLoop(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    loop = SimpleAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
     result = await loop.run([{"role": "user", "content": "echo hello"}])
     assert "ECHO: hello" in result["content"]
 
@@ -119,7 +119,7 @@ async def test_max_iterations(tool_registry):
             ]
         return type("R", (), {"choices": [type("C", (), {"message": FC()})()]})()
 
-    loop = AgentLoop(
+    loop = SimpleAgent(
         tool_registry=tool_registry,
         call_llm_func=infinite_llm,
         system_prompt="助手",
@@ -161,6 +161,6 @@ async def test_tool_call_json_error(tool_registry):
             return await bad_json_llm(**kw)
         return await final_llm(**kw)
 
-    loop = AgentLoop(tool_registry=tool_registry, call_llm_func=combined_llm, system_prompt="助手")
+    loop = SimpleAgent(tool_registry=tool_registry, call_llm_func=combined_llm, system_prompt="助手")
     result = await loop.run([{"role": "user", "content": "hi"}])
     assert result["content"] == "done"
