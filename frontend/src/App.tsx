@@ -144,6 +144,7 @@ export default function App() {
             if (!line.startsWith('data: ')) continue
             try {
               const event = JSON.parse(line.slice(6))
+              console.log('[SSE]', event.type, (event.content || '').slice(0, 60))
 
               if (event.type === 'plan' && event.collapsible) {
                 // 可折叠的分析计划

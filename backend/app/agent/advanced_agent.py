@@ -181,6 +181,7 @@ class AdvancedAgent:
         )
         plan_text = self._extract_content(response)
         logger.info(f"AdvancedAgent: Plan generated ({len(plan_text)} chars)")
+        logger.info(f"AdvancedAgent: Plan text preview:\n{plan_text[:500]}")
         return plan_text
 
     # ------------------------------------------------------------------
@@ -205,7 +206,9 @@ class AdvancedAgent:
                 tools=None,
             )
             reflect_text = self._extract_content(reflect_response)
+            logger.info(f"AdvancedAgent: Plan reflect input:\n{current_plan[:300]}")
             logger.info(f"AdvancedAgent: Plan reflect result ({len(reflect_text)} chars)")
+            logger.info(f"AdvancedAgent: Plan reflect verdict:\n{reflect_text[:300]}")
 
             # Check if plan is approved
             if "审核结论" in reflect_text and "合理" in reflect_text:
@@ -444,6 +447,7 @@ class AdvancedAgent:
             # Validate result quality
             has_data = any(len(r.get("content", "")) > 50 for r in results)
             has_error = any("执行失败" in r.get("content", "") or "错误" in r.get("content", "") for r in results)
+            logger.info(f"AdvancedAgent: Step attempt {attempt + 1} — has_data={has_data}, has_error={has_error}, tool_results=[{', '.join(f'{len(r.get("content",""))}ch' for r in results)}]")
 
             if has_data and not has_error:
                 # Step executed successfully
@@ -562,6 +566,7 @@ class AdvancedAgent:
         )
         report = self._extract_content(response)
         logger.info(f"AdvancedAgent: Report generated ({len(report)} chars)")
+        logger.info(f"AdvancedAgent: Report preview:\n{report[:300]}")
         return report
 
     # ------------------------------------------------------------------
@@ -665,6 +670,8 @@ class AdvancedAgent:
                 current_report = self._extract_content(response)
                 logger.info(f"AdvancedAgent: Report regenerated ({len(current_report)} chars)")
 
+        logger.info(f"AdvancedAgent: Report reflect final ({len(current_report)} chars)")
+        logger.info(f"AdvancedAgent: Report reflect final preview:\n{current_report[:300]}")
         return current_report
 
     # ------------------------------------------------------------------
