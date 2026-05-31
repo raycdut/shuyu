@@ -1,5 +1,19 @@
 # 变更日志
 
+## [2026-05-31] 新增 backend/seeds 数据库初始化脚本
+
+### 变更内容
+在 `backend/seeds/` 下创建数据库初始化脚本目录，方便数据库初始化和管理。
+
+#### 新增文件
+- **`backend/seeds/seed_all.py`**: 主编排脚本，按顺序执行所有 seed 操作
+- **`backend/seeds/create_admin.py`**: 创建初始管理员用户（支持交互式和 CLI 模式）
+- **`backend/seeds/reset_prompts.py`**: 将所有 Prompt 重置为出厂默认值（支持单类别重置、dry-run 预览）
+- **`backend/seeds/sql/seed_settings.sql`**: 默认安全设置 SQL 脚本
+- **`backend/seeds/sql/seed_prompts.sql`**: Prompts 表 DDL 参考 SQL（实际内容由 Python 脚本管理）
+
+**注意**: seeds 脚本不会写入 LLM 配置，LLM 提供商配置由用户通过管理页面自行添加。
+
 ## [2026-05-31] 移除个人数据看板功能
 
 ### 背景
