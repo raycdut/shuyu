@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
-import { useStore } from '../store'
+import { useSessionStore } from '../store/sessionStore'
+import { useUIStore } from '../store/uiStore'
 import { api } from '../api'
 
 /**
@@ -7,13 +8,12 @@ import { api } from '../api'
  * 负责会话的增删改查逻辑
  */
 export function useSessions() {
-  const {
-    setSessions,
-    setActiveSessionId,
-    setMessages,
-    setError,
-    activeSessionId,
-  } = useStore()
+  const setSessions = useSessionStore(s => s.setSessions)
+  const setActiveSessionId = useSessionStore(s => s.setActiveSessionId)
+  const setMessages = useSessionStore(s => s.setMessages)
+  const activeSessionId = useSessionStore(s => s.activeSessionId)
+
+  const setError = useUIStore(s => s.setError)
 
   /**
    * 加载所有会话

@@ -252,7 +252,8 @@ async def handle_query_database(question: str = "", sql: str = "") -> str:
     schema_text = _state.get_request_schema_prompt()
     if not schema_text:
         tables = connector.get_schema()
-        schema_text = _build_schema(tables)
+        db_id = _state.get_request_active_db_id()
+        schema_text = _build_schema(tables, db_id)
 
     # If sql is provided directly, execute it without the SQL generation step
     if sql:

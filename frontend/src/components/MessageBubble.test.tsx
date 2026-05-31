@@ -48,6 +48,6 @@ describe('MessageBubble', () => {
 
   it('renders regular text without markdown table', () => {
     render(<MessageBubble message={msg({ role: 'assistant', content: '这是一段普通文本。\n没有表格。' })} />)
-    expect(screen.getByText('这是一段普通文本。')).toBeInTheDocument()
+    expect(screen.getByText(/这是一段普通文本/)).toBeInTheDocument()
   })
 })

@@ -49,6 +49,10 @@ request_query_results: contextvars.ContextVar[list[dict] | None] = contextvars.C
     "request_query_results",
     default=None,
 )
+request_active_db_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_active_db_id",
+    default=None,
+)
 
 
 def get_request_connector() -> DatabaseConnector | None:
@@ -69,6 +73,11 @@ def get_request_sql_queries() -> list[str]:
 def get_request_query_results() -> list[dict]:
     """Get collected structured query results for the current request context."""
     return request_query_results.get() or []
+
+
+def get_request_active_db_id() -> str | None:
+    """Get the active database ID for the current request context."""
+    return request_active_db_id.get()
 
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"

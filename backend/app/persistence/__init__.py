@@ -70,7 +70,8 @@ def init_sqlite() -> None:
             db_name           TEXT,
             include_tables    TEXT,
             exclude_tables    TEXT,
-            is_active         INTEGER DEFAULT 0
+            is_active         INTEGER DEFAULT 0,
+            schema_status     TEXT DEFAULT 'pending'
         );
         CREATE TABLE IF NOT EXISTS sessions (
             id         TEXT PRIMARY KEY,
@@ -120,8 +121,14 @@ def init_sqlite() -> None:
     except Exception:
         pass
 
+    # ---- Dashboard tables ----
+    _migrate_dashboard_tables()
+
     # ---- Auth tables ----
     _migrate_auth_tables()
+
+    # ---- Schema tables ----
+    _migrate_schema_tables()
 
     # ---- Config tables ----
     _migrate_config_tables()
@@ -148,6 +155,46 @@ def _migrate_auth_tables():
     """)
     try:
         state._sqlite.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id)")
+    except Exception:
+        pass
+    state._sqlite.commit()
+
+
+def _migrate_schema_tables():
+    """Create imported_tables + imported_columns tables for schema management."""
+    state._sqlite.executescript("""
+        CREATE TABLE IF NOT EXISTS imported_tables (
+            id              TEXT PRIMARY KEY,
+            database_id     TEXT NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+            table_name      TEXT NOT NULL,
+            table_type      TEXT DEFAULT 'TABLE',
+            row_count       INTEGER,
+            description     TEXT DEFAULT '',
+            description_en  TEXT DEFAULT '',
+            raw_ddl         TEXT,
+            created_at      REAL NOT NULL,
+            updated_at      REAL NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_tables_db_table ON imported_tables(database_id, table_name);
+        CREATE TABLE IF NOT EXISTS imported_columns (
+            id               TEXT PRIMARY KEY,
+            table_id         TEXT NOT NULL REFERENCES imported_tables(id) ON DELETE CASCADE,
+            column_name      TEXT NOT NULL,
+            data_type        TEXT NOT NULL,
+            is_nullable      INTEGER DEFAULT 1,
+            is_primary_key   INTEGER DEFAULT 0,
+            default_value    TEXT,
+            ordinal_position INTEGER,
+            description      TEXT DEFAULT '',
+            sample_values    TEXT,
+            created_at       REAL NOT NULL,
+            updated_at       REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_imported_columns_table ON imported_columns(table_id);
+    """)
+    # Migrate existing databases: add schema_status column if missing
+    try:
+        state._sqlite.execute("ALTER TABLE databases ADD COLUMN schema_status TEXT DEFAULT 'pending'")
     except Exception:
         pass
     state._sqlite.commit()
@@ -271,3 +318,19 @@ def _migrate_llm_providers_to_models():
         )
         sql.commit()
         logger.info(f"Migration complete: system_config seeded with {provider}/{model}")
+
+
+def _migrate_dashboard_tables():
+    """Create dashboard_items table for user dashboard item persistence."""
+    state._sqlite.executescript("""
+        CREATE TABLE IF NOT EXISTS dashboard_items (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            title TEXT NOT NULL DEFAULT '',
+            query TEXT,
+            chart_type TEXT DEFAULT 'table',
+            chart_data TEXT,
+            created_at REAL NOT NULL
+        );
+    """)
+    state._sqlite.commit()

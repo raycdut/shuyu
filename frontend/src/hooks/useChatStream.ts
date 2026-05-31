@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
-import { useStore } from '../store'
+import { useSessionStore } from '../store/sessionStore'
+import { useConfigStore } from '../store/configStore'
 import { api } from '../api'
 import { Message, nextMsgId, ProgressStep } from '../types'
 import { useSessions } from './useSessions'
@@ -9,15 +10,14 @@ import { useSessions } from './useSessions'
  * 负责 SSE 连接、缓冲区处理和进度状态更新
  */
 export function useChatStream() {
-  const {
-    activeSessionId,
-    activeDbId,
-    mode,
-    isLoading,
-    setIsLoading,
-    setMessages,
-    setActiveSessionId,
-  } = useStore()
+  const activeSessionId = useSessionStore(s => s.activeSessionId)
+  const isLoading = useSessionStore(s => s.isLoading)
+  const setIsLoading = useSessionStore(s => s.setIsLoading)
+  const setMessages = useSessionStore(s => s.setMessages)
+  const setActiveSessionId = useSessionStore(s => s.setActiveSessionId)
+
+  const activeDbId = useConfigStore(s => s.activeDbId)
+  const mode = useConfigStore(s => s.mode)
 
   const { loadSessions } = useSessions()
 

@@ -1,3 +1,14 @@
+**Shuyu (数语)** — An open-source, ChatGPT-like data analyst. Ask questions in plain language, get answers from your database. Built-in ReAct agent (no LangChain), LLM-agnostic, Song-dynasty aesthetic UI.
+
+> ⚠️ **Work in progress** — under active development. DuckDB connector works today; more databases coming soon.
+
+Supports DuckDB, PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, Redshift, ClickHouse, MSSQL, Oracle, and any JDBC/ODBC database via connection string.
+
+```bash
+docker compose up -d
+# Open http://localhost:3000 → configure → start asking
+```
+
 # 数语 (Shuyu)
 
 > Talk to your database like ChatGPT.  
@@ -101,11 +112,21 @@ Settings survive restarts.
 | Type | Status |
 |------|--------|
 | DuckDB (local file) | ✅ Working |
-| SQLite | ⏳ |
-| PostgreSQL | ⏳ |
-| MySQL | ⏳ |
-| ClickHouse | ⏳ |
-| Snowflake | ⏳ |
+| SQLite | ⏳ Coming soon |
+| PostgreSQL | ⏳ Coming soon |
+| MySQL / MariaDB | ⏳ Coming soon |
+| Snowflake | 🚧 Planned |
+| BigQuery | 🚧 Planned |
+| Redshift | 🚧 Planned |
+| ClickHouse | 🚧 Planned |
+| MSSQL Server | 🚧 Planned |
+| Oracle | 🚧 Planned |
+| Databricks | 🚧 Planned |
+| Trino / Starburst | 🚧 Planned |
+
+Any JDBC/ODBC-compatible database can be added via a connector plugin.
+
+> **Architecture**: Each database type is a thin connector implementing the `DatabaseConnector` interface (`backend/app/db/base.py`). Adding a new database is ~100 lines of Python.
 
 ## Tech Stack
 

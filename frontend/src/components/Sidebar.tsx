@@ -1,8 +1,11 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import type { Session, DatabaseInfo, SchemaTable } from '../types'
 import { api } from '../api'
 import DBConnectModal from './DBConnectModal'
 import DBConfigModal from './DBConfigModal'
+import SessionItem from './Sidebar/SessionItem'
+import DbTableNode from './Sidebar/DbTableNode'
 
 interface SidebarProps {
   open: boolean
@@ -19,10 +22,6 @@ interface SidebarProps {
   onClearAllSessions?: () => void
 }
 
-/**
- * 侧边栏组件
- * 包含会话历史列表和数据库连接管理
- */
 const Sidebar = React.memo(function Sidebar({
   open,
   sessions,
@@ -37,6 +36,7 @@ const Sidebar = React.memo(function Sidebar({
   onDatabasesChange,
   onClearAllSessions,
 }: SidebarProps) {
+  const navigate = useNavigate()
   const [showDBModal, setShowDBModal] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -45,7 +45,10 @@ const Sidebar = React.memo(function Sidebar({
   const [loadingTree, setLoadingTree] = useState<string | null>(null)
   const [configDb, setConfigDb] = useState<DatabaseInfo | null>(null)
 
-  // --- 分组会话 ---
+  const handleRequestDelete = useCallback((id: string) => {
+    setConfirmDeleteId(id)
+  }, [])
+
   const now = Date.now()
   const day = 86400000
   const today: Session[] = []
@@ -59,11 +62,7 @@ const Sidebar = React.memo(function Sidebar({
     else earlier.push(s)
   })
 
-  /**
-   * 切换数据库树的展开状态
-   */
   const toggleDbTree = async (dbId: string) => {
-    // 点击时标记为当前数据库
     onSelectDb(dbId)
     if (expandedDb === dbId) {
       setExpandedDb(null)
@@ -82,13 +81,11 @@ const Sidebar = React.memo(function Sidebar({
     }
   }
 
-  // --- 删除 ---
   const handleDelete = (id: string) => {
     onDeleteSession(id)
     setConfirmDeleteId(null)
   }
 
-  // --- 数据库图标 ---
   const dbIcon = (type: string) => {
     switch (type) {
       case 'duckdb': return '🦆'
@@ -112,7 +109,6 @@ const Sidebar = React.memo(function Sidebar({
   return (
     <>
       <aside className="w-56 flex-shrink-0 flex flex-col bg-paper-light/50 overflow-hidden">
-        {/* ===== 会话列表 ===== */}
         <div className="flex-1 overflow-y-auto">
           <div className="flex items-center justify-between px-3 py-2">
             <span className="text-xs text-ink-lighter font-kai tracking-wider">历史会话</span>
@@ -143,23 +139,21 @@ const Sidebar = React.memo(function Sidebar({
           </div>
 
           {today.length > 0 && (
-            <>{sectionTitle('今天')}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
+            <>{sectionTitle('今天')}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {thisWeek.length > 0 && (
-            <>{sectionTitle('本周')}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
+            <>{sectionTitle('本周')}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {earlier.length > 0 && (
-            <>{sectionTitle('更早')}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={(id) => setConfirmDeleteId(id)} />)}</>
+            <>{sectionTitle('更早')}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {sessions.length === 0 && (
             <div className="px-3 py-6 text-center text-xs text-ink-lighter font-kai">暂无历史会话</div>
           )}
         </div>
 
-        {/* ===== 分隔线 ===== */}
         <div className="ink-divider mx-3" />
 
-        {/* ===== 数据库列表（树状） ===== */}
         <div className="flex-shrink-0 overflow-y-auto max-h-64">
           <div className="px-3 py-2 flex items-center justify-between">
             <span className="text-xs text-ink-lighter font-kai tracking-wider">数据库</span>
@@ -191,14 +185,11 @@ const Sidebar = React.memo(function Sidebar({
           ) : (
             databases.map(db => (
               <div key={db.id} className="relative group">
-                {/* 数据库行 */}
-                {/* 数据库行：可点击展开 */}
                 <button
                   onClick={() => toggleDbTree(db.id)}
                   className={`w-full text-left px-3 py-1 text-sm flex items-center gap-1.5 transition-colors
                     ${activeDbId === db.id ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-light hover:bg-smoke'}`}
                 >
-                  {/* 三角形箭头 */}
                   <span className="text-[10px] w-3 text-center text-ink-lighter transition-transform duration-150"
                     style={{ transform: expandedDb === db.id ? 'rotate(90deg)' : 'rotate(0deg)' }}>
                     ▶
@@ -209,7 +200,6 @@ const Sidebar = React.memo(function Sidebar({
                     <span className="text-[10px] text-ink-lighter animate-pulse">…</span>
                   )}
                 </button>
-                {/* 齿轮按钮 */}
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfigDb(db) }}
                   aria-label="数据库配置"
@@ -227,7 +217,6 @@ const Sidebar = React.memo(function Sidebar({
                   </svg>
                 </button>
 
-                {/* 表树 */}
                 {expandedDb === db.id && dbTrees[db.id] && (
                   <div className="ml-4 border-l border-tea/40">
                     {dbTrees[db.id].map(tbl => (
@@ -248,10 +237,23 @@ const Sidebar = React.memo(function Sidebar({
             </svg>
             添加数据库
           </button>
+          {(
+            <button
+              onClick={() => navigate('/databases')}
+              className="w-full text-left px-3 py-1.5 text-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors flex items-center gap-2"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+              </svg>
+              数据库管理
+            </button>
+          )}
         </div>
       </aside>
 
-      {/* 数据库连接弹窗 */}
       <DBConnectModal
         open={showDBModal}
         onClose={() => setShowDBModal(false)}
@@ -261,7 +263,6 @@ const Sidebar = React.memo(function Sidebar({
         }}
       />
 
-      {/* 数据库配置弹窗 */}
       <DBConfigModal
         open={configDb !== null}
         db={configDb}
@@ -272,7 +273,6 @@ const Sidebar = React.memo(function Sidebar({
         }}
       />
 
-      {/* 删除确认 */}
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
           <div className="bg-paper-light paper-shadow-md rounded-sm p-6 max-w-sm">
@@ -285,7 +285,6 @@ const Sidebar = React.memo(function Sidebar({
         </div>
       )}
 
-      {/* 清空所有会话确认 */}
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={() => setShowClearConfirm(false)}>
           <div className="bg-paper-light paper-shadow-md rounded-sm p-6 max-w-sm mx-4" onClick={e => e.stopPropagation()}>
@@ -304,106 +303,3 @@ const Sidebar = React.memo(function Sidebar({
 })
 
 export default Sidebar
-
-// ===== 表树节点 =====
-function DbTableNode({ table }: { table: SchemaTable }) {
-  const [expanded, setExpanded] = useState(true)
-
-  return (
-    <div>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="w-full text-left px-2 py-0.5 text-xs text-ink-light hover:bg-smoke transition-colors flex items-center gap-1"
-      >
-        <span className="text-[9px] w-2.5 text-center text-ink-lighter transition-transform duration-150"
-          style={{ transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)' }}>
-          ▶
-        </span>
-        <span className="text-[11px]">{table.type === 'VIEW' ? '👁' : '📋'}</span>
-        <span className="font-medium">{table.name}</span>
-      </button>
-      {expanded && (
-        <div className="ml-4 border-l border-tea/30">
-          {table.columns.map(col => (
-            <div key={col.name} className="px-2 py-[2px] text-[11px] text-ink-lighter hover:bg-smoke flex gap-2">
-              <span className="text-tea">├─</span>
-              <span>{col.name}</span>
-              <span className="text-[10px] text-ink-lighter/60">{col.type}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ===== 会话条目 =====
-const SessionItem = React.memo(function SessionItem({
-  session,
-  isActive,
-  onSelectSession,
-  onRenameSession,
-  onRequestDelete,
-}: {
-  session: Session
-  isActive: boolean
-  onSelectSession: (id: string) => void
-  onRenameSession: (id: string, title: string) => void
-  onRequestDelete: (id: string) => void
-}) {
-  const [editing, setEditing] = useState(false)
-  const [editTitle, setEditTitle] = useState(session.title || '')
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  const handleDoubleClick = () => {
-    setEditing(true)
-    setEditTitle(session.title || '')
-    setTimeout(() => inputRef.current?.select(), 50)
-  }
-
-  const handleConfirm = () => {
-    if (editTitle.trim()) {
-      onRenameSession(session.id, editTitle.trim())
-    }
-    setEditing(false)
-  }
-
-  return (
-    <div className="relative group">
-      {editing ? (
-        <input
-          ref={inputRef}
-          className="w-full px-3 py-1.5 text-sm bg-white ink-border rounded-sm focus:outline-none focus:border-celadon"
-          value={editTitle}
-          onChange={e => setEditTitle(e.target.value)}
-          onBlur={handleConfirm}
-          onKeyDown={e => {
-            if (e.key === 'Enter') handleConfirm()
-            if (e.key === 'Escape') setEditing(false)
-          }}
-        />
-      ) : (
-        <button
-          onClick={() => onSelectSession(session.id)}
-          onDoubleClick={handleDoubleClick}
-          className={`w-full text-left px-3 py-1.5 text-sm truncate transition-colors
-            ${isActive ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-light hover:bg-smoke'}`}
-        >
-          <span>{session.title || '新对话'}</span>
-          <span className="ml-2 text-xs text-ink-lighter">{session.messages}</span>
-        </button>
-      )}
-      {!editing && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRequestDelete(session.id) }}
-          aria-label="删除会话"
-          className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-sm opacity-0 group-hover:opacity-100 text-ink-lighter hover:text-cinnabar hover:bg-smoke transition-all duration-200"
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-          </svg>
-        </button>
-      )}
-    </div>
-  )
-})
