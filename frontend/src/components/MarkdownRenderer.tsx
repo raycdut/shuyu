@@ -5,7 +5,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { QueryResultInfo } from '../types'
 import ChartRenderer from './ChartRenderer'
-import { useStore } from '../store'
+import { api } from '../api'
+import { useUIStore } from '../store/uiStore'
 
 interface MarkdownRendererProps {
   content: string
@@ -103,30 +104,42 @@ function processChildren(children: React.ReactNode, queryResults: QueryResultInf
  */
 function QueryBadge({ qn, result }: { qn: number, result?: QueryResultInfo }) {
   const [showChart, setShowChart] = useState(false)
-  const { addDashboardItem, dashboardItems, removeDashboardItem } = useStore()
+  const addDashboardItem = useUIStore(s => s.addDashboardItem)
+  const dashboardItems = useUIStore(s => s.dashboardItems)
+  const removeDashboardItem = useUIStore(s => s.removeDashboardItem)
   
   const canShowChart = !!(result?.ok && result.data && result.columns && result.columns.length >= 2)
-  const isPinned = dashboardItems.some(item => item.id === `q-${qn}-${result?.sql.slice(0, 20)}`)
+  const isPinned = dashboardItems.some(item => item.id === `q-${qn}-${result?.sql?.slice(0, 20)}`)
 
-  const handlePin = (e: React.MouseEvent) => {
+  const handlePin = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
     if (!result || !result.ok) return
 
     const id = `q-${qn}-${result.sql.slice(0, 20)}`
     if (isPinned) {
-      console.log(`[Dashboard] 移除条目: ${id}`)
-      removeDashboardItem(id)
+      try {
+        await api.removeDashboardItem(id)
+        removeDashboardItem(id)
+      } catch { /* silent */ }
     } else {
-      console.log(`[Dashboard] 添加条目: ${id}`, result)
-      addDashboardItem({
-        id,
-        title: result.question || `查询 Q${qn}`,
-        columns: result.columns || [],
-        data: result.data || [],
-        type: showChart ? 'line' : 'table',
-        createdAt: Date.now()
-      })
+      const chartData = { columns: result.columns || [], data: result.data || [] }
+      try {
+        await api.addDashboardItem({
+          title: result.question || `查询 Q${qn}`,
+          query: result.sql || '',
+          chart_type: showChart ? 'line' : 'table',
+          chart_data: chartData,
+        })
+        addDashboardItem({
+          id,
+          title: result.question || `查询 Q${qn}`,
+          columns: result.columns || [],
+          data: result.data || [],
+          type: showChart ? 'line' : 'table',
+          createdAt: Date.now()
+        })
+      } catch { /* silent */ }
     }
   }
   

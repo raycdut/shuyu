@@ -1,12 +1,11 @@
 import { useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
-interface LoginPageProps {
-  onSwitchToRegister: () => void
-}
-
-export default function LoginPage({ onSwitchToRegister }: LoginPageProps) {
-  const { login, isLoading } = useAuthStore()
+export default function LoginPage() {
+  const login = useAuthStore(s => s.login)
+  const isLoading = useAuthStore(s => s.isLoading)
+  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -16,6 +15,7 @@ export default function LoginPage({ onSwitchToRegister }: LoginPageProps) {
     setError(null)
     try {
       await login(username, password)
+      navigate('/', { replace: true })
     } catch (err: any) {
       setError(err.message || '登录失败')
     }
@@ -73,12 +73,9 @@ export default function LoginPage({ onSwitchToRegister }: LoginPageProps) {
 
         <p className="mt-6 text-center text-sm text-ink-lighter font-kai">
           没有账号？{' '}
-          <button
-            onClick={onSwitchToRegister}
-            className="text-celadon hover:underline"
-          >
+          <Link to="/register" className="text-celadon hover:underline">
             去注册
-          </button>
+          </Link>
         </p>
       </div>
     </div>

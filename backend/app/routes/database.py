@@ -12,8 +12,23 @@ from fastapi import APIRouter, HTTPException, Request
 
 from .. import state
 from ..persistence.database import save_db_connections_sqlite
+from ..persistence.schema import (
+    get_schema_status,
+    load_full_schema,
+    save_descriptions,
+    save_imported_schema,
+    update_database_schema_status,
+    update_description,
+)
 from ..db.duckdb import DuckDBConnector
-from ..models.database import DBConnectRequest, DBTestResult
+from ..models.database import (
+    DBConnectRequest,
+    DBTestResult,
+    DescriptionGenerateRequest,
+    DescriptionUpdateRequest,
+    SchemaImportRequest,
+    SchemaStatusResponse,
+)
 
 logger = logging.getLogger("shuyu.main")
 
@@ -175,3 +190,191 @@ async def update_database(db_id: str, req: Request):
 
     save_db_connections_sqlite()
     return {"ok": True, "message": f"已更新 {entry['name']} 的配置"}
+
+
+@router.post("/api/database/{db_id}/schema/import")
+async def import_schema(db_id: str, req: SchemaImportRequest):
+    """Connect to a database and import its schema (tables & columns) into local storage."""
+    logger.info(f"POST /api/database/{db_id}/schema/import")
+
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    if not entry:
+        raise HTTPException(404, f"Database '{db_id}' not found")
+
+    update_database_schema_status(db_id, "importing")
+    try:
+        include = req.include_tables or entry.get("include_tables")
+        exclude = req.exclude_tables or entry.get("exclude_tables")
+
+        if entry["type"] == "duckdb":
+            db_path = entry.get("path", "")
+            if db_path.startswith("~"):
+                db_path = Path(db_path).expanduser().resolve()
+            if not os.path.exists(str(db_path)):
+                update_database_schema_status(db_id, "error")
+                raise HTTPException(404, f"DuckDB file not found: {db_path}")
+
+            import duckdb
+            conn = duckdb.connect(str(db_path))
+            rows = conn.execute("""
+                SELECT table_name, table_type FROM information_schema.tables
+                WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
+                ORDER BY table_name
+            """).fetchall()
+
+            tables_data = []
+            for table_name, table_type in rows:
+                if _should_exclude(table_name, include, exclude):
+                    continue
+                cols = conn.execute(f"""
+                    SELECT column_name, data_type, is_nullable,
+                           COALESCE(column_default, '') as column_default
+                    FROM information_schema.columns
+                    WHERE table_name = '{table_name}'
+                      AND table_schema NOT IN ('information_schema', 'pg_catalog')
+                    ORDER BY ordinal_position
+                """).fetchall()
+
+                columns = []
+                for i, col in enumerate(cols):
+                    columns.append({
+                        "column_name": col[0],
+                        "data_type": col[1],
+                        "is_nullable": col[2] == "YES",
+                        "is_primary_key": False,
+                        "default_value": col[3] or None,
+                        "ordinal_position": i + 1,
+                        "description": "",
+                    })
+
+                tables_data.append({
+                    "table_name": table_name,
+                    "table_type": table_type,
+                    "columns": columns,
+                    "row_count": None,
+                    "description": "",
+                })
+
+            conn.close()
+        else:
+            update_database_schema_status(db_id, "error")
+            raise HTTPException(400, f"Schema import not supported for type: {entry['type']}")
+
+        save_imported_schema(db_id, tables_data)
+        update_database_schema_status(db_id, "imported")
+
+        tables_count = len(tables_data)
+        columns_count = sum(len(t["columns"]) for t in tables_data)
+        logger.info(f"Schema imported: {tables_count} tables, {columns_count} columns")
+        return {
+            "ok": True,
+            "tables_count": tables_count,
+            "columns_count": columns_count,
+            "message": f"已导入 {tables_count} 张表，{columns_count} 个字段",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        update_database_schema_status(db_id, "error")
+        logger.error(f"Schema import failed: {e}")
+        raise HTTPException(500, f"Schema import failed: {e}")
+
+
+@router.get("/api/database/{db_id}/schema")
+async def get_imported_schema(db_id: str):
+    """Get the imported schema (tables + columns with descriptions) for a database."""
+    logger.info(f"GET /api/database/{db_id}/schema")
+
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    if not entry:
+        raise HTTPException(404, f"Database '{db_id}' not found")
+
+    tables = load_full_schema(db_id)
+    return {"tables": tables}
+
+
+@router.get("/api/database/{db_id}/schema/status")
+async def get_schema_status_endpoint(db_id: str):
+    """Get schema import status and description coverage."""
+    logger.info(f"GET /api/database/{db_id}/schema/status")
+
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    if not entry:
+        raise HTTPException(404, f"Database '{db_id}' not found")
+
+    status = get_schema_status(db_id)
+    return SchemaStatusResponse(**status)
+
+
+@router.post("/api/database/{db_id}/schema/describe")
+async def generate_descriptions(db_id: str, req: DescriptionGenerateRequest):
+    """Use Agent to generate Chinese descriptions for tables and columns."""
+    logger.info(f"POST /api/database/{db_id}/schema/describe")
+
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    if not entry:
+        raise HTTPException(404, f"Database '{db_id}' not found")
+
+    if not state.config.llm.api_key:
+        raise HTTPException(400, "LLM 未配置，无法生成描述")
+
+    from ..agent.describe_schema_agent import generate_descriptions as agent_generate
+
+    try:
+        result = await agent_generate(
+            database_id=db_id,
+            table_ids=req.table_ids,
+            language=req.language or "zh",
+            force=req.force or False,
+        )
+        return {
+            "ok": True,
+            "tables_described": result.get("tables_count", 0),
+            "columns_described": result.get("columns_count", 0),
+            "message": f"已为 {result.get('tables_count', 0)} 张表生成描述",
+        }
+    except Exception as e:
+        logger.error(f"Description generation failed: {e}")
+        raise HTTPException(500, f"生成描述失败: {e}")
+
+
+@router.patch("/api/database/{db_id}/schema/describe")
+async def update_description_endpoint(db_id: str, req: DescriptionUpdateRequest):
+    """Manually update the description of a table or column."""
+    logger.info(f"PATCH /api/database/{db_id}/schema/describe")
+
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    if not entry:
+        raise HTTPException(404, f"Database '{db_id}' not found")
+
+    if not req.table_id and not req.column_id:
+        raise HTTPException(400, "Must provide either table_id or column_id")
+
+    update_description(
+        table_id=req.table_id,
+        column_id=req.column_id,
+        description=req.description,
+    )
+    return {"ok": True, "message": "描述已更新"}
+
+
+def _should_exclude(table_name: str, include_patterns: list[str] | None, exclude_patterns: list[str] | None) -> bool:
+    """Check if a table should be excluded based on include/exclude patterns."""
+    if exclude_patterns:
+        for p in exclude_patterns:
+            if p.endswith("*") and table_name.startswith(p[:-1]):
+                return True
+            if fnmatch.fnmatch(table_name, p):
+                return True
+    if include_patterns:
+        match = False
+        for p in include_patterns:
+            if p.endswith("*") and table_name.startswith(p[:-1]):
+                match = True
+                break
+            if fnmatch.fnmatch(table_name, p):
+                match = True
+                break
+        if not match:
+            return True
+    return False

@@ -1,16 +1,8 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  Cell
+  BarChart, Bar, LineChart, Line, PieChart, Pie,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, Cell,
 } from 'recharts'
 
 interface ChartRendererProps {
@@ -19,123 +11,122 @@ interface ChartRendererProps {
   title?: string
 }
 
-/**
- * 图表渲染组件
- * 根据数据特征自动选择合适的图表类型（折线图、柱状图）
- */
+const COLORS = ['#4ca6a8', '#66c2cd', '#85d8ce', '#a3e9df', '#e8a87c', '#f4a2a2']
+
+type ChartType = 'bar' | 'line' | 'pie'
+
+function detectType(xKey: string, yKeys: string[], sampleRow: any[]): ChartType {
+  if (yKeys.length === 1 && sampleRow.length <= 8) return 'pie'
+  const xLower = xKey.toLowerCase()
+  if (xLower.includes('date') || xLower.includes('time') || xLower.includes('年') || xLower.includes('月') || xLower.includes('日')) return 'line'
+  return 'bar'
+}
+
+function isNumeric(val: any): boolean {
+  return typeof val === 'number' && !Number.isNaN(val)
+}
+
 const ChartRenderer: React.FC<ChartRendererProps> = ({ columns, data, title }) => {
-  // 转换数据为 Recharts 格式
+  const [chartType, setChartType] = useState<ChartType | null>(null)
+
+  const chartConfig = useMemo(() => {
+    if (columns.length < 2 || data.length === 0) return null
+    const sampleRow = data[0]
+    const numericIndices = sampleRow.map((v: any) => isNumeric(v))
+    const numericCols: string[] = []
+    columns.forEach((col, i) => {
+      if (numericIndices[i]) numericCols.push(col)
+    })
+    if (numericCols.length === 0) return null
+    const xAxisKey = columns.find((_, i) => !numericIndices[i]) || columns[0]
+    const yAxisKeys = numericCols
+    const detected = detectType(xAxisKey, yAxisKeys, columns)
+    if (!chartType) setChartType(detected)
+    return { xAxisKey, yAxisKeys, detected }
+  }, [columns, data])
+
   const chartData = useMemo(() => {
     return data.map(row => {
-      const obj: any = {}
-      columns.forEach((col, i) => {
-        obj[col] = row[i]
-      })
+      const obj: Record<string, any> = {}
+      columns.forEach((col, i) => { obj[col] = row[i] })
       return obj
     })
   }, [columns, data])
 
-  // 启发式识别图表类型和轴
-  const chartConfig = useMemo(() => {
-    if (columns.length < 2) return null
-
-    // 找到第一个数值列作为 Y 轴，第一个非数值列（或日期列）作为 X 轴
-    let xAxisKey = columns[0]
-    let yAxisKey = columns[1]
-    let type: 'line' | 'bar' = 'bar'
-
-    // 检查是否有日期相关的列
-    const dateColIndex = columns.findIndex(c => 
-      c.toLowerCase().includes('date') || 
-      c.toLowerCase().includes('time') || 
-      c.toLowerCase().includes('日') || 
-      c.toLowerCase().includes('月')
-    )
-
-    // 检查数值列
-    const numericColIndexes = data[0]?.map((_, i) => typeof data[0][i] === 'number') || []
-    const firstNumericIndex = numericColIndexes.indexOf(true)
-
-    if (firstNumericIndex !== -1) {
-      yAxisKey = columns[firstNumericIndex]
-      // 如果有日期列，设为 X 轴并使用折线图
-      if (dateColIndex !== -1 && dateColIndex !== firstNumericIndex) {
-        xAxisKey = columns[dateColIndex]
-        type = 'line'
-      } else {
-        // 否则找到第一个非数值列作为 X 轴
-        const firstNonNumericIndex = numericColIndexes.indexOf(false)
-        if (firstNonNumericIndex !== -1) {
-          xAxisKey = columns[firstNonNumericIndex]
-        }
-        type = 'bar'
-      }
-    }
-
-    return { xAxisKey, yAxisKey, type }
-  }, [columns, data])
-
+  const type = chartType || chartConfig?.detected || 'bar'
   if (!chartConfig || data.length === 0) return null
+  const { xAxisKey, yAxisKeys } = chartConfig
 
-  const { xAxisKey, yAxisKey, type } = chartConfig
-  const COLORS = ['#4ca6a8', '#66c2cd', '#85d8ce', '#a3e9df']
+  const commonAxisProps = {
+    fontSize: 10, tick: { fill: '#888' }, axisLine: { stroke: '#ddd' }
+  }
+
+  const renderChart = () => {
+    if (type === 'pie') {
+      return (
+        <PieChart>
+          <Pie
+            data={chartData}
+            dataKey={yAxisKeys[0]}
+            nameKey={xAxisKey}
+            cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}(${value})`}
+          >
+            {chartData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+          </Pie>
+          <Tooltip />
+        </PieChart>
+      )
+    }
+    if (type === 'line') {
+      return (
+        <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+          <XAxis dataKey={xAxisKey} {...commonAxisProps} />
+          <YAxis {...commonAxisProps} />
+          <Tooltip contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #eee' }} />
+          <Legend wrapperStyle={{ fontSize: '10px' }} />
+          {yAxisKeys.map((key, i) => (
+            <Line key={key} type="monotone" dataKey={key} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+          ))}
+        </LineChart>
+      )
+    }
+    return (
+      <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+        <XAxis dataKey={xAxisKey} {...commonAxisProps} />
+        <YAxis {...commonAxisProps} />
+        <Tooltip contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #eee' }} />
+        <Legend wrapperStyle={{ fontSize: '10px' }} />
+        {yAxisKeys.map((key, i) => (
+          <Bar key={key} dataKey={key} fill={COLORS[i % COLORS.length]} radius={[4, 4, 0, 0]} />
+        ))}
+      </BarChart>
+    )
+  }
+
+  const types: ChartType[] = ['bar', 'line', 'pie']
 
   return (
-    <div className="w-full h-64 mt-4 mb-2 p-2 bg-white rounded-lg border border-tea/30 shadow-sm">
-      {title && <div className="text-xs font-medium text-ink-light mb-2 px-2">{title}</div>}
-      <ResponsiveContainer width="100%" height="90%">
-        {type === 'line' ? (
-          <LineChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis 
-              dataKey={xAxisKey} 
-              fontSize={10} 
-              tick={{ fill: '#888' }} 
-              axisLine={{ stroke: '#ddd' }}
-            />
-            <YAxis 
-              fontSize={10} 
-              tick={{ fill: '#888' }} 
-              axisLine={{ stroke: '#ddd' }}
-            />
-            <Tooltip 
-              contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #eee' }}
-            />
-            <Legend wrapperStyle={{ fontSize: '10px' }} />
-            <Line 
-              type="monotone" 
-              dataKey={yAxisKey} 
-              stroke="#4ca6a8" 
-              strokeWidth={2}
-              dot={{ r: 3, fill: '#4ca6a8' }}
-              activeDot={{ r: 5 }}
-            />
-          </LineChart>
-        ) : (
-          <BarChart data={chartData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-            <XAxis 
-              dataKey={xAxisKey} 
-              fontSize={10} 
-              tick={{ fill: '#888' }} 
-              axisLine={{ stroke: '#ddd' }}
-            />
-            <YAxis 
-              fontSize={10} 
-              tick={{ fill: '#888' }} 
-              axisLine={{ stroke: '#ddd' }}
-            />
-            <Tooltip 
-              contentStyle={{ fontSize: '12px', borderRadius: '8px', border: '1px solid #eee' }}
-            />
-            <Legend wrapperStyle={{ fontSize: '10px' }} />
-            <Bar dataKey={yAxisKey} fill="#4ca6a8" radius={[4, 4, 0, 0]}>
-              {chartData.map((_, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Bar>
-          </BarChart>
-        )}
+    <div className="w-full mt-3 mb-2 p-3 bg-white rounded-sm border border-tea/30 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        {title && <span className="text-xs font-medium text-ink-light">{title}</span>}
+        <div className="flex items-center gap-1">
+          {types.map(t => (
+            <button
+              key={t}
+              onClick={() => setChartType(t)}
+              className={`text-[10px] px-2 py-0.5 rounded-sm transition-colors ${
+                type === t ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-lighter hover:bg-smoke'
+              }`}
+            >
+              {t === 'bar' ? '柱状图' : t === 'line' ? '折线图' : '饼图'}
+            </button>
+          ))}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={220}>
+        {renderChart()}
       </ResponsiveContainer>
     </div>
   )

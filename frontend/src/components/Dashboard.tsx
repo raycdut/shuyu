@@ -1,13 +1,38 @@
-import React from 'react'
-import { useStore } from '../store'
+import React, { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useUIStore } from '../store/uiStore'
+import { api } from '../api'
 import ChartRenderer from './ChartRenderer'
 
-/**
- * 数据看板组件
- * 展示已固定的查询结果（图表或表格）
- */
 const Dashboard: React.FC = () => {
-  const { dashboardItems, removeDashboardItem, setShowDashboard } = useStore()
+  const dashboardItems = useUIStore(s => s.dashboardItems)
+  const removeDashboardItem = useUIStore(s => s.removeDashboardItem)
+  const setDashboardItems = useUIStore(s => s.setDashboardItems)
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    api.getDashboardItems().then((items) => {
+      setDashboardItems(items.map(item => ({
+        id: item.id,
+        title: item.title,
+        columns: item.chart_data?.columns || [],
+        data: item.chart_data?.data || [],
+        type: item.chart_type as 'line' | 'bar' | 'table',
+        createdAt: item.created_at * 1000,
+      })))
+    }).catch(() => {
+      // Silent fail — items already loaded from memory
+    })
+  }, [setDashboardItems])
+
+  const handleRemove = async (id: string) => {
+    try {
+      await api.removeDashboardItem(id)
+      removeDashboardItem(id)
+    } catch {
+      // Silent fail
+    }
+  }
 
   if (dashboardItems.length === 0) {
     return (
@@ -15,10 +40,10 @@ const Dashboard: React.FC = () => {
         <div className="text-4xl mb-4 opacity-20">📌</div>
         <h2 className="text-lg font-song text-ink-light mb-2">看板还是空的</h2>
         <p className="text-sm text-ink-lighter font-kai mb-6 max-w-md">
-          在对话中点击查询标记旁的“固定”按钮，将重要的查询结果保存到这里。
+          在对话中点击查询标记旁的"固定"按钮，将重要的查询结果保存到这里。
         </p>
         <button
-          onClick={() => setShowDashboard(false)}
+          onClick={() => navigate('/')}
           className="px-4 py-2 bg-celadon text-white rounded-md text-sm hover:bg-celadon-dark transition-colors"
         >
           返回对话
@@ -36,7 +61,7 @@ const Dashboard: React.FC = () => {
           <span className="text-xs text-ink-lighter ml-2">已固定 {dashboardItems.length} 个条目</span>
         </div>
         <button
-          onClick={() => setShowDashboard(false)}
+          onClick={() => navigate('/')}
           className="text-sm text-celadon hover:underline font-medium"
         >
           返回对话
@@ -52,7 +77,7 @@ const Dashboard: React.FC = () => {
                   {item.title}
                 </h3>
                 <button
-                  onClick={() => removeDashboardItem(item.id)}
+                  onClick={() => handleRemove(item.id)}
                   className="opacity-0 group-hover:opacity-100 p-1 text-ink-lighter hover:text-cinnabar transition-all"
                   title="移除"
                 >

@@ -1,12 +1,11 @@
 import { useState } from 'react'
+import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
-interface RegisterPageProps {
-  onSwitchToLogin: () => void
-}
-
-export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
-  const { register, isLoading } = useAuthStore()
+export default function RegisterPage() {
+  const register = useAuthStore(s => s.register)
+  const isLoading = useAuthStore(s => s.isLoading)
+  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -17,12 +16,13 @@ export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('两次密码输入不一致')
+      setError('两次输入的密码不一致')
       return
     }
 
     try {
       await register(username, password)
+      navigate('/', { replace: true })
     } catch (err: any) {
       setError(err.message || '注册失败')
     }
@@ -33,9 +33,9 @@ export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-10">
           <h1 className="text-2xl font-song font-semibold text-ink tracking-wider mb-2">
-            创建账号
+            Data Chat
           </h1>
-          <p className="text-sm text-ink-lighter font-kai">注册后即可开始使用 Data Chat</p>
+          <p className="text-sm text-ink-lighter font-kai">创建新账号</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
@@ -46,7 +46,7 @@ export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
               value={username}
               onChange={e => setUsername(e.target.value)}
               className="ink-input text-sm w-full"
-              placeholder="至少 2 个字符"
+              placeholder="请输入用户名"
               required
               minLength={2}
             />
@@ -59,7 +59,7 @@ export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="ink-input text-sm w-full"
-              placeholder="至少 6 位"
+              placeholder="至少 6 位密码"
               required
               minLength={6}
             />
@@ -93,12 +93,9 @@ export default function RegisterPage({ onSwitchToLogin }: RegisterPageProps) {
 
         <p className="mt-6 text-center text-sm text-ink-lighter font-kai">
           已有账号？{' '}
-          <button
-            onClick={onSwitchToLogin}
-            className="text-celadon hover:underline"
-          >
+          <Link to="/login" className="text-celadon hover:underline">
             去登录
-          </button>
+          </Link>
         </p>
       </div>
     </div>

@@ -115,6 +115,7 @@ async def chat(req: ChatRequest):
             # Reuse cached connector and schema
             active_connector = session.metadata.get("_connector")
             state.request_active_connector.set(active_connector)
+            state.request_active_db_id.set(req.db_id)
             schema_text = session.metadata["_schema"]
             full_schema_text = session.metadata.get("_schema_full")
             if full_schema_text:
@@ -133,9 +134,10 @@ async def chat(req: ChatRequest):
                 )
                 active_connector.connect()
                 state.request_active_connector.set(active_connector)
+                state.request_active_db_id.set(req.db_id)
                 tables = active_connector.get_schema()
-                schema_text = build_schema_light(tables)
-                full_schema_text = build_schema_prompt(tables)
+                schema_text = build_schema_light(tables, req.db_id)
+                full_schema_text = build_schema_prompt(tables, req.db_id)
                 state.request_schema_prompt.set(full_schema_text)
                 logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
@@ -269,6 +271,7 @@ async def chat_stream(req: ChatRequest):
                     if same_db and "_schema" in session.metadata:
                         active_connector = session.metadata.get("_connector")
                         state.request_active_connector.set(active_connector)
+                        state.request_active_db_id.set(req.db_id)
                         schema_text = session.metadata["_schema"]
                         full_schema_text = session.metadata.get("_schema_full")
                         if full_schema_text:
@@ -284,9 +287,10 @@ async def chat_stream(req: ChatRequest):
                         )
                         active_connector.connect()
                         state.request_active_connector.set(active_connector)
+                        state.request_active_db_id.set(req.db_id)
                         tables = active_connector.get_schema()
-                        schema_text = build_schema_light(tables)
-                        full_schema_text = build_schema_prompt(tables)
+                        schema_text = build_schema_light(tables, req.db_id)
+                        full_schema_text = build_schema_prompt(tables, req.db_id)
                         state.request_schema_prompt.set(full_schema_text)
                         session.metadata["_connector"] = active_connector
                         session.metadata["_schema"] = schema_text

@@ -24,7 +24,7 @@ from .persistence.config import load_config_sqlite
 from .persistence.database import load_db_connections_sqlite
 from .client import call_llm
 from .agent.tools.sql_tool import handle_query_database
-from .routes import chat, config as config_route, database, schema, sessions
+from .routes import chat, config as config_route, dashboard, database, schema, sessions
 from .auth.router import router as auth_router
 from .auth.service import init_auth_config
 from .admin_config.router import router as admin_config_router
@@ -203,6 +203,7 @@ if ui_dist and ui_dist.exists():
 # Register routers
 app.include_router(auth_router)
 app.include_router(admin_config_router)
+app.include_router(dashboard.router)
 app.include_router(schema.router)
 app.include_router(chat.router)
 app.include_router(sessions.router)

@@ -1,7 +1,7 @@
 // ===== 消息 =====
-let _msgId = 0
+let _msgCounter = 0
 export function nextMsgId(): string {
-  return `msg_${++_msgId}_${Date.now()}`
+  return `msg_${++_msgCounter}_${crypto.randomUUID().slice(0, 8)}`
 }
 
 export interface ProgressStep {
@@ -60,6 +60,7 @@ export interface DatabaseInfo {
   include_tables?: string[]
   exclude_tables?: string[]
   is_active?: boolean
+  schema_status?: 'pending' | 'importing' | 'imported' | 'error'
 }
 
 export interface DatabaseListResponse {
@@ -164,6 +165,37 @@ export interface LoginResponse {
 export interface RegisterRequest {
   username: string
   password: string
+}
+
+// ===== Schema 管理 =====
+export interface ImportedTable {
+  id: string
+  database_id: string
+  table_name: string
+  table_type: string
+  description: string
+  row_count?: number
+  columns: ImportedColumn[]
+  created_at: number
+  updated_at: number
+}
+
+export interface ImportedColumn {
+  id: string
+  column_name: string
+  data_type: string
+  is_nullable: boolean
+  is_primary_key: boolean
+  description: string
+  sample_values?: string[]
+}
+
+export interface SchemaStatus {
+  schema_status: 'pending' | 'importing' | 'imported' | 'error'
+  tables_count: number
+  columns_count: number
+  described_tables: number
+  described_columns: number
 }
 
 // ===== 配置管理 =====

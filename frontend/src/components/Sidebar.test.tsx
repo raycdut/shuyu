@@ -12,6 +12,10 @@ vi.mock('./DBConfigModal', () => ({
   default: ({ open }: { open: boolean }) => open ? <div data-testid="db-config-modal">DBConfigModal</div> : null,
 }))
 
+vi.mock('react-router-dom', () => ({
+  useNavigate: () => vi.fn(),
+}))
+
 const makeSessions = (): Session[] => [
   { id: 's1', title: '本月销售分析', messages: 5, last_active: Date.now() / 1000 - 100 },
   { id: 's2', title: '用户画像', messages: 3, last_active: Date.now() / 1000 - 200 },

@@ -2,21 +2,74 @@
 
 from __future__ import annotations
 
+from .. import state
+from ..persistence.schema import load_full_schema
 
-def build_schema_prompt(tables) -> str:
+
+def _load_dynamic_descriptions(db_id: str | None = None) -> dict[str, dict]:
+    """Load table and column descriptions from SQLite imported schema.
+
+    Returns:
+        dict mapping table_name -> {"description": str, "columns": {col_name: desc}}
+    """
+    if not db_id:
+        return {}
+
+    try:
+        tables = load_full_schema(db_id)
+        result = {}
+        for t in tables:
+            col_descs = {}
+            for c in t.get("columns", []):
+                if c.get("description"):
+                    col_descs[c["column_name"]] = c["description"]
+            result[t["table_name"]] = {
+                "description": t.get("description", ""),
+                "columns": col_descs,
+            }
+        return result
+    except Exception:
+        return {}
+
+
+def build_schema_prompt(tables, db_id: str | None = None) -> str:
     """Full schema with columns — for SQL generation."""
+    descriptions = _load_dynamic_descriptions(db_id) if db_id else {}
+
     lines = ["以下是数据库中的表和字段：\n"]
     for t in tables:
-        lines.append(t.to_prompt_block())
+        table_name = t.name
+        desc = descriptions.get(table_name, {})
+        table_desc = desc.get("description", "")
+        col_descs = desc.get("columns", {})
+
+        cols_text = []
+        for c in (t.columns or []):
+            col_desc = col_descs.get(c.name, c.comment or "")
+            parts = [f"    - {c.name}: {c.data_type}"]
+            if c.is_primary_key:
+                parts.append(" (PK)")
+            if col_desc:
+                parts.append(f" — {col_desc}")
+            cols_text.append("".join(parts))
+
+        lines.append(f"表: {table_name}")
+        if table_desc:
+            lines.append(f"  描述: {table_desc}")
+        if cols_text:
+            lines.extend(cols_text)
     return "\n".join(lines)
 
 
-def build_schema_light(tables) -> str:
+def build_schema_light(tables, db_id: str | None = None) -> str:
     """Table names + column names + brief description — for agent planning."""
     if not tables:
         return "当前无可查数据"
 
-    descriptions = {
+    descriptions = _load_dynamic_descriptions(db_id) if db_id else {}
+
+    # Fallback descriptions for well-known table names
+    fallback = {
         "dim_customer": "客户信息（含 full_name 姓名）",
         "dim_product": "产品信息（名称、类别）",
         "dim_date": "日期维度",
@@ -43,8 +96,12 @@ def build_schema_light(tables) -> str:
 
     parts = ["可用表："]
     for t in tables:
-        col_names = [c.name for c in t.columns]
-        desc = descriptions.get(t.name, "")
+        col_names = [c.name for c in (t.columns or [])]
+
+        # Use dynamic description first, then fallback
+        dynamic = descriptions.get(t.name, {})
+        desc = dynamic.get("description", "") or fallback.get(t.name, "")
+
         suffix = f" — {desc}" if desc else ""
         parts.append(f"  {t.name}({', '.join(col_names[:8])}{'...' if len(col_names) > 8 else ''}){suffix}")
     return "\n".join(parts)

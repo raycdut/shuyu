@@ -10,6 +10,8 @@ import type {
   LoginResponse,
   RegisterRequest,
   UserInfo,
+  ImportedTable,
+  SchemaStatus,
   SystemConfig,
   UserConfig,
   UserAvailableOptions,
@@ -182,6 +184,36 @@ export const api = {
     })
   },
 
+  // ===== Schema 管理 =====
+  importSchema(dbId: string, data?: { include_tables?: string[]; exclude_tables?: string[] }): Promise<{ ok: boolean; tables_count: number; columns_count: number; message: string }> {
+    return request(`/database/${dbId}/schema/import`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    })
+  },
+
+  getImportedSchema(dbId: string): Promise<{ tables: ImportedTable[] }> {
+    return request(`/database/${dbId}/schema`)
+  },
+
+  getSchemaStatus(dbId: string): Promise<SchemaStatus> {
+    return request(`/database/${dbId}/schema/status`)
+  },
+
+  generateDescriptions(dbId: string, data?: { table_ids?: string[]; language?: string; force?: boolean }): Promise<{ ok: boolean; tables_described: number; columns_described: number; message: string }> {
+    return request(`/database/${dbId}/schema/describe`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    })
+  },
+
+  updateDescription(dbId: string, data: { table_id?: string; column_id?: string; description: string }): Promise<{ ok: boolean; message: string }> {
+    return request(`/database/${dbId}/schema/describe`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
   // ===== 管理员：系统配置 =====
   getSystemConfig(): Promise<SystemConfig> {
     return request('/admin/config')
@@ -212,5 +244,21 @@ export const api = {
 
   getUserAvailableOptions(): Promise<UserAvailableOptions> {
     return request('/user/config/available')
+  },
+
+  // ===== 看板：数据持久化 =====
+  getDashboardItems(): Promise<{ id: string; title: string; query: string; chart_type: string; chart_data: any; created_at: number }[]> {
+    return request('/dashboard/items')
+  },
+
+  addDashboardItem(data: { title: string; query: string; chart_type: string; chart_data: any }): Promise<{ ok: boolean }> {
+    return request('/dashboard/items', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  removeDashboardItem(itemId: string): Promise<{ ok: boolean }> {
+    return request(`/dashboard/items/${itemId}`, { method: 'DELETE' })
   },
 }

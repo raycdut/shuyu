@@ -1,6 +1,7 @@
 import React from 'react'
 import type { Message } from '../types'
 import MarkdownRenderer from './MarkdownRenderer'
+import ChartRenderer from './ChartRenderer'
 
 interface MessageBubbleProps {
   message: Message
@@ -145,6 +146,21 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
             />
           )}
         </div>
+
+        {/* 当助手回复包含可图表化的查询结果时，自动内联显示图表 */}
+        {!isUser && message.query_results && message.query_results.length > 0 && (
+          message.query_results.map((qr, i) => {
+            if (!qr.ok || !qr.data || !qr.columns || qr.columns.length < 2) return null
+            return (
+              <ChartRenderer
+                key={i}
+                columns={qr.columns}
+                data={qr.data}
+                title={qr.question || `查询结果 Q${qr.qn}`}
+              />
+            )
+          })
+        )}
 
         {message.tool_calls && message.tool_calls.length > 0 && (
           <div className={`mt-2 text-xs ${isUser ? 'text-white/60' : 'text-ink-lighter'} font-kai`}>
