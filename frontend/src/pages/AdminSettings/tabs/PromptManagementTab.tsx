@@ -84,7 +84,7 @@ function PromptCard({
       </div>
 
       <div className="relative">
-        <pre className="text-xs font-mono text-ink-light bg-paper-light rounded-sm p-3 border border-tea/10 overflow-x-auto whitespace-pre-wrap break-words max-h-32 overflow-y-hidden">
+        <pre className={`text-xs font-mono text-ink-light bg-paper-light rounded-sm p-3 border border-tea/10 overflow-x-auto whitespace-pre-wrap break-words ${expanded ? 'max-h-none' : 'max-h-32 overflow-y-hidden'}`}>
           {expanded ? fullPreview : preview}
         </pre>
         {content.length > 300 && (

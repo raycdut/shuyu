@@ -157,3 +157,11 @@ Created two comprehensive test files under `backend/tests/`:
 - `schema_describe` v1 → v2
 
 **注意**: 需重启后端服务使新 Prompt 生效。
+
+### 修复 Prompt 管理页面展开按钮无效
+
+**问题**: Prompt 卡片中的「展开全部」按钮点击后，`<pre>` 标签上仍有 `max-h-32 overflow-y-hidden` 样式，导致内容即使显示了完整文本也被 CSS 截断。
+
+**修复**: 展开时动态移除 `overflow-y-hidden` 并将 `max-h-32` 切换为 `max-h-none`。
+
+**文件**: [PromptManagementTab.tsx](frontend/src/pages/AdminSettings/tabs/PromptManagementTab.tsx)
