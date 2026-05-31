@@ -10,7 +10,9 @@
   }
 
   body {
-    @apply bg-paper text-ink font-sans antialiased;
+    @apply bg-paper text-ink font-sans leading-relaxed tracking-wide;
+    -webkit-font-smoothing: auto;
+    -moz-osx-font-smoothing: auto;
     background-image:
       radial-gradient(ellipse at 20% 50%, rgba(123, 168, 147, 0.03) 0%, transparent 50%),
       radial-gradient(ellipse at 80% 20%, rgba(212, 201, 184, 0.06) 0%, transparent 50%);

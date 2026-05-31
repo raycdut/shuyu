@@ -37,9 +37,9 @@ export default {
         },
       },
       fontFamily: {
-        song: ['"Noto Serif SC"', '"Source Han Serif SC"', '"SimSun"', 'serif'],
-        kai: ['"ZCOOL XiaoWei"', '"KaiTi"', '"STKaiti"', 'serif'],
-        sans: ['"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+        song: ['"Noto Serif SC"', '"Source Han Serif SC"', '"SimSun"', '"PingFang SC"', 'sans-serif'],
+        kai: ['"KaiTi"', '"STKaiti"', '"ZCOOL XiaoWei"', '"Noto Serif SC"', '"PingFang SC"', 'sans-serif'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Hiragino Sans GB"', '"Microsoft YaHei"', '"Noto Sans SC"', 'sans-serif'],
       },
     },
   },
