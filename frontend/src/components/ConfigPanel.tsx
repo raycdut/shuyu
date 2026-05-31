@@ -30,6 +30,10 @@ const MODELS: Record<string, string[]> = {
   custom: ['custom'],
 }
 
+/**
+ * 配置面板组件
+ * 提供 LLM、数据安全及高级设置的配置界面
+ */
 const ConfigPanel = React.memo(function ConfigPanel({
   open,
   llmConfig,
@@ -68,11 +72,9 @@ const ConfigPanel = React.memo(function ConfigPanel({
     setTesting(true)
     setTestResult(null)
     try {
-      const res = await api.testLLM({
-        api_key: localLLM.api_key,
-        api_base: localLLM.api_base,
-        model: localLLM.model,
-      })
+      // Save config first so backend has the credentials, then test using saved data
+      await onConfigSave()
+      const res = await api.testLLM({})
       setTestResult(res.ok ? '✅ 连接成功' : `❌ ${res.message}`)
     } catch (err: any) {
       setTestResult(`❌ ${err.message}`)

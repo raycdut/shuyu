@@ -178,3 +178,96 @@ def _migrate_config_tables():
         );
     """)
     state._sqlite.commit()
+    _migrate_llm_providers_to_models()
+
+
+def _migrate_llm_providers_to_models():
+    """Migrate old llm_providers table data into system_config.models.
+
+    Scenarios handled:
+    1. system_config (id=1) does NOT exist → seed from llm_providers
+    2. system_config exists but has no models field (only provider_pool) → merge llm_providers into models
+    3. system_config already has models → skip (already migrated or configured via UI)
+    """
+    import json
+    import uuid
+
+    sql = state._sqlite
+    if sql is None:
+        return
+
+    # Look for an active provider in the old table
+    row = sql.execute(
+        "SELECT provider, model, api_key, api_base, timeout, name FROM llm_providers WHERE is_active = 1 LIMIT 1"
+    ).fetchone()
+    if not row:
+        return
+
+    provider, model, api_key, api_base, timeout, name = row
+    if not api_key:
+        return
+
+    logger.info(f"Found active llm_providers entry: {provider}/{model}, migrating to models format...")
+
+    # Build a provider-friendly name if none exists
+    if not name or name == provider:
+        name = f"{provider.capitalize()} - {model}"
+
+    # Build base URL map for common providers
+    base_urls = {
+        "openai": "https://api.openai.com/v1",
+        "deepseek": "https://api.deepseek.com/v1",
+        "anthropic": "https://api.anthropic.com/v1",
+        "ollama": "http://localhost:11434/v1",
+    }
+    if not api_base and provider in base_urls:
+        api_base = base_urls[provider]
+
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    models_entry = {
+        "id": f"migrated-{provider}-{uuid.uuid4().hex[:6]}",
+        "name": name,
+        "provider": provider,
+        "model": model or "gpt-4o",
+        "api_key": api_key or "",
+        "api_base": api_base or "",
+        "timeout": timeout or 120,
+        "enabled": True,
+        "is_system_default": True,
+    }
+
+    # Check if system_config already exists
+    existing = sql.execute("SELECT config FROM system_config WHERE id = 1").fetchone()
+    if existing:
+        try:
+            existing_config = json.loads(existing[0])
+        except (json.JSONDecodeError, TypeError):
+            existing_config = {}
+
+        # If it already has models, skip (already migrated or user configured)
+        existing_models = existing_config.get("llm", {}).get("models", [])
+        if existing_models:
+            logger.info("system_config already has models, skipping migration")
+            return
+
+        # Merge the migrated model into existing config (preserving provider_pool etc.)
+        existing_config.setdefault("llm", {})
+        existing_config["llm"]["models"] = [models_entry]
+        sql.execute(
+            "UPDATE system_config SET config = ?, updated_at = ?, updated_by = ? WHERE id = 1",
+            (json.dumps(existing_config), now, "system-migration"),
+        )
+        sql.commit()
+        logger.info(f"Migration complete: merged {provider}/{model} into existing system_config")
+    else:
+        # system_config doesn't exist — seed it fresh
+        config = {"llm": {"models": [models_entry]}}
+        sql.execute(
+            "INSERT INTO system_config (id, config, updated_at, updated_by) VALUES (1, ?, ?, ?)",
+            (json.dumps(config), now, "system-migration"),
+        )
+        sql.commit()
+        logger.info(f"Migration complete: system_config seeded with {provider}/{model}")

@@ -110,6 +110,10 @@ export default function App() {
     loadDatabases()
     loadConfig()
     checkLLM()
+
+    // Periodically check LLM connectivity every 2 minutes
+    const timer = setInterval(checkLLM, 120000)
+    return () => clearInterval(timer)
   }, [user, loadSessions, loadSchema, loadDatabases, loadConfig, checkLLM])
 
   if (!isInitialized) {
@@ -235,6 +239,7 @@ export default function App() {
 
       <StatusBar
         llmModel={llmConfig.model}
+        llmName={llmConfig.name}
         llmConnected={llmConnected}
         dbName={databases.find(d => d.id === activeDbId)?.name || '未连接'}
         sessionTitle={sessions.find(s => s.id === activeSessionId)?.title}
