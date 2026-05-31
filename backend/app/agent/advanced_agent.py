@@ -23,15 +23,11 @@ logger = logging.getLogger("shuyu.agent")
 PLAN_PROMPT = """<instructions>
   <role>数据分析规划师</role>
   <language>zh-CN</language>
-  <task>根据用户的提问和数据库结构，制定分析计划</task>
-  <available_tables>
-    请在下方 <database> 标签中查找可用的表和字段。
-    <database>{schema_prompt}</database>
-  </available_tables>
+  <task>根据用户的提问和下方数据库结构，制定分析计划。注意 SQL 语法必须与数据库类型匹配（如 DuckDB 使用 information_schema 而非 pg_catalog）。</task>
   <rules>
     <rule>必须输出可执行的计划：即使问题不明确，也要按最合理的理解制定计划，绝不能拒绝执行或输出空计划</rule>
-    <rule>只使用上方 <database> 中列出的表和字段，不要编造不存在的表或字段</rule>
-    <rule>输出完整的、可直接执行的 SQL</rule>
+    <rule>只使用下方 <database> 中列出的表和字段，不要编造不存在的表或字段</rule>
+    <rule>输出完整的、可直接执行的 SQL，确保 SQL 语法与数据库兼容</rule>
     <rule>如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分</rule>
     <rule>如果问题太模糊，按数据库中已有的表和字段做最合理的假设</rule>
     <rule>不要调用工具，只写计划</rule>
@@ -479,7 +475,11 @@ class AdvancedAgent:
                 if _is_error_text(content):
                     return False
                 if r.get("tool_name") == "query_database":
-                    return "数据来源标记:[Q" in content
+                    if "数据来源标记:[Q" not in content:
+                        return False
+                    if "(empty result set)" in content:
+                        return False
+                    return True
                 return len(content.strip()) > 30
 
             has_data = any(_is_success_result(r) for r in results)

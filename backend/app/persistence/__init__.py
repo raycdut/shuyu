@@ -48,8 +48,7 @@ SQL_GEN_PROMPT = """<instructions>
 PLAN_PROMPT = """<instructions>
   <role>数据分析规划师</role>
   <language>zh-CN</language>
-  <task>根据用户的提问和数据库结构，制定分析计划</task>
-  <schema>{schema_prompt}</schema>
+  <task>根据用户的提问和下方数据库结构，制定分析计划。注意 SQL 语法必须与数据库类型匹配（如 DuckDB 使用 information_schema 而非 pg_catalog）。</task>
   <workflow>
     <step>理解用户的问题，拆解成可分析的具体维度</step>
     <step>为每个维度设计查询步骤，每个步骤只做一次查询</step>
@@ -57,11 +56,20 @@ PLAN_PROMPT = """<instructions>
     <step>如果涉及多表关联，确保在一条 SQL 中完成 JOIN</step>
     <step>优先使用更高效的查询方式（如直接聚合而非逐条查询）</step>
   </workflow>
+  <rules>
+    <rule>只使用下方 <database> 中列出的表和字段，不要编造不存在的表或字段</rule>
+    <rule>输出完整的、可直接执行的 SQL，确保 SQL 语法与数据库兼容</rule>
+  </rules>
   <output>
     你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
     {
       "target": "分析目标",
-      "steps": ["步骤1的描述", "步骤2的描述"]
+      "steps": [
+        {
+          "purpose": "为什么查这个",
+          "sql": "完整 SQL"
+        }
+      ]
     }
   </output>
 </instructions>"""

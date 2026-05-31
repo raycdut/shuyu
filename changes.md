@@ -165,3 +165,20 @@ Created two comprehensive test files under `backend/tests/`:
 **修复**: 展开时动态移除 `overflow-y-hidden` 并将 `max-h-32` 切换为 `max-h-none`。
 
 **文件**: [PromptManagementTab.tsx](frontend/src/pages/AdminSettings/tabs/PromptManagementTab.tsx)
+
+### 修复 Plan Prompt 中 {schema_prompt} 占位符导致 SQL 生成错误
+
+**问题**: 用户问「有哪些数据表？」时回答不理想。日志分析发现：
+
+1. **PLAN_PROMPT 中有未替换的 `{schema_prompt}` 占位符** — `<database>{schema_prompt}</database>` 作为字面文本传给 LLM，导致 LLM 看到空标签，忽略实际 schema。LLM 默认用 PostgreSQL 语法。
+2. **PostgreSQL SQL 在 DuckDB 上执行** — 第一个 SQL(`information_schema.tables WHERE table_schema='public'`) 和第二个 SQL（`pg_catalog.pg_class`）都是 PostgreSQL 语法，DuckDB 返回 0 行。
+3. **`has_data` 对 0 行结果误判** — 即使查询返回了 "(empty result set)"，`[Q1]` 标记仍存在，`has_data=True`，导致 pipeline 认为数据获取成功，进入报告阶段产出了无意义回答。
+4. **报告重新生成返回空** — 补充查询虽然获取到 140 行数据，但重新生成报告时 DeepSeek 返回空，兜底保留了"让我换一种方式来查找表："。
+
+**修复**:
+- 删除 `PLAN_PROMPT` 中的 `<database>{schema_prompt}</database>` 和 `<schema>{schema_prompt}</schema>` 占位符
+- 在 `task` 中明确提示 SQL 语法匹配 DuckDB（如使用 information_schema 而非 pg_catalog）
+- 修复 `_is_success_result`：当 `query_database` 返回 "(empty result set)" 时判定为失败
+- 统一 `persistence/__init__.py` 与 `advanced_agent.py` 的 PLAN_PROMPT 输出格式（steps 数组含 purpose + sql 字段）
+
+**文件**: [advanced_agent.py](backend/app/agent/advanced_agent.py), [persistence/__init__.py](backend/app/persistence/__init__.py)
