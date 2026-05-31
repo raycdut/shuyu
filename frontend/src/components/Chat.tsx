@@ -18,6 +18,10 @@ const EXAMPLE_QUESTIONS = [
   '帮我分析一下数据',
 ]
 
+/**
+ * 聊天主区域组件
+ * 包含消息列表展示和输入框
+ */
 const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mode, onModeChange }: ChatProps) {
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -110,8 +114,8 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
           </>
         )}
 
-        {/* 加载指示 */}
-        {isLoading && (
+        {/* 加载指示（深度分析模式下由进度面板替代） */}
+        {isLoading && mode !== 'quality' && (
           <div className="flex justify-start mb-4">
             <div className="bubble-agent">
               <div className="flex items-center gap-2 text-ink-lighter">

@@ -90,7 +90,7 @@ async def test_call_count_minimum(tool_registry):
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：完成")
         if tools is None and "报告审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：通过")
+            return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
     agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
@@ -123,7 +123,7 @@ async def test_full_pipeline_produces_result(tool_registry):
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：完成")
         if tools is None and "报告审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：通过")
+            return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         # Execute step - return data directly (no tool calls, >30 chars)
         return _make_choice(content="销售数据：100件商品，总额50000元")
 
@@ -156,7 +156,7 @@ async def test_progress_callback_receives_events(tool_registry):
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：最终")
         if tools is None and "报告审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：通过")
+            return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
     agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
@@ -190,7 +190,7 @@ async def test_sql_queries_in_result(tool_registry):
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告")
         if tools is None and "报告审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：通过")
+            return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
     agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
@@ -226,7 +226,7 @@ async def test_plan_reflection_loops_on_revision(tool_registry):
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告")
         if tools is None and "报告审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：通过")
+            return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
     agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")

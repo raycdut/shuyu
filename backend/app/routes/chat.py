@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
+import decimal
 import json
 import logging
 import os
@@ -23,6 +25,33 @@ from ..models.chat import ChatRequest, ChatResponse
 logger = logging.getLogger("shuyu.main")
 
 router = APIRouter()
+
+
+MAX_RESULT_ROWS = 100
+
+
+def _to_json_safe(obj):
+    """递归将非 JSON 原生类型转换为可序列化的等效类型。
+
+    DuckDB 的 datetime.date / datetime.datetime / decimal.Decimal 等类型
+    无法被标准 json.dumps 序列化，需要预先转换。
+    """
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(item) for item in obj]
+    return obj
+
+
+def _make_event(event: dict) -> str:
+    """将 event dict 序列化为 SSE data 行，自动处理非 JSON 原生类型。"""
+    return f"data: {json.dumps(_to_json_safe(event), ensure_ascii=False)}\n\n"
 
 
 @router.post("/api/chat", response_model=ChatResponse)
@@ -172,6 +201,14 @@ async def chat(req: ChatRequest):
 
     session.add_message("assistant", content)
 
+    # Store query_results in session metadata for persistence
+    try:
+        session.metadata["_query_results"] = _to_json_safe(
+            query_results_collector
+        )
+    except Exception:
+        pass
+
     return ChatResponse(
         reply=content,
         session_id=session_id,
@@ -190,10 +227,10 @@ async def chat_stream(req: ChatRequest):
         """Server-sent events generator for quality-mode progress."""
         try:
             if state.agent_loop is None:
-                yield f"data: {json.dumps({'type': 'error', 'content': 'Agent not initialized'})}\n\n"
+                yield _make_event({'type': 'error', 'content': 'Agent not initialized'})
                 return
 
-            yield f"data: {json.dumps({'type': 'thinking', 'content': '正在分析问题...'})}\n\n"
+            yield _make_event({'type': 'thinking', 'content': '正在分析问题...'})
 
             # Session + DB setup (same as POST /api/chat)
             session_id = req.session_id or str(uuid.uuid4())[:8]
@@ -202,8 +239,8 @@ async def chat_stream(req: ChatRequest):
             if not req.db_id:
                 session.add_message("user", req.message)
                 content = "⚠️ 请先在左侧选择一个数据库，然后再提问。"
-                yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id}, ensure_ascii=False)}\n\n"
-                yield f"data: {json.dumps({'type': 'done', 'content': content, 'sql_queries': [], 'query_results': []}, ensure_ascii=False)}\n\n"
+                yield _make_event({'type': 'session_id', 'session_id': session_id})
+                yield _make_event({'type': 'done', 'content': content, 'sql_queries': [], 'query_results': []})
                 session.add_message("assistant", content)
                 return
 
@@ -292,7 +329,7 @@ async def chat_stream(req: ChatRequest):
                 try:
                     while True:
                         event = await progress_queue.get()
-                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                        yield _make_event(event)
                         if event.get("type") == "done":
                             done_event = event
                             break
@@ -313,7 +350,7 @@ async def chat_stream(req: ChatRequest):
                 sql_queries = done_event.get("sql_queries") if done_event else []
                 query_results = done_event.get("query_results") if done_event else []
                 # Send session_id so frontend can continue the conversation
-                yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id})}\n\n"
+                yield _make_event({'type': 'session_id', 'session_id': session_id})
             else:
                 # Fast mode: wait then return
                 result = await agent_task
@@ -334,12 +371,19 @@ async def chat_stream(req: ChatRequest):
 
             session.add_message("assistant", content)
 
+            # Store query_results in session metadata for persistence
+            if query_results:
+                try:
+                    session.metadata["_query_results"] = _to_json_safe(query_results)
+                except Exception:
+                    pass
+
             # Final done event for fast mode
             if req.mode != "quality":
-                yield f"data: {json.dumps({'type': 'done', 'content': content, 'sql_queries': sql_queries, 'query_results': query_results}, ensure_ascii=False)}\n\n"
+                yield _make_event({'type': 'done', 'content': content, 'sql_queries': sql_queries, 'query_results': query_results})
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield _make_event({'type': 'error', 'content': str(e)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
