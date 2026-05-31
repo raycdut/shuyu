@@ -132,7 +132,7 @@ function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfig; onSa
         </div>
       ))}
       <SettingSection title="系统默认模型">
-        <select value={defaultModel} onChange={e => setDefaultModel(e.target.value)} className="ink-input text-sm">
+        <select value={defaultModel} onChange={e => setDefaultModel(e.target.value)} className="ink-input text-sm w-full">
           {pool.filter(p => p.enabled).flatMap(p => p.models.map(m => (
             <option key={m} value={m}>{m}</option>
           )))}
