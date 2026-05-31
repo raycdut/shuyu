@@ -61,15 +61,13 @@ export default function AdminSettingsPage() {
       </nav>
 
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-3xl">
-          {activeTab === 'llm' && <LLMSettingsTab config={config} onSave={handleSave} saving={saving} />}
-          {activeTab === 'safety' && <SafetySettingsTab config={config} onSave={handleSave} saving={saving} />}
-          {activeTab === 'storage' && <StorageSettingsTab config={config} onSave={handleSave} saving={saving} />}
-          {activeTab === 'database' && <DatabasePlaceholder />}
-          {activeTab === 'users' && <UserManagementTab />}
-          {activeTab === 'advanced' && <AdvancedSettingsTab config={config} onSave={handleSave} saving={saving} />}
-          {activeTab === 'logs' && <ConfigLogTab />}
-        </div>
+        {activeTab === 'llm' && <LLMSettingsTab config={config} onSave={handleSave} saving={saving} />}
+        {activeTab === 'safety' && <SafetySettingsTab config={config} onSave={handleSave} saving={saving} />}
+        {activeTab === 'storage' && <StorageSettingsTab config={config} onSave={handleSave} saving={saving} />}
+        {activeTab === 'database' && <DatabasePlaceholder />}
+        {activeTab === 'users' && <UserManagementTab />}
+        {activeTab === 'advanced' && <AdvancedSettingsTab config={config} onSave={handleSave} saving={saving} />}
+        {activeTab === 'logs' && <ConfigLogTab />}
       </div>
     </div>
   )
