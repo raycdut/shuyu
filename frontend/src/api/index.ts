@@ -256,30 +256,30 @@ export const api = {
   // ===== Prompt 管理 =====
   getPrompts(category?: string): Promise<import('../types').PromptListResponse> {
     const params = category ? `?category=${encodeURIComponent(category)}` : ''
-    return request(`/api/prompts${params}`)
+    return request(`/prompts${params}`)
   },
 
   getPrompt(id: number): Promise<import('../types').PromptInfo> {
-    return request(`/api/prompts/${id}`)
+    return request(`/prompts/${id}`)
   },
 
   upsertPrompt(category: string, content: string): Promise<import('../types').UpsertPromptResponse> {
-    return request('/api/prompts', {
+    return request('/prompts', {
       method: 'PUT',
       body: JSON.stringify({ category, content }),
     })
   },
 
   activatePrompt(id: number): Promise<import('../types').ActivatePromptResponse> {
-    return request(`/api/prompts/${id}/activate`, { method: 'PATCH' })
+    return request(`/prompts/${id}/activate`, { method: 'PATCH' })
   },
 
   getActivePrompts(): Promise<import('../types').ActivePromptsResponse> {
-    return request('/api/prompts/active')
+    return request('/prompts/active')
   },
 
   getDefaultPrompt(category: string): Promise<import('../types').DefaultPromptResponse> {
-    return request(`/api/prompts/${encodeURIComponent(category)}/default`)
+    return request(`/prompts/${encodeURIComponent(category)}/default`)
   },
 
   // ===== Admin Stats =====

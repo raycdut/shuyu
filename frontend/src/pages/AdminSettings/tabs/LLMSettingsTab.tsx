@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { SystemConfig, LLMModelInstance } from '../../../types'
-import { ToggleRow } from '../../../components/AdminSettings/Common'
+import { ToggleRow, SettingSection } from '../../../components/AdminSettings/Common'
 
 function ModelDialog({
   model,
@@ -137,6 +137,9 @@ export function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfi
   const { t } = useTranslation()
   const [models, setModels] = useState<LLMModelInstance[]>(config.llm.models || [])
   const [allowUserConfig, setAllowUserConfig] = useState(config.advanced.allow_user_llm_config)
+  const [tempMin, setTempMin] = useState(config.advanced.llm_temperature_range.min)
+  const [tempMax, setTempMax] = useState(config.advanced.llm_temperature_range.max)
+  const [tempDefault, setTempDefault] = useState(config.advanced.llm_temperature_range.default)
   const [showDialog, setShowDialog] = useState(false)
   const [editingModel, setEditingModel] = useState<LLMModelInstance | null>(null)
   const [testingIds, setTestingIds] = useState<Set<string>>(new Set())
@@ -219,7 +222,11 @@ export function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfi
   const handleSaveAll = () => {
     onSave({
       llm: { models },
-      advanced: { ...config.advanced, allow_user_llm_config: allowUserConfig },
+      advanced: {
+        ...config.advanced,
+        allow_user_llm_config: allowUserConfig,
+        llm_temperature_range: { min: tempMin, max: tempMax, default: tempDefault },
+      },
     })
   }
 
@@ -353,6 +360,25 @@ export function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfi
         <div className="max-w-md">
           <ToggleRow label={t('llmSettings.allowUserSelect')} checked={allowUserConfig} onChange={setAllowUserConfig} />
         </div>
+      </div>
+
+      <div className="bg-white/40 p-6 rounded-sm border border-tea/30 mt-6">
+        <h4 className="text-xs font-bold text-ink-lighter uppercase tracking-widest mb-4 border-l-2 border-celadon pl-3">{t('llmSettings.samplingSection')}</h4>
+        <div className="grid grid-cols-2 gap-4">
+          <SettingSection title={t('llmSettings.temperatureMin')}>
+            <input type="number" value={tempMin} onChange={e => setTempMin(Number(e.target.value))} className="ink-input" min={0} max={1} step={0.1} />
+          </SettingSection>
+          <SettingSection title={t('llmSettings.temperatureMax')}>
+            <input type="number" value={tempMax} onChange={e => setTempMax(Number(e.target.value))} className="ink-input" min={0} max={2} step={0.1} />
+          </SettingSection>
+        </div>
+        <SettingSection title={t('llmSettings.temperatureDefault')}>
+          <div className="flex items-center gap-4">
+            <input type="range" value={tempDefault} onChange={e => setTempDefault(Number(e.target.value))} className="flex-1 accent-celadon" min={tempMin} max={tempMax} step={0.05} />
+            <span className="w-12 text-center text-sm font-bold text-celadon-dark">{tempDefault}</span>
+          </div>
+          <p className="text-[10px] text-ink-lighter mt-2 font-kai">{t('llmSettings.temperatureHint')}</p>
+        </SettingSection>
       </div>
 
       {showDialog && (

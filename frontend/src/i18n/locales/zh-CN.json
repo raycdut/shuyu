@@ -280,7 +280,12 @@
     "nameRequired": "请输入模型名称",
     "modelIdRequired": "请输入模型 ID",
     "confirmDeleteDefault": "此模型是系统默认模型，删除后将自动选择其他可用模型作为默认。确定删除？",
-    "confirmDeleteModel": "确定删除模型「{{name}}」？"
+    "confirmDeleteModel": "确定删除模型「{{name}}」？",
+    "samplingSection": "LLM 采样参数限制",
+    "temperatureMin": "温度最小值",
+    "temperatureMax": "温度最大值",
+    "temperatureDefault": "系统默认温度 (Temperature)",
+    "temperatureHint": "数值越高输出越具创造性，越低则越严谨"
   },
   "safetySettings": {
     "title": "全局安全设置",

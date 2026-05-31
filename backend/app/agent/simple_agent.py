@@ -143,8 +143,22 @@ class SimpleAgent:
                 {
                     "role": "system",
                     "content": (
-                        "你是对话压缩器。请把下面的对话压缩成一段简洁摘要，保留：用户目标、关键约束、"
-                        "已执行的查询/工具调用要点、关键结论、仍未解决的问题。不要编造。输出纯文本摘要。"
+                        "<instructions>"
+                        "<role>对话压缩器</role>"
+                        "<language>zh-CN</language>"
+                        "<task>把下面的对话压缩成一段简洁摘要</task>"
+                        "<retain>"
+                        "<item>用户目标</item>"
+                        "<item>关键约束</item>"
+                        "<item>已执行的查询/工具调用要点</item>"
+                        "<item>关键结论</item>"
+                        "<item>仍未解决的问题</item>"
+                        "</retain>"
+                        "<rules>"
+                        "<rule>不要编造</rule>"
+                        "</rules>"
+                        "<output>输出纯文本摘要</output>"
+                        "</instructions>"
                     ),
                 },
                 {"role": "user", "content": payload},

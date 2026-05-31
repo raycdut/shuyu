@@ -48,7 +48,7 @@ DEFAULT_SYSTEM_CONFIG: dict[str, Any] = {
         "max_sessions_per_user": 50,
         "allow_user_llm_config": True,
         "allow_user_safety_override": False,
-        "llm_temperature_range": {"min": 0, "max": 1, "default": 0.3},
+        "llm_temperature_range": {"min": 0, "max": 0.5, "default": 0.3},
     },
     "storage": {
         "log_interval": "day",
@@ -179,6 +179,9 @@ def update_user_config(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
     for key in ("llm", "safety", "preferences"):
         if key in config and isinstance(config[key], dict):
             merged[key] = {**old.get(key, {}), **config[key]}
+    if "preferences" in merged and "temperature" in merged["preferences"]:
+        temp_range = get_system_config().get("advanced", {}).get("llm_temperature_range", {"min": 0, "max": 0.5, "default": 0.3})
+        merged["preferences"]["temperature"] = max(temp_range.get("min", 0), min(merged["preferences"]["temperature"], temp_range.get("max", 0.5)))
     now = datetime.now(timezone.utc).isoformat()
     db.execute(
         "INSERT INTO user_configs (user_id, config, updated_at) VALUES (?, ?, ?) "
@@ -278,9 +281,12 @@ def _merge_configs(system: dict[str, Any], user: dict[str, Any]) -> dict[str, An
             max_allowed = system.get("safety", {}).get("max_rows", 10000)
             runtime["safety"]["max_rows"] = min(user_safety["max_rows"], max_allowed)
 
+    temp_range = advanced.get("llm_temperature_range", {"min": 0, "max": 0.5, "default": 0.3})
+    user_temp = user_prefs.get("temperature", 0.3)
+    clamped_temp = max(temp_range.get("min", 0), min(user_temp, temp_range.get("max", 0.5)))
     preferences = {
         "language": user_prefs.get("language", "zh-CN"),
-        "temperature": user_prefs.get("temperature", 0.3),
+        "temperature": clamped_temp,
         "theme": user_prefs.get("theme", "light"),
         "default_view": user_prefs.get("default_view", "chat"),
     }
@@ -311,7 +317,7 @@ def get_user_available_options(user_id: str) -> dict[str, Any]:
         provider_groups[provider]["models"].append(m["model"])
     enabled_providers = list(provider_groups.values())
 
-    temp_range = advanced.get("llm_temperature_range", {"min": 0, "max": 1, "default": 0.3})
+    temp_range = advanced.get("llm_temperature_range", {"min": 0, "max": 0.5, "default": 0.3})
     return {
         "llm": {
             "providers": enabled_providers,

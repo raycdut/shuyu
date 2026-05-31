@@ -20,69 +20,77 @@ from .tools.registry import ToolRegistry
 
 logger = logging.getLogger("shuyu.agent")
 
-PLAN_PROMPT = """你是数据分析规划师。根据用户的提问和下方数据库结构，制定分析计划。
-
-## 可用数据库
-<database_schema>
-请在下方 `<database>` 标签中查找可用的表和字段。
-</database_schema>
-
-## 核心规则（务必遵守）
-1. **必须输出可执行的计划**：即使问题不明确，也要按最合理的理解制定计划，绝不能拒绝执行或输出空计划
-2. **只使用上方 `<database>` 中列出的表和字段**，不要编造不存在的表或字段
-3. **输出完整的、可直接执行的 SQL**
-4. 如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分
-5. 如果问题太模糊，按数据库中已有的表和字段做最合理的假设
-6. 不要调用工具，只写计划
-
-你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-
-{
-  "target": "一句话说明用户想分析什么",
-  "steps": [
+PLAN_PROMPT = """<instructions>
+  <role>数据分析规划师</role>
+  <language>zh-CN</language>
+  <task>根据用户的提问和数据库结构，制定分析计划</task>
+  <available_tables>
+    请在下方 <database> 标签中查找可用的表和字段。
+    <database>{schema_prompt}</database>
+  </available_tables>
+  <rules>
+    <rule>必须输出可执行的计划：即使问题不明确，也要按最合理的理解制定计划，绝不能拒绝执行或输出空计划</rule>
+    <rule>只使用上方 <database> 中列出的表和字段，不要编造不存在的表或字段</rule>
+    <rule>输出完整的、可直接执行的 SQL</rule>
+    <rule>如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分</rule>
+    <rule>如果问题太模糊，按数据库中已有的表和字段做最合理的假设</rule>
+    <rule>不要调用工具，只写计划</rule>
+  </rules>
+  <output>
+    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
     {
-      "purpose": "为什么查这个",
-      "sql": "你的完整 SQL，可直接执行，如果没有 SQL 填 null"
+      "target": "一句话说明用户想分析什么",
+      "steps": [
+        {
+          "purpose": "为什么查这个",
+          "sql": "你的完整 SQL，可直接执行，如果没有 SQL 填 null"
+        }
+      ]
     }
-  ]
-}
-"""
+  </output>
+</instructions>"""
 
-PLAN_REFLECT_PROMPT = """你是数据分析规划审核专家。请检查下面的分析计划是否合理。
+PLAN_REFLECT_PROMPT = """<instructions>
+  <role>数据分析规划审核专家</role>
+  <language>zh-CN</language>
+  <task>检查分析计划是否合理</task>
+  <checklist>
+    <item>分析目标是否准确反映了用户的问题？</item>
+    <item>每个分析步骤的 SQL 思路是否可行？（表名、关联字段、聚合方式是否合理）</item>
+    <item>步骤顺序是否正确？（后面的步骤是否依赖前面的结果？）</item>
+    <item>有没有多余的步骤？（一条 SQL 能解决的问题，不应该拆成多步）</item>
+    <item>有没有遗漏重要的分析维度？</item>
+  </checklist>
+  <output>
+    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
+    {
+      "verdict": "合理 或 需要修改",
+      "issues": ["如果有问题，逐条列出，没有填空数组"],
+      "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"]
+    }
+  </output>
+</instructions>"""
 
-检查清单：
-1. 分析目标是否准确反映了用户的问题？
-2. 每个分析步骤的 SQL 思路是否可行？（表名、关联字段、聚合方式是否合理）
-3. 步骤顺序是否正确？（后面的步骤是否依赖前面的结果？）
-4. 有没有多余的步骤？（一条 SQL 能解决的问题，不应该拆成多步）
-5. 有没有遗漏重要的分析维度？
-
-你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-
-{
-  "verdict": "合理 或 需要修改",
-  "issues": ["如果有问题，逐条列出，没有填空数组"],
-  "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"]
-}
-"""
-
-REPORT_REFLECT_PROMPT = """你是数据分析报告审核专家。请检查下面的分析报告。
-
-检查清单：
-1. 报告是否直接回应了用户的原始问题？
-2. 报告中的数据是否有具体的数值支持（不应该是模糊描述）？
-3. 有没有明显的遗漏或错误？
-4. 是否有有趣的发现值得提及？
-
-你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-
-{
-  "verdict": "通过 或 需要补充 或 计划错误",
-  "issues": ["如果有问题，逐条列出，没有填空数组"],
-  "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"],
-  "needs_new_plan": true/false (如果是计划错误，导致现有数据无法修复报告，请设为 true)
-}
-"""
+REPORT_REFLECT_PROMPT = """<instructions>
+  <role>数据分析报告审核专家</role>
+  <language>zh-CN</language>
+  <task>检查分析报告的质量</task>
+  <checklist>
+    <item>报告是否直接回应了用户的原始问题？</item>
+    <item>报告中的数据是否有具体的数值支持（不应该是模糊描述）？</item>
+    <item>有没有明显的遗漏或错误？</item>
+    <item>是否有有趣的发现值得提及？</item>
+  </checklist>
+  <output>
+    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
+    {
+      "verdict": "通过 或 需要补充 或 计划错误",
+      "issues": ["如果有问题，逐条列出，没有填空数组"],
+      "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"],
+      "needs_new_plan": true/false (如果是计划错误，导致现有数据无法修复报告，请设为 true)
+    }
+  </output>
+</instructions>"""
 
 
 class AdvancedAgent:
@@ -507,9 +515,14 @@ class AdvancedAgent:
     ) -> bool:
         """Fallback: original free-form ReAct loop when steps can't be parsed."""
         exec_prompt = (
-            f"你正在执行以下分析计划：\n{plan_text}\n\n"
-            f"按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现。\n"
-            f"注意：不要重复查询已经获取过的数据。"
+            "<instructions>"
+            "<task>执行分析计划</task>"
+            f"<plan>{plan_text}</plan>"
+            "<rules>"
+            "<rule>按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现</rule>"
+            "<rule>不要重复查询已经获取过的数据</rule>"
+            "</rules>"
+            "</instructions>"
         )
         tools_def = self.tool_registry.to_openai_tools()
 
@@ -584,12 +597,17 @@ class AdvancedAgent:
                 {
                     "role": "system",
                     "content": (
-                        "你是数据分析报告撰写专家。根据已有查询结果，生成一份完整的分析报告。\n\n"
-                        "要求：\n"
-                        "1. 直接回答用户的原始问题\n"
-                        "2. 使用具体的数据和数值（不要模糊描述）\n"
-                        "3. 结构清晰，使用表格展示数据\n"
-                        "4. 包含关键发现和结论"
+                        "<instructions>"
+                        "<role>数据分析报告撰写专家</role>"
+                        "<language>zh-CN</language>"
+                        "<task>根据已有查询结果，生成一份完整的分析报告</task>"
+                        "<requirements>"
+                        "<item>直接回答用户的原始问题</item>"
+                        "<item>使用具体的数据和数值（不要模糊描述）</item>"
+                        "<item>结构清晰，使用表格展示数据</item>"
+                        "<item>包含关键发现和结论</item>"
+                        "</requirements>"
+                        "</instructions>"
                     ),
                 },
                 *conversation,
@@ -687,10 +705,12 @@ class AdvancedAgent:
                         {
                             "role": "system",
                             "content": (
-                                "根据审核意见，你需要补充查询来完善报告。\n"
-                                f"发现的问题：{issues_text}\n"
-                                f"修改建议：{suggestions_text}\n\n"
-                                "请调用 query_database 工具执行需要的补充查询。如果不需要查询，直接输出补充后的报告。"
+                                "<instructions>"
+                                "<task>根据审核意见补充查询来完善报告</task>"
+                                f"<issues>{issues_text}</issues>"
+                                f"<suggestions>{suggestions_text}</suggestions>"
+                                "<action>请调用 query_database 工具执行需要的补充查询。如果不需要查询，直接输出补充后的报告。</action>"
+                                "</instructions>"
                             ),
                         },
                         *conversation,
@@ -726,7 +746,7 @@ class AdvancedAgent:
                     messages=[
                         {
                             "role": "system",
-                            "content": "根据所有查询结果（包括补充查询），重新生成一份完整的分析报告。",
+                            "content": "<instructions><task>根据所有查询结果（包括补充查询），重新生成一份完整的分析报告</task></instructions>",
                         },
                         *conversation,
                     ],

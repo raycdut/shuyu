@@ -55,7 +55,17 @@ const ConfigPanel = React.memo(function ConfigPanel({
   const [showKey, setShowKey] = useState(false)
   const [blockedText, setBlockedText] = useState('')
   const [temperature, setTemperature] = useState(0.3)
+  const [tempMax, setTempMax] = useState(0.5)
   const { t } = useTranslation()
+
+  useEffect(() => {
+    if (!open) return
+    api.getUserAvailableOptions().then(opts => {
+      const max = opts.preferences?.temperature?.max ?? 0.5
+      setTempMax(max)
+      setTemperature(prev => Math.min(prev, max))
+    }).catch(() => {})
+  }, [open])
 
   if (!open) return null
 
@@ -244,7 +254,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
           <input
             type="range"
             min="0"
-            max="1"
+            max={tempMax}
             step="0.1"
             value={temperature}
             onChange={e => setTemperature(Number(e.target.value))}

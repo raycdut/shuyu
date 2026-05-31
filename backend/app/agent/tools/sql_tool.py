@@ -29,19 +29,22 @@ async def handle_sql_query(
     if sql_gen_template:
         system_prompt = sql_gen_template.format(schema_prompt=schema_prompt)
     else:
-        system_prompt = f"""你是一个 SQL 专家。根据用户的问题和数据库结构，生成正确的 SQL 查询。
-
-数据库结构：
-{schema_prompt}
-
-规则：
-1. 只生成 SELECT 查询
-2. 只使用数据库中存在的表和字段
-3. 使用中文别名（AS）让结果可读
-4. 如果问题不明确，选择最合理的解释
-5. 如果无法生成 SQL，回复 "UNABLE: 原因"
-
-直接输出 SQL，不要解释。"""
+        system_prompt = (
+            "<instructions>"
+            "<role>SQL 专家</role>"
+            "<language>zh-CN</language>"
+            "<task>根据用户的问题和数据库结构，生成正确的 SQL 查询</task>"
+            f"<schema>{schema_prompt}</schema>"
+            "<rules>"
+            "<rule>只生成 SELECT 查询</rule>"
+            "<rule>只使用数据库中存在的表和字段</rule>"
+            "<rule>使用中文别名（AS）让结果可读</rule>"
+            "<rule>如果问题不明确，选择最合理的解释</rule>"
+            "<rule>如果无法生成 SQL，回复 \"UNABLE: 原因\"</rule>"
+            "</rules>"
+            "<output>直接输出 SQL，不要解释</output>"
+            "</instructions>"
+        )
 
     messages = [
         {"role": "system", "content": system_prompt},

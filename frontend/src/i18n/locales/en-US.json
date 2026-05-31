@@ -268,7 +268,12 @@
     "nameRequired": "Please enter a model name",
     "modelIdRequired": "Please enter a model ID",
     "confirmDeleteDefault": "This model is the system default. Deleting it will automatically select another available model as default. Confirm deletion?",
-    "confirmDeleteModel": "Are you sure you want to delete model \"{{name}}\"?"
+    "confirmDeleteModel": "Are you sure you want to delete model \"{{name}}\"?",
+    "samplingSection": "LLM Sampling Parameter Limits",
+    "temperatureMin": "Min Temperature",
+    "temperatureMax": "Max Temperature",
+    "temperatureDefault": "Default Temperature",
+    "temperatureHint": "Higher values produce more creative output, lower values produce more precise output"
   },
   "safetySettings": {
     "title": "Global Safety Settings",
