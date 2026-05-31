@@ -178,7 +178,7 @@ async def chat(req: ChatRequest):
                 pass
         agent_messages.insert(0, {
             "role": "system",
-            "content": f"<database name=\"{db_entry['name']}\">\n{inject_schema}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
+            "content": f"<database name=\"{db_entry['name']}\">\n{inject_schema}\n</database>\n<instruction>以上 <database> 标签中已完整列出所有可用表、字段和业务描述。关于表结构、有哪些表等元数据问题，请直接使用以上信息回答，不要查询数据库。</instruction>\n<instruction>对于具体的数据查询（如销量、订单量、用户数等），调用 query_database 工具。</instruction>"
         })
 
     safe_message = f"<user_query>\n{req.message}\n</user_query>"
