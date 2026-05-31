@@ -19,6 +19,10 @@ interface SidebarProps {
   onClearAllSessions?: () => void
 }
 
+/**
+ * 侧边栏组件
+ * 包含会话历史列表和数据库连接管理
+ */
 const Sidebar = React.memo(function Sidebar({
   open,
   sessions,
@@ -55,7 +59,9 @@ const Sidebar = React.memo(function Sidebar({
     else earlier.push(s)
   })
 
-  // --- 树展开/收起 ---
+  /**
+   * 切换数据库树的展开状态
+   */
   const toggleDbTree = async (dbId: string) => {
     // 点击时标记为当前数据库
     onSelectDb(dbId)

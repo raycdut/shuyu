@@ -138,6 +138,7 @@ async def handle_sql_query(
                     "ok": True,
                     "row_count": result.row_count,
                     "columns": list(result.columns),
+                    "data": result.rows,
                     "preview_text": result_text,
                 })
         except Exception:
@@ -205,6 +206,7 @@ async def _execute_sql(sql: str, purpose: str, connector, schema_text: str) -> s
                     "ok": True,
                     "row_count": result.row_count,
                     "columns": list(result.columns),
+                    "data": result.rows,
                     "preview_text": result_text,
                 })
         except Exception:

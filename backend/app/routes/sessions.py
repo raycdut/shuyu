@@ -34,9 +34,19 @@ async def get_session_messages(session_id: str):
     if state.session_manager is None:
         raise HTTPException(503, "Session manager not initialized")
     session = state.session_manager.get_or_create(session_id)
+    messages = session.get_messages()
+
+    # Attach persisted query_results to the last assistant message
+    query_results = session.metadata.get("_query_results")
+    if query_results and messages:
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i]["role"] == "assistant":
+                messages[i] = {**messages[i], "query_results": query_results}
+                break
+
     return SessionMessagesResponse(
         session_id=session_id,
-        messages=session.get_messages(),
+        messages=messages,
     )
 
 
