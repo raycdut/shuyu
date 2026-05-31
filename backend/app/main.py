@@ -104,13 +104,18 @@ async def lifespan(app: FastAPI):
     state.tool_registry = ToolRegistry()
     state.tool_registry.register(Tool(
         name="query_database",
-        description="用自然语言查询数据库。输入你想问的问题，我会生成 SQL 并返回查询结果。",
+        description="查询数据库。传入自然语言问题（question）会自动生成 SQL，或直接传入 SQL（sql）执行。",
         parameters={
             "question": {
                 "type": "string",
-                "description": "关于数据的自然语言问题，如「上月销量最高的产品是什么」",
-            }
+                "description": "关于数据的自然语言问题，如「上月销量最高的产品是什么」（与 sql 二选一）",
+            },
+            "sql": {
+                "type": "string",
+                "description": "直接传入 SQL 查询语句执行（与 question 二选一）",
+            },
         },
+        required=[],
         handler=handle_query_database,
     ))
 

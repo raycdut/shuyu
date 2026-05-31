@@ -27,31 +27,25 @@ PLAN_PROMPT = """你是数据分析规划师。根据用户的提问和下方数
 请在下方 `<database>` 标签中查找可用的表和字段。
 </database_schema>
 
-## 严格规则
-- 只使用上方 `<database>` 中列出的表和字段，不要编造不存在的表或字段
-- 输出完整的、可直接执行的 SQL，写在 ```sql 代码块中
-- 如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分
-- 如果表结构不足以回答问题，输出「缺少必要数据：xxx」
-- 不要调用工具，只写计划
+## 核心规则（务必遵守）
+1. **必须输出可执行的计划**：即使问题不明确，也要按最合理的理解制定计划，绝不能拒绝执行或输出空计划
+2. **只使用上方 `<database>` 中列出的表和字段**，不要编造不存在的表或字段
+3. **输出完整的、可直接执行的 SQL**
+4. 如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分
+5. 如果问题太模糊，按数据库中已有的表和字段做最合理的假设
+6. 不要调用工具，只写计划
 
-## 输出格式（必须严格遵循）
+你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
 
-## 分析目标
-[一句话说明用户想分析什么]
-
-## 分析步骤
-1. **第 1 步**
-   - 目的：[为什么查这个]
-   - SQL：
-   ```sql
-   你的完整 SQL，可直接执行
-   ```
-2. **第 2 步**（可选）
-   - 目的：
-   - SQL：
-   ```sql
-   ...
-   ```
+{
+  "target": "一句话说明用户想分析什么",
+  "steps": [
+    {
+      "purpose": "为什么查这个",
+      "sql": "你的完整 SQL，可直接执行，如果没有 SQL 填 null"
+    }
+  ]
+}
 """
 
 PLAN_REFLECT_PROMPT = """你是数据分析规划审核专家。请检查下面的分析计划是否合理。
@@ -63,18 +57,14 @@ PLAN_REFLECT_PROMPT = """你是数据分析规划审核专家。请检查下面�
 4. 有没有多余的步骤？（一条 SQL 能解决的问题，不应该拆成多步）
 5. 有没有遗漏重要的分析维度？
 
-请输出：
+你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
 
-## 审核结论
-[合理 / 需要修改]
-
-## 问题列表
-- [如果有问题，逐条列出]
-
-## 修改建议
-- [如果有问题，给出具体的修改建议]
-
-如果审核结论是「合理」，则直接输出「审核结论：合理」即可。"""
+{
+  "verdict": "合理 或 需要修改",
+  "issues": ["如果有问题，逐条列出，没有填空数组"],
+  "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"]
+}
+"""
 
 REPORT_REFLECT_PROMPT = """你是数据分析报告审核专家。请检查下面的分析报告。
 
@@ -156,14 +146,34 @@ class AdvancedAgent:
         # ============ Phase 4: Report reflection (iterate if needed) ============
         final = await self._phase_report_reflect(final, conversation, progress_callback)
 
+        try:
+            from .. import state as _state
+
+            self._sql_queries = list(_state.get_request_sql_queries())
+        except Exception:
+            pass
+        query_results = []
+        try:
+            from .. import state as _state
+
+            query_results = list(_state.get_request_query_results())
+        except Exception:
+            query_results = []
+
         if progress_callback:
-            await progress_callback({"type": "done", "content": final})
+            await progress_callback({
+                "type": "done",
+                "content": final,
+                "sql_queries": self._sql_queries,
+                "query_results": query_results,
+            })
 
         return {
             "role": "assistant",
             "content": final,
             "tool_calls": [],
             "sql_queries": self._sql_queries,
+            "query_results": query_results,
         }
 
     # ------------------------------------------------------------------
@@ -178,6 +188,7 @@ class AdvancedAgent:
                 *conversation,
             ],
             tools=None,
+            response_format={"type": "json_object"}
         )
         plan_text = self._extract_content(response)
         logger.info(f"AdvancedAgent: Plan generated ({len(plan_text)} chars)")
@@ -208,6 +219,7 @@ class AdvancedAgent:
                     {"role": "assistant", "content": f"## 分析计划\n{current_plan}"},
                 ],
                 tools=None,
+                response_format={"type": "json_object"}
             )
             reflect_text = self._extract_content(reflect_response)
             logger.info(f"AdvancedAgent: Plan reflect input:\n{current_plan[:300]}")
@@ -215,9 +227,9 @@ class AdvancedAgent:
             logger.info(f"AdvancedAgent: Plan reflect verdict:\n{reflect_text[:300]}")
 
             # Check if plan is approved
-            if "审核结论" in reflect_text and "合理" in reflect_text:
-                # Check for explicit "需要修改" — if both appear, "需要修改" wins
-                if "需要修改" not in reflect_text.split("审核结论")[-1][:50]:
+            try:
+                reflect_json = json.loads(reflect_text)
+                if reflect_json.get("verdict") == "合理":
                     logger.info("AdvancedAgent: Plan approved after reflection")
                     if progress_callback:
                         await progress_callback({
@@ -226,6 +238,8 @@ class AdvancedAgent:
                             "collapsible": True,
                         })
                     break
+            except json.JSONDecodeError:
+                pass
 
             # Plan needs revision — regenerate with feedback
             logger.info(f"AdvancedAgent: Plan needs revision (round {round_num + 1})")
@@ -237,33 +251,10 @@ class AdvancedAgent:
                 })
 
             if round_num == max_rounds - 1:
-                # All rounds failed — ask user for more information instead of
-                # pushing through with a flawed plan
-                logger.warning("AdvancedAgent: Plan failed all reflection rounds — requesting user input")
-                clarification = await self.call_llm(
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "你已多次尝试制定分析计划，但每次审核都发现问题。"
-                                "可能是因为用户的提问信息不足，无法制定合理的计划。\n\n"
-                                "请输出一段温和的说明，告诉用户当前的信息不足以制定完整的分析计划，"
-                                "并请用户提供更多信息：\n"
-                                "1. 具体想分析什么维度和指标\n"
-                                "2. 关注的时间范围\n"
-                                "3. 是否需要对比\n"
-                                "4. 其他帮助明确分析方向的信息\n\n"
-                                "注意：不要输出计划内容，只输出要求补充信息的说明。"
-                            ),
-                        },
-                        *conversation,
-                        {"role": "assistant", "content": current_plan},
-                        {"role": "user", "content": f"审核意见：{reflect_text}"},
-                    ],
-                    tools=None,
-                )
-                current_plan = self._extract_content(clarification)
-                logger.info(f"AdvancedAgent: Requesting user clarification ({len(current_plan)} chars)")
+                # All rounds failed — fall back to freeform execution with the
+                # last generated plan as context, rather than asking the user
+                logger.warning("AdvancedAgent: Plan failed all reflection rounds — falling back to freeform")
+                # Don't break — fall through to execution with current_plan
                 break
 
             # Regenerate plan with reflection feedback
@@ -275,13 +266,23 @@ class AdvancedAgent:
                     {"role": "user", "content": f"请根据以下审核意见修改分析计划：\n{reflect_text}"},
                 ],
                 tools=None,
+                response_format={"type": "json_object"}
             )
             current_plan = self._extract_content(response)
             logger.info(f"AdvancedAgent: Plan revised ({len(current_plan)} chars)")
 
-        # Show final plan to frontend
         if progress_callback:
-            await progress_callback({"type": "plan", "content": current_plan, "collapsible": True})
+            try:
+                plan_json = json.loads(current_plan)
+                display_plan = f"## 分析目标\n{plan_json.get('target', '')}\n\n## 分析步骤\n"
+                for i, step in enumerate(plan_json.get("steps", [])):
+                    display_plan += f"{i+1}. **目的：**{step.get('purpose', '')}\n"
+                    if step.get('sql'):
+                        display_plan += f"   ```sql\n   {step.get('sql')}\n   ```\n"
+            except json.JSONDecodeError:
+                display_plan = current_plan
+
+            await progress_callback({"type": "plan", "content": display_plan, "collapsible": True})
 
         conversation.append({"role": "assistant", "content": current_plan})
         return current_plan
@@ -291,67 +292,22 @@ class AdvancedAgent:
     # ------------------------------------------------------------------
 
     def _parse_plan_steps(self, plan_text: str) -> list[dict]:
-        """Extract steps + SQL from the plan.
+        """Extract steps + SQL from the JSON plan.
 
         Returns list of dicts: [{"purpose": str, "sql": str | None}]
         """
-        steps = []
-        current_purpose = None
-        in_code_block = False
-        code_buffer = []
-
-        for line in plan_text.split("\n"):
-            # Detect ```sql or ``` code block start/end
-            if line.strip().startswith("```"):
-                if in_code_block:
-                    # End of code block
-                    sql = "\n".join(code_buffer).strip()
-                    if current_purpose is not None and sql:
-                        steps.append({"purpose": current_purpose, "sql": sql})
-                    elif sql:
-                        # SQL without a preceding purpose line — still capture it
-                        steps.append({"purpose": sql[:80], "sql": sql})
-                    code_buffer = []
-                    in_code_block = False
-                else:
-                    in_code_block = True
-                    code_buffer = []
-                continue
-
-            if in_code_block:
-                code_buffer.append(line)
-                continue
-
-            # Match step header like "1. **第 1 步**" or "1. **Step 1**"
-            step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*", line)
-            if step_match:
-                current_purpose = line[step_match.end():].strip()
-                # Remove leading dash or colon
-                current_purpose = re.sub(r"^[:：\s-]+\s*", "", current_purpose)
-                # Check if the rest of the line has purpose text
-                if not current_purpose:
-                    current_purpose = f"Step {len(steps) + 1}"
-                continue
-
-            # Detect "- 目的：xxx" lines
-            purpose_match = re.match(r"^\s*-\s*目的[:：]?\s*(.*)", line)
-            if purpose_match and purpose_match.group(1).strip():
-                current_purpose = purpose_match.group(1).strip()
-                continue
-
-        # If the plan has no code blocks, fall back to the old text-based extraction
-        if not steps:
-            in_steps = False
-            for line in plan_text.split("\n"):
-                step_match = re.match(r"^\s*\d+\.\s+\*{1,2}.+?\*{1,2}\s*[:：]?\s*(.*)", line)
-                if step_match:
-                    in_steps = True
-                    steps.append({"purpose": step_match.group(1).strip(), "sql": None})
-                elif in_steps and line.strip() and not line.strip().startswith("#"):
-                    if steps and not line.strip().startswith("-"):
-                        steps[-1]["purpose"] += " " + line.strip()
-
-        return steps
+        try:
+            plan = json.loads(plan_text)
+            steps = []
+            for step in plan.get("steps", []):
+                steps.append({
+                    "purpose": step.get("purpose", ""),
+                    "sql": step.get("sql")
+                })
+            return steps
+        except json.JSONDecodeError:
+            logger.error("Failed to parse JSON plan, falling back to empty steps.")
+            return []
 
     async def _phase_execute(
         self,
@@ -387,20 +343,21 @@ class AdvancedAgent:
                 })
 
             if sql:
-                # Plan already has SQL — inject it directly
+                # Plan already has SQL — tell the model to use `sql` parameter directly
                 step_prompt = (
                     f"你正在执行分析计划的第 {step_num} 步。\n"
                     f"目的：{purpose}\n\n"
                     f"计划的 SQL（请直接使用，不要修改）：\n"
                     f"```sql\n{sql}\n```\n\n"
-                    f"调用 query_database 工具执行上述 SQL，完成后输出这一步的发现。"
+                    f"调用 query_database(sql=...) 直接执行上述 SQL（不要用 question 参数，用 sql 参数），"
+                    f"等待查询结果后输出这一步的发现。"
                 )
             else:
                 step_prompt = (
                     f"你正在执行分析计划的第 {step_num} 步。\n"
                     f"当前步骤：{purpose}\n\n"
                     f"完整计划：\n{plan_text}\n\n"
-                    f"执行这一步，调用 query_database 工具查询。"
+                    f"执行这一步，调用 query_database(question=...) 或 query_database(sql=...) 查询。"
                     f"完成后输出这一步的阶段性发现。"
                 )
 
@@ -478,8 +435,22 @@ class AdvancedAgent:
                 })
 
             # Validate result quality
-            has_data = any(len(r.get("content", "")) > 50 for r in results)
-            has_error = any("执行失败" in r.get("content", "") or "错误" in r.get("content", "") for r in results)
+            def _is_error_text(text: str) -> bool:
+                return any(
+                    text.strip().startswith(prefix)
+                    for prefix in ("工具执行失败", "SQL 执行失败", "⚠️", "无法生成 SQL")
+                )
+
+            def _is_success_result(r: dict) -> bool:
+                content = r.get("content", "")
+                if _is_error_text(content):
+                    return False
+                if r.get("tool_name") == "query_database":
+                    return "数据来源标记:[Q" in content
+                return len(content.strip()) > 30
+
+            has_data = any(_is_success_result(r) for r in results)
+            has_error = any(_is_error_text(r.get("content", "")) for r in results)
             sizes = ", ".join(f"{len(r.get('content', ''))}ch" for r in results)
             logger.info(f"AdvancedAgent: Step attempt {attempt + 1} — has_data={has_data}, has_error={has_error}, tool_results=[{sizes}]")
 
@@ -704,6 +675,11 @@ class AdvancedAgent:
                 current_report = self._extract_content(response)
                 logger.info(f"AdvancedAgent: Report regenerated ({len(current_report)} chars)")
 
+        # Clean up DeepSeek tool call leaks in the report text
+        if "<｜｜DSML｜｜tool_calls>" in current_report:
+            logger.warning("DeepSeek tool call leak detected in report reflect final, stripping it.")
+            current_report = current_report.split("<｜｜DSML｜｜tool_calls>")[0].strip()
+
         logger.info(f"AdvancedAgent: Report reflect final ({len(current_report)} chars)")
         logger.info(f"AdvancedAgent: Report reflect final preview:\n{current_report[:300]}")
         return current_report
@@ -725,16 +701,11 @@ class AdvancedAgent:
             if progress_callback:
                 q = json.dumps(args, ensure_ascii=False)[:80]
                 await progress_callback({"type": "query", "content": f"📊 查询: {q}"})
-            # Track SQL queries from the global state
-            from .. import state as _state
-            if _state._last_sql_queries:
-                self._sql_queries.extend(_state._last_sql_queries)
-                _state._last_sql_queries.clear()
-            return {"tool_call_id": tc["id"], "content": result}
+            return {"tool_call_id": tc["id"], "tool_name": tool_name, "content": result}
         except Exception as e:
             err_msg = f"工具执行失败：{e}"
             logger.error(f"  <- Tool error: {e}")
-            return {"tool_call_id": tc["id"], "content": err_msg}
+            return {"tool_call_id": tc["id"], "tool_name": tool_name, "content": err_msg}
 
     # ------------------------------------------------------------------
     # LLM response helpers
@@ -752,8 +723,14 @@ class AdvancedAgent:
                         "name": tc.function.name,
                         "arguments": tc.function.arguments,
                     })
+            
+            content = msg.content or ""
+            # Clean up DeepSeek tool call leaks in the content
+            if "<｜｜DSML｜｜tool_calls>" in content:
+                content = content.split("<｜｜DSML｜｜tool_calls>")[0].strip()
+
             return {
-                "content": msg.content or "",
+                "content": content,
                 "tool_calls": tool_calls,
                 "reasoning_content": getattr(msg, "reasoning_content", None),
             }

@@ -27,6 +27,7 @@ router = APIRouter()
 
 @router.post("/api/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
+    """Non-streaming chat endpoint for fast and quality modes."""
     if state.agent_loop is None:
         raise HTTPException(503, "Agent not initialized")
 
@@ -44,14 +45,31 @@ async def chat(req: ChatRequest):
     session_id = req.session_id or str(uuid.uuid4())[:8]
     session = state.session_manager.get_or_create(session_id)
 
+    if not req.db_id:
+        session.add_message("user", req.message)
+        content = "⚠️ 请先在左侧选择一个数据库，然后再提问。"
+        session.add_message("assistant", content)
+        return ChatResponse(
+            reply=content,
+            session_id=session_id,
+            tool_calls=[],
+            sql_queries=[],
+            query_results=[],
+        )
+
     # Auto-title
     if not session.metadata.get("title") and len(session.messages) == 0:
         title = req.message[:30] + ("…" if len(req.message) > 30 else "")
         session.metadata["title"] = title
 
     # Per-request state
-    state._active_connector = None
-    state._last_sql_queries = []
+    sql_queries_collector: list[str] = []
+    query_results_collector: list[dict] = []
+    tok_sql = state.request_sql_queries.set(sql_queries_collector)
+    tok_qr = state.request_query_results.set(query_results_collector)
+    tok_conn = state.request_active_connector.set(None)
+    tok_schema = state.request_schema_prompt.set(None)
+    active_connector = None
     db_entry = None
     if req.db_id:
         prev_db = session.metadata.get("db_id")
@@ -61,11 +79,17 @@ async def chat(req: ChatRequest):
     agent_messages = list(session.get_messages())
 
     if db_entry:
+        schema_text = "当前无法加载表结构"
+        full_schema_text = None
         same_db = req.db_id and req.db_id == session.metadata.get("_cached_db_id")
         if same_db and "_schema" in session.metadata:
             # Reuse cached connector and schema
-            state._active_connector = session.metadata.get("_connector")
+            active_connector = session.metadata.get("_connector")
+            state.request_active_connector.set(active_connector)
             schema_text = session.metadata["_schema"]
+            full_schema_text = session.metadata.get("_schema_full")
+            if full_schema_text:
+                state.request_schema_prompt.set(full_schema_text)
             logger.info(f"Session {session_id}: reuse cached connection ({db_entry['name']})")
         else:
             # First time or DB changed — connect fresh
@@ -73,19 +97,23 @@ async def chat(req: ChatRequest):
                 db_path = db_entry.get("path", "")
                 if db_path.startswith("~"):
                     db_path = Path(db_path).expanduser().resolve()
-                state._active_connector = DuckDBConnector(
+                active_connector = DuckDBConnector(
                     db_path=str(db_path),
                     include_tables=db_entry.get("include_tables"),
                     exclude_tables=db_entry.get("exclude_tables"),
                 )
-                state._active_connector.connect()
-                tables = state._active_connector.get_schema()
+                active_connector.connect()
+                state.request_active_connector.set(active_connector)
+                tables = active_connector.get_schema()
                 schema_text = build_schema_light(tables)
+                full_schema_text = build_schema_prompt(tables)
+                state.request_schema_prompt.set(full_schema_text)
                 logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
                 # Cache in session
-                session.metadata["_connector"] = state._active_connector
+                session.metadata["_connector"] = active_connector
                 session.metadata["_schema"] = schema_text
+                session.metadata["_schema_full"] = full_schema_text
                 session.metadata["_cached_db_id"] = req.db_id
             except Exception as e:
                 logger.error(f"Failed to load schema for {db_entry['name']}: {e}")
@@ -98,9 +126,8 @@ async def chat(req: ChatRequest):
         inject_schema = schema_text
         if req.mode == "quality" and db_entry:
             try:
-                tables = state._active_connector.get_schema() if state._active_connector else []
-                if tables:
-                    inject_schema = build_schema_prompt(tables)
+                if full_schema_text:
+                    inject_schema = full_schema_text
             except Exception:
                 pass
         agent_messages.insert(0, {
@@ -120,7 +147,7 @@ async def chat(req: ChatRequest):
         content = result.get("content", "")
 
         # Collect SQL queries — AdvancedAgent returns them in result, SimpleAgent uses global state
-        sql_queries = result.get("sql_queries") or state._last_sql_queries or []
+        sql_queries = result.get("sql_queries") or state.get_request_sql_queries()
 
         # Post-process: ensure [QN] markers appear when SQL was executed
         if sql_queries and not re.search(r"\[Q\d+\]", content):
@@ -132,12 +159,16 @@ async def chat(req: ChatRequest):
     except Exception as e:
         content = f"❌ 请求失败：{e}"
     finally:
-        if state._active_connector:
+        state.request_schema_prompt.reset(tok_schema)
+        state.request_active_connector.reset(tok_conn)
+        state.request_sql_queries.reset(tok_sql)
+        state.request_query_results.reset(tok_qr)
+        if active_connector:
             try:
-                state._active_connector.disconnect()
+                active_connector.disconnect()
             except Exception:
                 pass
-            state._active_connector = None
+            active_connector = None
 
     session.add_message("assistant", content)
 
@@ -145,7 +176,8 @@ async def chat(req: ChatRequest):
         reply=content,
         session_id=session_id,
         tool_calls=result.get("tool_calls", []) if 'result' in locals() else [],
-        sql_queries=result.get("sql_queries") or state._last_sql_queries or [],
+        sql_queries=(result.get("sql_queries") or sql_queries_collector) if 'result' in locals() else sql_queries_collector,
+        query_results=query_results_collector,
     )
 
 
@@ -155,6 +187,7 @@ async def chat_stream(req: ChatRequest):
     from fastapi.responses import StreamingResponse
 
     async def event_stream():
+        """Server-sent events generator for quality-mode progress."""
         try:
             if state.agent_loop is None:
                 yield f"data: {json.dumps({'type': 'error', 'content': 'Agent not initialized'})}\n\n"
@@ -166,12 +199,25 @@ async def chat_stream(req: ChatRequest):
             session_id = req.session_id or str(uuid.uuid4())[:8]
             session = state.session_manager.get_or_create(session_id)
 
+            if not req.db_id:
+                session.add_message("user", req.message)
+                content = "⚠️ 请先在左侧选择一个数据库，然后再提问。"
+                yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'content': content, 'sql_queries': [], 'query_results': []}, ensure_ascii=False)}\n\n"
+                session.add_message("assistant", content)
+                return
+
             if not session.metadata.get("title") and len(session.messages) == 0:
                 title = req.message[:30] + ("…" if len(req.message) > 30 else "")
                 session.metadata["title"] = title
 
-            state._active_connector = None
-            state._last_sql_queries = []
+            sql_queries_collector: list[str] = []
+            query_results_collector: list[dict] = []
+            tok_sql = state.request_sql_queries.set(sql_queries_collector)
+            tok_qr = state.request_query_results.set(query_results_collector)
+            tok_conn = state.request_active_connector.set(None)
+            tok_schema = state.request_schema_prompt.set(None)
+            active_connector = None
             db_entry = None
             if req.db_id:
                 db_entry = next((d for d in state._db_connections if d["id"] == req.db_id), None)
@@ -179,19 +225,42 @@ async def chat_stream(req: ChatRequest):
 
             agent_messages = list(session.get_messages())
             if db_entry:
+                schema_text = "当前无法加载表结构"
+                full_schema_text = None
+                same_db = req.db_id and req.db_id == session.metadata.get("_cached_db_id")
                 try:
-                    db_path = db_entry.get("path", "")
-                    if db_path.startswith("~"):
-                        db_path = Path(db_path).expanduser().resolve()
-                    state._active_connector = DuckDBConnector(
-                        db_path=str(db_path),
-                        include_tables=db_entry.get("include_tables"),
-                        exclude_tables=db_entry.get("exclude_tables"),
+                    if same_db and "_schema" in session.metadata:
+                        active_connector = session.metadata.get("_connector")
+                        state.request_active_connector.set(active_connector)
+                        schema_text = session.metadata["_schema"]
+                        full_schema_text = session.metadata.get("_schema_full")
+                        if full_schema_text:
+                            state.request_schema_prompt.set(full_schema_text)
+                    else:
+                        db_path = db_entry.get("path", "")
+                        if db_path.startswith("~"):
+                            db_path = Path(db_path).expanduser().resolve()
+                        active_connector = DuckDBConnector(
+                            db_path=str(db_path),
+                            include_tables=db_entry.get("include_tables"),
+                            exclude_tables=db_entry.get("exclude_tables"),
+                        )
+                        active_connector.connect()
+                        state.request_active_connector.set(active_connector)
+                        tables = active_connector.get_schema()
+                        schema_text = build_schema_light(tables)
+                        full_schema_text = build_schema_prompt(tables)
+                        state.request_schema_prompt.set(full_schema_text)
+                        session.metadata["_connector"] = active_connector
+                        session.metadata["_schema"] = schema_text
+                        session.metadata["_schema_full"] = full_schema_text
+                        session.metadata["_cached_db_id"] = req.db_id
+
+                    s_text = (
+                        full_schema_text
+                        if (req.mode == "quality" and full_schema_text)
+                        else schema_text
                     )
-                    state._active_connector.connect()
-                    tables = state._active_connector.get_schema()
-                    # Use full schema for quality mode
-                    s_text = build_schema_prompt(tables) if req.mode == "quality" else build_schema_light(tables)
                     agent_messages.insert(0, {
                         "role": "system",
                         "content": f"<database name=\"{db_entry['name']}\">\n{s_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
@@ -229,34 +298,45 @@ async def chat_stream(req: ChatRequest):
                             break
                         elif event.get("type") == "error":
                             break
-                finally:
-                    # Ensure agent_task is properly cleaned up
+                except asyncio.CancelledError:
                     agent_task.cancel()
+                    raise
+                finally:
+                    if done_event is None:
+                        agent_task.cancel()
                     try:
                         await agent_task
                     except (asyncio.CancelledError, Exception):
                         pass
 
                 content = done_event["content"] if done_event else ""
+                sql_queries = done_event.get("sql_queries") if done_event else []
+                query_results = done_event.get("query_results") if done_event else []
                 # Send session_id so frontend can continue the conversation
                 yield f"data: {json.dumps({'type': 'session_id', 'session_id': session_id})}\n\n"
             else:
                 # Fast mode: wait then return
                 result = await agent_task
                 content = result.get("content", "")
+                sql_queries = result.get("sql_queries") or state.get_request_sql_queries()
+                query_results = result.get("query_results") or state.get_request_query_results()
 
-            if state._active_connector:
+            state.request_schema_prompt.reset(tok_schema)
+            state.request_active_connector.reset(tok_conn)
+            state.request_sql_queries.reset(tok_sql)
+            state.request_query_results.reset(tok_qr)
+            if active_connector:
                 try:
-                    state._active_connector.disconnect()
+                    active_connector.disconnect()
                 except Exception:
                     pass
-                state._active_connector = None
+                active_connector = None
 
             session.add_message("assistant", content)
 
             # Final done event for fast mode
             if req.mode != "quality":
-                yield f"data: {json.dumps({'type': 'done', 'content': content})}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'content': content, 'sql_queries': sql_queries, 'query_results': query_results}, ensure_ascii=False)}\n\n"
 
         except Exception as e:
             logger.error(f"Stream error: {e}")

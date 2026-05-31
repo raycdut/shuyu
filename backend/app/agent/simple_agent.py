@@ -36,7 +36,7 @@ class SimpleAgent:
         self.call_llm = call_llm_func
         self.system_prompt = system_prompt
         self.max_iterations = max_iterations
-        self._tool_history: list[tuple[str, dict]] = []
+        self._tool_history: list[str] = []
 
     # ------------------------------------------------------------------
     # Normalize LLM response (provider-agnostic)
@@ -54,8 +54,14 @@ class SimpleAgent:
                         "name": tc.function.name,
                         "arguments": tc.function.arguments,
                     })
+
+            content = msg.content or ""
+            # Clean up DeepSeek tool call leaks in the content
+            if "<｜｜DSML｜｜tool_calls>" in content:
+                content = content.split("<｜｜DSML｜｜tool_calls>")[0].strip()
+
             return {
-                "content": msg.content or "",
+                "content": content,
                 "tool_calls": tool_calls,
                 "reasoning_content": getattr(msg, "reasoning_content", None),
             }
@@ -65,34 +71,44 @@ class SimpleAgent:
     # Loop detection — prevent repeating the same tool call
     # ------------------------------------------------------------------
 
+    def _canonicalize_json(self, obj: Any) -> Any:
+        """Canonicalize JSON-like structures for stable tool-call signatures."""
+        if obj is None:
+            return None
+        if isinstance(obj, (str, int, float, bool)):
+            return obj.strip() if isinstance(obj, str) else obj
+        if isinstance(obj, list):
+            return [self._canonicalize_json(v) for v in obj]
+        if isinstance(obj, dict):
+            return {str(k): self._canonicalize_json(obj[k]) for k in sorted(obj.keys(), key=lambda x: str(x))}
+        return str(obj)
+
+    def _tool_signature(self, tool_name: str, arguments: dict) -> str:
+        """Build a stable signature for a tool call."""
+        canonical = self._canonicalize_json(arguments)
+        return f"{tool_name}:{json.dumps(canonical, ensure_ascii=False, sort_keys=True)}"
+
     def is_stuck(self, tool_name: str, arguments: dict) -> bool:
         """Detect if the agent is calling the same tool with similar args repeatedly."""
-        self._tool_history.append((tool_name, arguments))
-
+        sig = self._tool_signature(tool_name, arguments)
+        self._tool_history.append(sig)
         if len(self._tool_history) < 4:
             return False
-
-        # Last 3 calls same tool
         last_3 = self._tool_history[-3:]
-        if all(t[0] == tool_name for t in last_3):
-            questions = [t[1].get("question", "") for t in last_3]
-            # Check if questions are similar (all mention the same entities)
-            if len(set(questions)) < 2:
-                logger.warning(f"Loop detected: {tool_name} called 3x with similar questions")
-                return True
+        if all(s == sig for s in last_3):
+            logger.warning(f"Loop detected: {tool_name} called 3x with same signature")
+            return True
         return False
 
     # ------------------------------------------------------------------
     # Context compression — summarize old conversation mid-loop
     # ------------------------------------------------------------------
 
-    def _compress_history(self, conversation: list) -> list:
-        """Compress older messages when conversation grows too long."""
+    async def _compress_history(self, conversation: list) -> list:
+        """Compress older messages by summarizing them into a single system message."""
         if len(conversation) < 8:
             return conversation
 
-        # Find safe cut point: keep last 2 complete exchange pairs
-        # (assistant+tool_calls → tool results → next round)
         exchange_count = 0
         cut_idx = len(conversation)
         for i in range(len(conversation) - 1, -1, -1):
@@ -106,11 +122,38 @@ class SimpleAgent:
         if cut_idx >= len(conversation) - 2:
             return conversation
 
-        keep = conversation[:1] + conversation[cut_idx:]
-        removed = len(conversation) - len(keep)
-        return keep[:1] + [
-            {"role": "system", "content": f"历史上下文已压缩，已省略中间 {removed} 条消息。当前对话继续。"}
-        ] + keep[1:]
+        head = conversation[:1]
+        mid = conversation[1:cut_idx]
+        tail = conversation[cut_idx:]
+
+        lines = []
+        for m in mid:
+            role = m.get("role")
+            if role in ("user", "assistant", "tool"):
+                c = (m.get("content") or "").strip()
+                if role == "tool":
+                    tcid = m.get("tool_call_id", "")
+                    lines.append(f"[tool {tcid}] {c[:300]}")
+                else:
+                    lines.append(f"[{role}] {c[:300]}")
+        payload = "\n".join(lines)[:6000]
+
+        response = await self.call_llm(
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是对话压缩器。请把下面的对话压缩成一段简洁摘要，保留：用户目标、关键约束、"
+                        "已执行的查询/工具调用要点、关键结论、仍未解决的问题。不要编造。输出纯文本摘要。"
+                    ),
+                },
+                {"role": "user", "content": payload},
+            ],
+            tools=None,
+        )
+        summary = self._normalize(response).get("content", "").strip()
+        summary_msg = {"role": "system", "content": f"对话摘要（压缩版）：{summary}" if summary else "对话摘要（压缩版）：(empty)"}
+        return head + [summary_msg] + tail
 
     # ------------------------------------------------------------------
     # Main loop
@@ -129,7 +172,7 @@ class SimpleAgent:
 
             # Compress history every 3 iterations
             if iteration > 1 and iteration % 3 == 0:
-                conversation = self._compress_history(conversation)
+                conversation = await self._compress_history(conversation)
 
             # --- Step 1: Call LLM ---
             tools_def = self.tool_registry.to_openai_tools()
@@ -161,7 +204,7 @@ class SimpleAgent:
             # --- Step 3: Execute tool calls (parallel) ---
             assistant_msg = {
                 "role": "assistant",
-                "content": normalized["content"] or "Let me check the database...",
+                "content": normalized["content"] or "我来查一下数据库…",
                 "tool_calls": [
                     {
                         "id": tc["id"],

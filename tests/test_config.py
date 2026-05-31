@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from app.config import Config, LLMConfig, SafetyConfig, StorageConfig, load_config
+from app.config import PROJECT_ROOT, Config, LLMConfig, SafetyConfig, StorageConfig, load_config
 
 
 def test_config_defaults():
@@ -17,7 +17,7 @@ def test_config_defaults():
     assert cfg.llm.timeout == 120
     assert cfg.safety.read_only is True
     assert cfg.safety.max_rows == 1000
-    assert cfg.storage.path == "./data/config.db"
+    assert cfg.storage.path == str(PROJECT_ROOT / "backend" / "data" / "config.db")
 
 
 def test_env_overrides(monkeypatch):

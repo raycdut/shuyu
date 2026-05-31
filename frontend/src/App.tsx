@@ -117,7 +117,16 @@ export default function App() {
 
     try {
       if (mode === 'quality') {
-        // 深度分析模式：SSE 流式显示进度
+        if (!activeDbId) {
+          const warnMsg: Message = {
+            id: nextMsgId(),
+            role: 'assistant',
+            content: '⚠️ 请先在左侧选择一个数据库，然后再提问。',
+          }
+          setMessages(prev => [...prev, warnMsg])
+          return
+        }
+        // 深度分析模式：合并为一个进度面板
         const resp = await fetch('/api/chat/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -131,6 +140,37 @@ export default function App() {
         const reader = resp.body!.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
+
+        // 进度步骤外部管理（避免闭包陈旧引用）
+        let planReflected = false
+        let executionDone = false
+        let progressSteps: { label: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string }[] = [
+          { label: '生成分析计划', status: 'running' },
+          { label: '审核分析计划', status: 'pending' },
+          { label: '执行查询', status: 'pending' },
+          { label: '生成分析报告', status: 'pending' },
+        ]
+
+        // 创建进度消息
+        const progressId = nextMsgId()
+        setMessages(prev => [...prev, {
+          id: progressId,
+          role: 'assistant',
+          content: '',
+          isProgress: true,
+          progressSteps: [...progressSteps],
+          progressTitle: '深度分析中',
+        }])
+
+        const updateProgress = () => {
+          setMessages(prev => prev.map(m =>
+            m.id === progressId ? { ...m, progressSteps: [...progressSteps], isProgress: true } : m
+          ))
+        }
+
+        let sqlCount = 0
+        let allSqlQueries: string[] = []
+        let allQueryResults: any[] = []
 
         while (true) {
           const { done, value } = await reader.read()
@@ -146,33 +186,50 @@ export default function App() {
               const event = JSON.parse(line.slice(6))
               console.log('[SSE]', event.type, (event.content || '').slice(0, 60))
 
-              if (event.type === 'plan' && event.collapsible) {
-                // 可折叠的分析计划
-                const planId = `plan-${nextMsgId()}`
-                setMessages(prev => [...prev, {
-                  id: planId,
-                  role: 'assistant',
-                  content: '',
-                  isPlan: true,
-                  planContent: event.content,
-                }])
-              } else if (event.type === 'plan') {
-                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📋 ${event.content}` }])
+              if (event.type === 'plan') {
+                // Plan ready — plan step done, reflect starts
+                progressSteps[0].status = 'done'
+                progressSteps[1].status = 'running'
+                updateProgress()
+              } else if (event.type === 'plan_reflect') {
+                if (event.content?.includes('通过')) {
+                  progressSteps[1].status = 'done'
+                  progressSteps[2].status = 'running'
+                  planReflected = true
+                  updateProgress()
+                }
               } else if (event.type === 'query') {
-                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `🔍 ${event.content}` }])
+                sqlCount++
+                progressSteps[2].detail = `📊 查询 ${sqlCount}`
+              } else if (event.type === 'step') {
+                if (event.step && event.total) {
+                  progressSteps[2].label = `执行查询（第 ${event.step}/${event.total} 步）`
+                }
+                updateProgress()
+              } else if (event.type === 'step_done') {
+                // step completed — keep running
               } else if (event.type === 'summarize') {
-                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: `📝 ${event.content}` }])
-              } else if (event.type === 'done') {
-                setMessages(prev => [...prev, { id: nextMsgId(), role: 'assistant', content: event.content, sql_queries: event.sql_queries || [] }])
+                progressSteps[2].status = 'done'
+                progressSteps[3].status = 'running'
+                executionDone = true
+                updateProgress()
               } else if (event.type === 'session_id') {
                 setActiveSessionId(event.session_id)
               } else if (event.type === 'thinking') {
-                // skip thinking message
+                // skip
+              } else if (event.type === 'done') {
+                allSqlQueries = event.sql_queries || []
+                allQueryResults = event.query_results || []
+                // Replace progress message with final answer
+                setMessages(prev => prev.map(m =>
+                  m.id === progressId
+                    ? { id: progressId, role: 'assistant', content: event.content, sql_queries: allSqlQueries, query_results: allQueryResults }
+                    : m
+                ))
               }
             } catch { /* skip */ }
           }
         }
-        // session_id is set by the 'session_id' SSE event during streaming
       } else {
         // 快速模式：原有逻辑
         const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
@@ -184,6 +241,7 @@ export default function App() {
           content: res.reply,
           tool_calls: res.tool_calls,
           sql_queries: res.sql_queries,
+          query_results: res.query_results,
         }
         setMessages(prev => [...prev, agentMsg])
       }

@@ -4,14 +4,24 @@ export function nextMsgId(): string {
   return `msg_${++_msgId}_${Date.now()}`
 }
 
+export interface ProgressStep {
+  label: string
+  status: 'pending' | 'running' | 'done' | 'error'
+  detail?: string
+}
+
 export interface Message {
   id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
   tool_calls?: ToolCall[]
   sql_queries?: string[]
+  query_results?: QueryResultInfo[]
   isPlan?: boolean
   planContent?: string
+  isProgress?: boolean
+  progressSteps?: ProgressStep[]
+  progressTitle?: string
 }
 
 export interface ToolCall {
@@ -93,6 +103,18 @@ export interface ChatResponse {
   session_id: string
   tool_calls: ToolCall[]
   sql_queries: string[]
+  query_results: QueryResultInfo[]
+}
+
+export interface QueryResultInfo {
+  qn: number
+  question?: string
+  sql: string
+  ok: boolean
+  row_count?: number
+  columns?: string[]
+  preview_text?: string
+  error?: string
 }
 
 // ===== 配置 =====

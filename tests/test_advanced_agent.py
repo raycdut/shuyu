@@ -84,9 +84,9 @@ async def test_call_count_minimum(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：完成")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -117,9 +117,9 @@ async def test_full_pipeline_produces_result(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：完成")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -150,9 +150,9 @@ async def test_progress_callback_receives_events(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：最终")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -184,9 +184,9 @@ async def test_sql_queries_in_result(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -217,12 +217,12 @@ async def test_plan_reflection_loops_on_revision(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         # Return "需要修改" for the first two reflection calls, then "合理"
         if tools is None and "审核专家" in sys_prompt:
             if call_count[0] <= 3:
-                return _make_choice(content="审核结论：需要修改\n\n问题：缺少表关联\n\n修改建议：加 JOIN")
-            return _make_choice(content="审核结论：合理")
+                return _make_choice(content='{"verdict": "需要修改", "issues": ["缺少表关联"], "suggestions": ["加 JOIN"]}')
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -272,9 +272,9 @@ async def test_handles_json_decode_error_in_tool_args(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告")
         if tools is None and "报告审核专家" in sys_prompt:
@@ -307,9 +307,9 @@ async def test_max_iterations_limit(tool_registry):
         sys_prompt = _sys_content(kw.get("messages", []))
 
         if tools is None and "分析规划师" in sys_prompt:
-            return _make_choice(content="## 分析目标\n测试\n## 分析步骤\n1. **第一步**: 查数据")
+            return _make_choice(content='{"target": "测试", "steps": [{"purpose": "查数据", "sql": "SELECT 1"}]}')
         if tools is None and "审核专家" in sys_prompt:
-            return _make_choice(content="审核结论：合理")
+            return _make_choice(content='{"verdict": "合理", "issues": [], "suggestions": []}')
         if tools is None and "报告撰写专家" in sys_prompt:
             return _make_choice(content="报告：最终结果")
         if tools is None and "报告审核专家" in sys_prompt:

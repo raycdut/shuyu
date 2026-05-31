@@ -4,6 +4,17 @@
 
 ---
 
+### 2026-05-31: 强制 DeepSeek 输出 JSON 格式 + 修复 `sql` 参数兼容
+- **强制 JSON**：Plan/PlanReflect 阶段改用 `response_format={"type": "json_object"}` 让 DeepSeek 输出严格 JSON，消除 `xml`/`<｜｜DSML｜｜tool_calls>` 格式泄漏到正文的问题
+  - PLAN_PROMPT、PLAN_REFLECT_PROMPT 改为 JSON Schema 格式
+  - `_parse_plan_steps` 改为直接从 JSON 解析 steps/sql
+  - 前端计划展示也调整为 JSON 解析渲染
+  - 测试 mock 同步更新为 JSON 格式响应
+- **sql 参数兼容**：`handle_query_database` 新增可选 `sql` 参数，收到原始 SQL 时跳过 LLM 生成步骤直接执行，解决 `_execute_step` 传 raw SQL 给模型、模型用错参数名的问题
+  - 新增 `_execute_sql()` 独立函数
+  - 工具注册将 `sql` 设为可选参数（`required=[]`）
+  - 更新 `_execute_step` 的 prompt 显式告知模型使用 `sql=...`
+
 ## 🔴 P0 — 必须尽快修
 
 ### 1. LLM 调用 timeout
@@ -115,5 +126,22 @@ for attempt in range(3):
 
 **文件**: 新 route + 前端 Chat 组件改造
 **影响**: 用户体验大幅提升，类似 ChatGPT 的思考过程展示
+
+---
+
+## 变更记录
+
+### 2026-05-31
+
+- 后端引入 request-local 上下文（ContextVar），替代全局的 per-request 状态，避免并发串扰
+- SQL 查询收集改为请求级收集器，fast/quality 模式统一从收集器返回 `sql_queries`
+- SQL 工具增加结构化查询结果收集 `query_results`（兼容旧的文本 tool 输出），API 与 SSE done 事件返回该字段
+- quality 模式 SSE 的 done 事件补充 `sql_queries` 字段，前端可稳定展示本次查询列表
+- AdvancedAgent 的步骤成功判定改为基于 SQL 工具成功标记，减少小结果误判与无效重试
+- SSE quality 模式在完成后不再强制 cancel agent_task，确保收尾与会话写入更稳定
+- stream 路由复用 session 内 schema/full_schema 缓存，减少重复 get_schema/build_schema_prompt
+- SimpleAgent 升级：摘要式压缩历史 + 基于参数签名的循环检测，减少发散与重复查询
+- 前端消息气泡在报告末尾增加“查询语句”图标，鼠标悬停可查看本次用到的 SQL 列表
+- 未选择数据库时，后端 chat/stream 直接返回提示（不再进入 quality 计划/执行流程），前端深度模式也会先行拦截
 
 ---

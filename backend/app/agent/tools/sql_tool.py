@@ -47,29 +47,77 @@ async def handle_sql_query(
     sql = sql_response.strip()
     logger.info(f"SQL generated ({len(sql)} chars): {sql.replace(chr(10), ' ')}")
 
-    # Track SQL for frontend display
-    from ... import state
-    qn = len(state._last_sql_queries) + 1
-    if state._last_sql_queries is not None:
-        state._last_sql_queries.append(sql)
+    qn = 1
+    try:
+        from ... import state
+
+        collector = state.request_sql_queries.get()
+        if collector is not None:
+            collector.append(sql)
+            qn = len(collector)
+    except Exception:
+        qn = 1
 
     # Clean up SQL from possible markdown fences
     if sql.startswith("```"):
         sql = sql.split("\n", 1)[1] if "\n" in sql else sql
         sql = sql.rsplit("```", 1)[0] if "```" in sql else sql
+    sql = sql.strip()
 
     if sql.upper().startswith("UNABLE"):
         logger.warning(f"SQL generation failed: {sql}")
+        try:
+            from ... import state
+
+            results = state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": question,
+                    "sql": sql,
+                    "ok": False,
+                    "error": sql,
+                })
+        except Exception:
+            pass
         return f"无法生成 SQL：{sql}"
 
     # Safety: enforce read-only (allow SELECT and WITH ... SELECT)
     sql_upper = sql.strip().upper()
     if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
         logger.warning(f"Blocked non-SELECT SQL: {sql[:100]}")
+        try:
+            from ... import state
+
+            results = state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": question,
+                    "sql": sql,
+                    "ok": False,
+                    "error": "只允许 SELECT 查询。",
+                })
+        except Exception:
+            pass
         return "⚠️ 只允许 SELECT 查询。"
     for keyword in ("DROP", "ALTER", "DELETE", "INSERT", "UPDATE", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"):
         if keyword in sql_upper:
             logger.warning(f"Blocked dangerous SQL: {sql[:100]}")
+            try:
+                from ... import state
+
+                results = state.request_query_results.get()
+                if results is not None:
+                    results.append({
+                        "qn": qn,
+                        "question": question,
+                        "sql": sql,
+                        "ok": False,
+                        "error": f"查询包含被禁止的关键字 {keyword}。",
+                    })
+            except Exception:
+                pass
             return f"⚠️ 查询包含被禁止的关键字 {keyword}。"
 
     # Execute
@@ -78,30 +126,140 @@ async def handle_sql_query(
         result = connector.execute(sql, max_rows=max_rows)
         logger.info(f"SQL done: {result.row_count} rows returned")
         result_text = result.to_text(max_rows=20)
+        try:
+            from ... import state
+
+            results = state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": question,
+                    "sql": sql,
+                    "ok": True,
+                    "row_count": result.row_count,
+                    "columns": list(result.columns),
+                    "preview_text": result_text,
+                })
+        except Exception:
+            pass
         return f"数据来源标记:[Q{qn}]\n{result_text}"
     except Exception as e:
         logger.error(f"SQL execution error: {e}")
         logger.debug(f"Failed SQL: {sql}")
+        try:
+            from ... import state
+
+            results = state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": question,
+                    "sql": sql,
+                    "ok": False,
+                    "error": str(e),
+                })
+        except Exception:
+            pass
         return f"SQL 执行失败：{e}\n\n生成的 SQL：\n{sql}"
 
 
-async def handle_query_database(question: str) -> str:
+async def _execute_sql(sql: str, purpose: str, connector, schema_text: str) -> str:
+    """Execute SQL directly and return the result text with query tracking.
+
+    Works as a standalone path for when the plan already has the SQL,
+    bypassing the SQL-generation step entirely.
+    """
+    from ... import state as _state
+
+    # Track the SQL query
+    qn = 1
+    try:
+        collector = _state.request_sql_queries.get()
+        if collector is not None:
+            collector.append(sql)
+            qn = len(collector)
+    except Exception:
+        qn = 1
+
+    # Safety: enforce read-only (allow SELECT and WITH ... SELECT)
+    sql_upper = sql.strip().upper()
+    if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
+        return f"⚠️ 只允许 SELECT 查询，已略过：{sql[:80]}"
+    for keyword in ("DROP", "ALTER", "DELETE", "INSERT", "UPDATE", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"):
+        if keyword in sql_upper:
+            return f"⚠️ 查询包含被禁止的关键字 {keyword}。"
+
+    # Execute
+    try:
+        logger.info("Direct SQL execution...")
+        result = connector.execute(sql, max_rows=_state.config.safety.max_rows)
+        logger.info(f"Direct SQL done: {result.row_count} rows returned")
+        result_text = result.to_text(max_rows=20)
+        try:
+            results = _state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": purpose,
+                    "sql": sql,
+                    "ok": True,
+                    "row_count": result.row_count,
+                    "columns": list(result.columns),
+                    "preview_text": result_text,
+                })
+        except Exception:
+            pass
+        return f"数据来源标记:[Q{qn}]\n{result_text}"
+    except Exception as e:
+        logger.error(f"Direct SQL execution error: {e}")
+        try:
+            results = _state.request_query_results.get()
+            if results is not None:
+                results.append({
+                    "qn": qn,
+                    "question": purpose,
+                    "sql": sql,
+                    "ok": False,
+                    "error": str(e),
+                })
+        except Exception:
+            pass
+        return f"SQL 执行失败：{e}\n\nSQL：{sql}"
+
+
+async def handle_query_database(question: str = "", sql: str = "") -> str:
     """Registered tool handler: wraps handle_sql_query with current state.
 
-    Uses state._active_connector (set per-request in chat route).
+    Accepts either `question` (natural language → SQL generation) or `sql` (direct execution).
+    Uses request-local context (set per-request in chat route).
     """
     from ... import state as _state
     from ...db.schema import build_schema_prompt as _build_schema
     from ...client import call_llm as _call_llm
 
     _logger = logging.getLogger("shuyu.main")
-    _logger.info(f"SQL tool: processing question '{question[:80]}'")
+    if sql:
+        _logger.info(f"SQL tool: direct SQL execution ({len(sql)} chars)")
+    else:
+        _logger.info(f"SQL tool: processing question '{question[:80]}'")
 
-    if _state._active_connector is None:
+    connector = _state.get_request_connector()
+    if connector is None:
         return "⚠️ 没有选中的数据库，无法查询。请先在左侧选择一个数据库。"
 
-    tables = _state._active_connector.get_schema()
-    schema_text = _build_schema(tables)
+    schema_text = _state.get_request_schema_prompt()
+    if not schema_text:
+        tables = connector.get_schema()
+        schema_text = _build_schema(tables)
+
+    # If sql is provided directly, execute it without the SQL generation step
+    if sql:
+        sql = sql.strip()
+        if sql.startswith("```"):
+            sql = sql.split("\n", 1)[1] if "\n" in sql else sql
+            sql = sql.rsplit("```", 1)[0] if "```" in sql else sql
+        sql = sql.strip()
+        return await _execute_sql(sql, question, connector, schema_text)
 
     async def _call_llm_for_sql(msgs):
         resp = await _call_llm(msgs)
@@ -109,7 +267,7 @@ async def handle_query_database(question: str) -> str:
 
     return await handle_sql_query(
         question=question,
-        connector=_state._active_connector,
+        connector=connector,
         schema_prompt=schema_text,
         call_llm_func=_call_llm_for_sql,
         max_rows=_state.config.safety.max_rows,

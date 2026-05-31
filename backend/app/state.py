@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import sqlite3
 from typing import TYPE_CHECKING
 
@@ -31,10 +32,43 @@ _sqlite: sqlite3.Connection | None = None
 # --- Registered database connections (loaded from SQLite) ---
 _db_connections: list[dict] = []
 
-# --- Per-request active database connector (set in chat.py) ---
-_active_connector: DatabaseConnector | None = None
-# --- SQL queries executed during current request ---
-_last_sql_queries: list[str] = []
+# --- Per-request runtime context (do NOT store request-specific objects as globals) ---
+request_active_connector: contextvars.ContextVar[DatabaseConnector | None] = contextvars.ContextVar(
+    "request_active_connector",
+    default=None,
+)
+request_schema_prompt: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "request_schema_prompt",
+    default=None,
+)
+request_sql_queries: contextvars.ContextVar[list[str] | None] = contextvars.ContextVar(
+    "request_sql_queries",
+    default=None,
+)
+request_query_results: contextvars.ContextVar[list[dict] | None] = contextvars.ContextVar(
+    "request_query_results",
+    default=None,
+)
+
+
+def get_request_connector() -> DatabaseConnector | None:
+    """Get the active connector bound to the current request context."""
+    return request_active_connector.get()
+
+
+def get_request_schema_prompt() -> str | None:
+    """Get the schema prompt bound to the current request context."""
+    return request_schema_prompt.get()
+
+
+def get_request_sql_queries() -> list[str]:
+    """Get collected SQL queries for the current request context."""
+    return request_sql_queries.get() or []
+
+
+def get_request_query_results() -> list[dict]:
+    """Get collected structured query results for the current request context."""
+    return request_query_results.get() or []
 
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"

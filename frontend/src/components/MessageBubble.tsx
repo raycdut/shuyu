@@ -8,6 +8,76 @@ interface MessageBubbleProps {
 const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === 'user'
   const [planOpen, setPlanOpen] = React.useState(false)
+  const [sqlPopoverOpen, setSqlPopoverOpen] = React.useState(false)
+  const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showSqlPopover = React.useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current)
+      hideTimerRef.current = null
+    }
+    setSqlPopoverOpen(true)
+  }, [])
+
+  const hideSqlPopover = React.useCallback(() => {
+    hideTimerRef.current = setTimeout(() => {
+      setSqlPopoverOpen(false)
+    }, 200)
+  }, [])
+
+  // Cleanup timer on unmount
+  React.useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
+    }
+  }, [])
+
+  // 进度面板（quality 模式合并显示）
+  if (message.isProgress) {
+    const steps = message.progressSteps || []
+    const done = steps.filter(s => s.status === 'done').length
+    const total = steps.length
+    return (
+      <div className="flex justify-start mb-4">
+        <div className="bubble-agent max-w-lg">
+          <div className="flex items-center gap-1.5 mb-2">
+            <span className="text-xs text-celadon-dark font-kai">📋 {message.progressTitle || '分析进度'}</span>
+            <span className="text-[10px] text-ink-lighter ml-auto">{done}/{total}</span>
+          </div>
+          <div className="space-y-1">
+            {steps.map((step, i) => (
+              <div key={i} className="flex items-start gap-2 text-sm">
+                <span className="shrink-0 mt-0.5">
+                  {step.status === 'done' ? (
+                    <span className="text-celadon-dark">✅</span>
+                  ) : step.status === 'running' ? (
+                    <span className="inline-block w-3.5 h-3.5 border-2 border-celadon border-t-transparent rounded-full animate-spin" />
+                  ) : step.status === 'error' ? (
+                    <span className="text-cinnabar">❌</span>
+                  ) : (
+                    <span className="text-ink-lighter/40">⏳</span>
+                  )}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className={`text-xs ${step.status === 'done' ? 'text-ink' : step.status === 'running' ? 'text-celadon-dark font-medium' : 'text-ink-lighter'}`}>
+                    {step.label}
+                  </div>
+                  {step.detail && step.status === 'running' && (
+                    <div className="text-[10px] text-ink-lighter mt-0.5 truncate">{step.detail}</div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          {done < total && (
+            <div className="mt-2 text-[10px] text-ink-lighter font-kai animate-pulse">
+              正在执行…
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   // 可折叠的分析计划
   if (message.isPlan) {
@@ -34,6 +104,10 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
   }
 
   const content = renderContent(message.content)
+  const hasQueries = !isUser && ((message.query_results && message.query_results.length > 0) || (message.sql_queries && message.sql_queries.length > 0))
+  const queries = !isUser && message.query_results && message.query_results.length > 0
+    ? message.query_results.map(q => ({ qn: q.qn, sql: q.sql, ok: q.ok, error: q.error }))
+    : (message.sql_queries || []).map((sql, i) => ({ qn: i + 1, sql, ok: true as const, error: undefined }))
 
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} mb-4`}>
@@ -58,15 +132,46 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
           </div>
         )}
 
-        {/* 显示 SQL 查询来源 */}
-        {!isUser && message.sql_queries && message.sql_queries.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {message.sql_queries.map((sql, i) => (
-              <span key={i} className="text-[10px] bg-smoke text-ink-lighter px-1.5 py-0.5 rounded font-mono"
-                title={sql}>
-                📋 查询 {i + 1}
-              </span>
-            ))}
+        {hasQueries && (
+          <div
+            className="mt-2 flex justify-end relative"
+            onMouseEnter={showSqlPopover}
+            onMouseLeave={hideSqlPopover}
+          >
+            <div className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-smoke text-ink-lighter hover:text-ink hover:bg-paper/60 transition-colors cursor-default">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <ellipse cx="12" cy="5" rx="8" ry="3" />
+                <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+                <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+              </svg>
+            </div>
+            {sqlPopoverOpen && (
+              <div
+                className="absolute right-0 bottom-full mb-1 w-[480px] max-w-[85vw] bg-white ink-border rounded-lg shadow-lg overflow-hidden z-50"
+                onMouseEnter={showSqlPopover}
+                onMouseLeave={hideSqlPopover}
+              >
+                <div className="px-3 py-2 text-xs text-ink-lighter font-kai border-b border-ink-lighter/10">
+                  使用的查询语句
+                </div>
+                <div className="max-h-72 overflow-y-auto">
+                  {queries.map(q => (
+                    <div key={q.qn} className="px-3 py-2 border-b border-ink-lighter/10 last:border-b-0">
+                      <div className="flex items-center gap-2 text-[10px] text-ink-lighter mb-1">
+                        <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-celadon/20 text-celadon-dark text-[10px] font-bold leading-none">
+                          {q.qn}
+                        </span>
+                        <span className="font-kai">{q.ok ? '成功' : '失败'}</span>
+                      </div>
+                      <pre className="text-[10px] font-mono text-ink whitespace-pre-wrap break-words">{q.sql}</pre>
+                      {!q.ok && q.error && (
+                        <div className="mt-1 text-[10px] text-cinnabar font-kai whitespace-pre-wrap break-words">{q.error}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
