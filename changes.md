@@ -143,3 +143,17 @@ Created two comprehensive test files under `backend/tests/`:
 - 后端 366 测试全部通过（88 根级 + 278 backend/tests）
 - 前端 126 测试全部通过
 - 总计 **492 测试全部通过**
+
+### 数据库 Prompt 统一为 XML 格式
+
+**问题**: 代码中的 Prompt 默认模板已统一为 XML 格式（`<instructions>`、`<role>`、`<rules>` 等标签），但数据库中存储的 Prompt 仍是旧的 Markdown 格式（首次启动时 seed 的旧数据）。用户在 Prompt 管理页面看不到变化。
+
+**修复**: 执行 `backend/seeds/reset_prompts.py` 重置脚本，将数据库中全部 6 个类别的 Prompt 重置为代码中的 XML 默认值：
+- `system` v5 → v6
+- `sql_gen` v1 → v2
+- `plan` v1 → v2
+- `plan_reflect` v1 → v2
+- `report_reflect` v1 → v2
+- `schema_describe` v1 → v2
+
+**注意**: 需重启后端服务使新 Prompt 生效。
