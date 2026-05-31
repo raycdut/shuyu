@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect } from 'react'
 import AppLayout from './components/AppLayout'
 import ChatPage from './pages/ChatPage'
 import Dashboard from './components/Dashboard'
@@ -11,6 +12,10 @@ import { useAuthStore } from './store/authStore'
 export default function App() {
   const user = useAuthStore(s => s.user)
   const isInitialized = useAuthStore(s => s.isInitialized)
+
+  useEffect(() => {
+    useAuthStore.getState().checkAuth()
+  }, [])
 
   if (!isInitialized) {
     return (
