@@ -134,7 +134,7 @@ async def handle_sql_query(
         logger.info("Executing SQL...")
         result = connector.execute(sql, max_rows=max_rows)
         logger.info(f"SQL done: {result.row_count} rows returned")
-        result_text = result.to_text(max_rows=20)
+        result_text = result.to_text(max_rows=200)
         try:
             from ... import state
 
@@ -204,7 +204,7 @@ async def _execute_sql(sql: str, purpose: str, connector, schema_text: str) -> s
         logger.info("Direct SQL execution...")
         result = connector.execute(sql, max_rows=_state.config.safety.max_rows)
         logger.info(f"Direct SQL done: {result.row_count} rows returned")
-        result_text = result.to_text(max_rows=20)
+        result_text = result.to_text(max_rows=200)
         try:
             results = _state.request_query_results.get()
             if results is not None:
