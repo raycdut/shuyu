@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,8 +36,12 @@ router = APIRouter()
 async def register(req: RegisterRequest) -> UserInfo:
     if len(req.username) < 2:
         raise HTTPException(status_code=400, detail="用户名至少 2 个字符")
-    if len(req.password) < 6:
-        raise HTTPException(status_code=400, detail="密码至少 6 位")
+    if len(req.password) < 8:
+        raise HTTPException(status_code=400, detail="密码至少 8 位")
+    if not re.search(r"[A-Za-z]", req.password):
+        raise HTTPException(status_code=400, detail="密码必须包含字母")
+    if not re.search(r"[0-9]", req.password):
+        raise HTTPException(status_code=400, detail="密码必须包含数字")
     try:
         user = create_user(req.username, req.password, changed_by=req.username)
         return UserInfo(**user)

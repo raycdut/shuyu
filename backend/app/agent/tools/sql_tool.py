@@ -46,9 +46,10 @@ async def handle_sql_query(
             "</instructions>"
         )
 
+    safe_question = question[:500]
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"问题：{question}\n\n请生成 SQL："},
+        {"role": "user", "content": f"问题：{safe_question}\n\n请生成 SQL："},
     ]
 
     sql_response = await call_llm_func(messages)

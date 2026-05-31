@@ -106,6 +106,25 @@ async def lifespan(app: FastAPI):
     load_db_connections_sqlite()
     logger.info(f"SQLite ready: {len(state._db_connections)} DB connections loaded")
 
+    # Sync API key from admin system_config (encrypted path) into runtime config
+    # so call_llm() can use it without requiring a separate POST /api/config call.
+    try:
+        from app.admin_config.service import get_system_config
+        sys_cfg = get_system_config()
+        models = sys_cfg.get("llm", {}).get("models", [])
+        if models:
+            default = next((m for m in models if m.get("is_system_default")), models[0])
+            if default.get("api_key") and not os.environ.get("LLM_API_KEY"):
+                state.config.llm.api_key = default["api_key"]
+                state.config.llm.model = default.get("model", state.config.llm.model)
+                if default.get("api_base"):
+                    state.config.llm.api_base = default["api_base"]
+                if default.get("provider"):
+                    state.config.llm.provider = default["provider"]
+                logger.info(f"API key synced from system_config: {default.get('model', 'unknown')}")
+    except Exception:
+        pass
+
     # 3. Register tools
     state.tool_registry = ToolRegistry()
     state.tool_registry.register(Tool(
@@ -188,13 +207,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Shuyu — Data Chat", lifespan=lifespan)
 
-# CORS: allow frontend dev server
+# CORS: allow frontend dev server and env-configured origins
+import os as _os
+_cors_origins = _os.environ.get("CORS_ORIGINS", "")
+if _cors_origins:
+    _allowed_origins = [o.strip() for o in _cors_origins.split(",")]
+else:
+    _allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept"],
 )
 
 # Mount static assets (SPA build output)

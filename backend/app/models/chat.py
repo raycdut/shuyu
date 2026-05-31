@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     """Incoming chat request."""
 
-    message: str
+    message: str = Field(..., max_length=4000)
     session_id: str | None = None
     db_id: str | None = None
     mode: str = "fast"  # "fast" | "quality"

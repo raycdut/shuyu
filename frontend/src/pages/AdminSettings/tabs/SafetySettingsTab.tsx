@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SystemConfig } from '../../../types'
 import { SettingSection, ToggleRow } from '../../../components/AdminSettings/Common'
+import { useAdminSettings } from '../AdminSettingsContext'
 
-export function SafetySettingsTab({ config, onSave, saving }: { config: SystemConfig; onSave: (p: Partial<SystemConfig>) => void; saving: boolean }) {
+export function SafetySettingsTab() {
   const { t } = useTranslation()
+  const { config, saving, save } = useAdminSettings()
   const [readOnly, setReadOnly] = useState(config.safety.read_only)
   const [requireApproval, setRequireApproval] = useState(config.safety.require_approval)
   const [maxRows, setMaxRows] = useState(config.safety.max_rows)
@@ -12,7 +13,7 @@ export function SafetySettingsTab({ config, onSave, saving }: { config: SystemCo
   const [allowOverride, setAllowOverride] = useState(config.advanced.allow_user_safety_override)
 
   const handleSave = () => {
-    onSave({
+    save({
       safety: { read_only: readOnly, require_approval: requireApproval, max_rows: maxRows, blocked_tables: blockedText.split(',').map(s => s.trim()).filter(Boolean), masked_columns: config.safety.masked_columns },
       advanced: { ...config.advanced, allow_user_safety_override: allowOverride },
     })

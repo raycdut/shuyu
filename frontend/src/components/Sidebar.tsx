@@ -5,37 +5,37 @@ import DBConfigModal from './DBConfigModal'
 import SessionItem from './Sidebar/SessionItem'
 import DbTableNode from './Sidebar/DbTableNode'
 import { useTranslation } from 'react-i18next'
+import { useSessionStore } from '../store/sessionStore'
+import { useConfigStore } from '../store/configStore'
+import { useSessions } from '../hooks/useSessions'
+import { useDatabases } from '../hooks/useDatabases'
 
 interface SidebarProps {
   open: boolean
-  sessions: Session[]
-  activeSessionId: string | null
-  databases: DatabaseInfo[]
-  activeDbId: string | null
-  onSelectSession: (id: string) => void
-  onNewSession: () => void
-  onRenameSession: (id: string, title: string) => void
-  onDeleteSession: (id: string) => void
-  onSelectDb: (id: string | null) => void
-  onDatabasesChange: () => void
-  onClearAllSessions?: () => void
 }
 
 const Sidebar = React.memo(function Sidebar({
   open,
-  sessions,
-  activeSessionId,
-  databases,
-  activeDbId,
-  onSelectSession,
-  onNewSession,
-  onRenameSession,
-  onDeleteSession,
-  onSelectDb,
-  onDatabasesChange,
-  onClearAllSessions,
 }: SidebarProps) {
   const { t } = useTranslation()
+
+  const sessions = useSessionStore(s => s.sessions)
+  const activeSessionId = useSessionStore(s => s.activeSessionId)
+
+  const databases = useConfigStore(s => s.databases)
+  const activeDbId = useConfigStore(s => s.activeDbId)
+  const setActiveDbId = useConfigStore(s => s.setActiveDbId)
+
+  const {
+    handleSelectSession,
+    handleNewSession,
+    handleRenameSession,
+    handleDeleteSession,
+    handleClearAllSessions,
+  } = useSessions()
+
+  const { loadDatabases: handleDatabasesChange } = useDatabases()
+
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [expandedDb, setExpandedDb] = useState<string | null>(null)
@@ -61,7 +61,7 @@ const Sidebar = React.memo(function Sidebar({
   })
 
   const toggleDbTree = async (dbId: string) => {
-    onSelectDb(dbId)
+    setActiveDbId(dbId)
     if (expandedDb === dbId) {
       setExpandedDb(null)
       return
@@ -80,7 +80,7 @@ const Sidebar = React.memo(function Sidebar({
   }
 
   const handleDelete = (id: string) => {
-    onDeleteSession(id)
+    handleDeleteSession(id)
     setConfirmDeleteId(null)
   }
 
@@ -124,7 +124,7 @@ const Sidebar = React.memo(function Sidebar({
                 </button>
               )}
               <button
-                onClick={onNewSession}
+                onClick={handleNewSession}
                 aria-label={t('sidebar.newSession')}
                 className="p-1 rounded-sm text-ink-light hover:text-celadon hover:bg-smoke transition-colors"
                 title={t('sidebar.newSession')}
@@ -137,13 +137,13 @@ const Sidebar = React.memo(function Sidebar({
           </div>
 
           {today.length > 0 && (
-            <>{sectionTitle(t('sidebar.today'))}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.today'))}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={handleSelectSession} onRenameSession={handleRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {thisWeek.length > 0 && (
-            <>{sectionTitle(t('sidebar.thisWeek'))}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.thisWeek'))}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={handleSelectSession} onRenameSession={handleRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {earlier.length > 0 && (
-            <>{sectionTitle(t('sidebar.earlier'))}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.earlier'))}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={handleSelectSession} onRenameSession={handleRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {sessions.length === 0 && (
             <div className="px-3 py-6 text-center text-xs text-ink-lighter font-kai">{t('sidebar.noHistorySessions')}</div>
@@ -164,7 +164,7 @@ const Sidebar = React.memo(function Sidebar({
                     setTimeout(() => toggleDbTree(activeDbId), 50);
                   } else {
                     setExpandedDb(null);
-                    onDatabasesChange();
+                    handleDatabasesChange();
                   }
                 }}
                 aria-label={t('sidebar.refreshDatabaseList')}
@@ -234,7 +234,7 @@ const Sidebar = React.memo(function Sidebar({
         onClose={() => setConfigDb(null)}
         onSaved={() => {
           setConfigDb(null)
-          onDatabasesChange()
+          handleDatabasesChange()
         }}
       />
 
@@ -257,7 +257,7 @@ const Sidebar = React.memo(function Sidebar({
             <p className="text-xs text-ink-lighter mb-4 font-kai">{t('sidebar.clearAllHint', { count: sessions.length })}</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowClearConfirm(false)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">{t('common.cancel')}</button>
-              <button onClick={() => { setShowClearConfirm(false); if (onClearAllSessions) onClearAllSessions() }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">{t('sidebar.confirmClear')}</button>
+              <button onClick={() => { setShowClearConfirm(false); handleClearAllSessions() }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">{t('sidebar.confirmClear')}</button>
             </div>
           </div>
         </div>

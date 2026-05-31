@@ -8,6 +8,7 @@ import { useAuthStore } from '../store/authStore'
 import { useConfigStore } from '../store/configStore'
 import { useUIStore } from '../store/uiStore'
 import { useSessionStore } from '../store/sessionStore'
+import { useDatabases } from '../hooks/useDatabases'
 
 export default function AppLayout() {
   const { t } = useTranslation()
@@ -16,7 +17,6 @@ export default function AppLayout() {
   const activeDbId = useConfigStore(s => s.activeDbId)
   const llmConnected = useConfigStore(s => s.llmConnected)
   const llmConfig = useConfigStore(s => s.llmConfig)
-  const setDatabases = useConfigStore(s => s.setDatabases)
   const setLlmConnected = useConfigStore(s => s.setLlmConnected)
   const setLLMConfig = useConfigStore(s => s.setLLMConfig)
   const setSafetyConfig = useConfigStore(s => s.setSafetyConfig)
@@ -37,6 +37,8 @@ export default function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const { loadDatabases } = useDatabases()
+
   const errorTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const showError = useCallback((msg: string) => {
@@ -53,15 +55,6 @@ export default function AppLayout() {
       setLlmConnected(false)
     }
   }, [setLlmConnected])
-
-  const loadDatabases = useCallback(async () => {
-    try {
-      const data = await api.getDatabases()
-      setDatabases(data.databases || [])
-    } catch (err: any) {
-      showError(`${t('chat.loadDbListFailed')}${err.message || t('session.unknownError')}`)
-    }
-  }, [setDatabases, showError, t])
 
   const loadSchema = useCallback(async () => {
     try {

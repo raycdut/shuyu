@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html as _html
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -68,7 +69,7 @@ class QueryResult:
         for row in rows_display:
             html += "<tr>"
             for val in row:
-                html += f"<td>{val if val is not None else ''}</td>"
+                html += f"<td>{_html.escape(str(val)) if val is not None else ''}</td>"
             html += "</tr>\n"
         html += "</tbody></table>\n"
         if self.row_count > max_rows:

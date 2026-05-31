@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SystemConfig } from '../../../types'
 import { SettingSection } from '../../../components/AdminSettings/Common'
+import { useAdminSettings } from '../AdminSettingsContext'
 
-export function StorageSettingsTab({ config, onSave, saving }: { config: SystemConfig; onSave: (p: Partial<SystemConfig>) => void; saving: boolean }) {
+export function StorageSettingsTab() {
   const { t } = useTranslation()
+  const { config, saving, save } = useAdminSettings()
   const [logInterval, setLogInterval] = useState(config.storage.log_interval)
   const [retention, setRetention] = useState(config.storage.log_retention_days)
 
@@ -15,7 +16,7 @@ export function StorageSettingsTab({ config, onSave, saving }: { config: SystemC
           <h3 className="text-xl font-song font-bold text-ink">{t('storageSettings.title')}</h3>
           <p className="text-xs text-ink-lighter font-kai mt-1">{t('storageSettings.subtitle')}</p>
         </div>
-        <button onClick={() => onSave({ storage: { log_interval: logInterval, log_retention_days: retention } })} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>
+        <button onClick={() => save({ storage: { log_interval: logInterval, log_retention_days: retention } })} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>
       </div>
 
       <div className="max-w-2xl bg-white/40 p-8 rounded-sm border border-tea/30">

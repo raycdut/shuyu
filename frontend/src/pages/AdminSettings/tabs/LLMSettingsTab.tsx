@@ -1,8 +1,9 @@
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
-import type { SystemConfig, LLMModelInstance } from '../../../types'
+import type { LLMModelInstance } from '../../../types'
 import { ToggleRow, SettingSection } from '../../../components/AdminSettings/Common'
+import { useAdminSettings } from '../AdminSettingsContext'
 
 function ModelDialog({
   model,
@@ -133,8 +134,9 @@ function ModelDialog({
   )
 }
 
-export function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfig; onSave: (p: Partial<SystemConfig>) => void; saving: boolean }) {
+export function LLMSettingsTab() {
   const { t } = useTranslation()
+  const { config, saving, save } = useAdminSettings()
   const [models, setModels] = useState<LLMModelInstance[]>(config.llm.models || [])
   const [allowUserConfig, setAllowUserConfig] = useState(config.advanced.allow_user_llm_config)
   const [tempMin, setTempMin] = useState(config.advanced.llm_temperature_range.min)
@@ -220,7 +222,7 @@ export function LLMSettingsTab({ config, onSave, saving }: { config: SystemConfi
   }
 
   const handleSaveAll = () => {
-    onSave({
+    save({
       llm: { models },
       advanced: {
         ...config.advanced,

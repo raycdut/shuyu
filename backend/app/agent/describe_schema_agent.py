@@ -98,9 +98,12 @@ def _parse_llm_response(response: Any) -> list[dict]:
             content = "\n".join(lines[1:-1])
 
         parsed = json.loads(content)
-        tables = parsed.get("tables", parsed if isinstance(parsed, list) else [])
-        if isinstance(tables, dict):
-            tables = [tables]
+        if isinstance(parsed, list):
+            tables = parsed
+        else:
+            tables = parsed.get("tables", [])
+            if isinstance(tables, dict):
+                tables = [tables]
         return tables
     except (json.JSONDecodeError, AttributeError, KeyError) as e:
         logger.error(f"Failed to parse LLM response: {e}")

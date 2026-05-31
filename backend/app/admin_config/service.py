@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .. import state
+from ..utils.crypto import decrypt_value, encrypt_value
 
 logger = logging.getLogger("shuyu.main")
 
@@ -80,7 +81,13 @@ def get_system_config() -> dict[str, Any]:
     if not row:
         return dict(DEFAULT_SYSTEM_CONFIG)
     try:
-        return json.loads(row[0])
+        config = json.loads(row[0])
+        # Decrypt API keys transparently
+        models = config.get("llm", {}).get("models", [])
+        for m in models:
+            if m.get("api_key"):
+                m["api_key"] = decrypt_value(m["api_key"]) or ""
+        return config
     except (json.JSONDecodeError, TypeError):
         return dict(DEFAULT_SYSTEM_CONFIG)
 
@@ -135,8 +142,12 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
             incoming = config["llm"]["models"]
             # Preserve real API keys if masked values were sent
             incoming = _unmask_and_merge_api_keys(old_models, incoming)
-            # Ensure exacty one model is system default
+            # Ensure exactly one model is system default
             incoming = _ensure_default_model(incoming)
+            # Encrypt API keys before storing
+            for m in incoming:
+                if m.get("api_key"):
+                    m["api_key"] = encrypt_value(m["api_key"]) or ""
             merged_llm["models"] = incoming
         merged["llm"] = merged_llm
 
@@ -148,7 +159,23 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
     )
     db.commit()
     _log_config_change("system", None, updated_by or "unknown", f"更新系统配置: {list(config.keys())}")
-    return get_system_config()
+
+    # Sync the default model's API key into runtime config so call_llm() picks it up immediately
+    result = get_system_config()
+    models = result.get("llm", {}).get("models", [])
+    default_model = next((m for m in models if m.get("is_system_default")), models[0] if models else None)
+    if default_model and default_model.get("api_key"):
+        import os as _os
+        if not _os.environ.get("LLM_API_KEY"):
+            state.config.llm.api_key = default_model["api_key"]
+            state.config.llm.model = default_model.get("model", state.config.llm.model)
+            if default_model.get("api_base"):
+                state.config.llm.api_base = default_model["api_base"]
+            if default_model.get("provider"):
+                state.config.llm.provider = default_model["provider"]
+            logger.info("Runtime API key synced from admin system_config")
+
+    return result
 
 
 def get_system_config_masked() -> dict[str, Any]:

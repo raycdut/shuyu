@@ -55,14 +55,14 @@ class DuckDBConnector(DatabaseConnector):
                 continue
 
             # Get columns for this table
-            cols = self._conn.execute(f"""
+            cols = self._conn.execute("""
                 SELECT column_name, data_type, is_nullable,
                        COALESCE(column_default, '') as column_default
                 FROM information_schema.columns
-                WHERE table_name = '{table_name}'
+                WHERE table_name = ?
                   AND table_schema NOT IN ('information_schema', 'pg_catalog')
                 ORDER BY ordinal_position
-            """).fetchall()  # type: ignore
+            """, (table_name,)).fetchall()  # type: ignore
 
             columns = [
                 ColumnInfo(
@@ -102,9 +102,12 @@ class DuckDBConnector(DatabaseConnector):
         # Count total rows if possible
         row_count = len(rows)
         try:
-            count_result = self._conn.execute(f"SELECT COUNT(*) FROM ({sql}) AS _sub").fetchone()  # type: ignore
-            if count_result:
-                row_count = count_result[0]
+            # Safety: only wrap single-statement SQL to prevent multi-statement injection
+            stripped = sql.strip().rstrip(";")
+            if ";" not in stripped:
+                count_result = self._conn.execute(f"SELECT COUNT(*) FROM ({sql}) AS _sub").fetchone()  # type: ignore
+                if count_result:
+                    row_count = count_result[0]
         except Exception:
             pass
 

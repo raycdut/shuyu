@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { SystemConfig } from '../../../types'
 import { SettingSection } from '../../../components/AdminSettings/Common'
+import { useAdminSettings } from '../AdminSettingsContext'
 
-export function AdvancedSettingsTab({ config, onSave, saving }: { config: SystemConfig; onSave: (p: Partial<SystemConfig>) => void; saving: boolean }) {
+export function AdvancedSettingsTab() {
   const { t } = useTranslation()
+  const { config, saving, save } = useAdminSettings()
   const [expire, setExpire] = useState(config.advanced.session_expire_minutes)
   const [maxSessions, setMaxSessions] = useState(config.advanced.max_sessions_per_user)
 
@@ -16,7 +17,7 @@ export function AdvancedSettingsTab({ config, onSave, saving }: { config: System
           <p className="text-xs text-ink-lighter font-kai mt-1">{t('advancedSettings.subtitle')}</p>
         </div>
         <button 
-          onClick={() => onSave({ 
+          onClick={() => save({ 
             advanced: { 
               session_expire_minutes: expire, 
               max_sessions_per_user: maxSessions, 

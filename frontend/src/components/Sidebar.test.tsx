@@ -1,12 +1,30 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import Sidebar from './Sidebar'
+import { useSessionStore } from '../store/sessionStore'
+import { useConfigStore } from '../store/configStore'
+import { useUIStore } from '../store/uiStore'
 import type { Session, DatabaseInfo } from '../types'
 
-// Mock child modals
 vi.mock('./DBConfigModal', () => ({
   default: ({ open }: { open: boolean }) => open ? <div data-testid="db-config-modal">DBConfigModal</div> : null,
 }))
+
+vi.mock('../hooks/useSessions', () => ({
+  useSessions: () => ({
+    handleSelectSession: mockSelectSession,
+    handleNewSession: mockNewSession,
+    handleRenameSession: mockRenameSession,
+    handleDeleteSession: mockDeleteSession,
+    handleClearAllSessions: mockClearAllSessions,
+  }),
+}))
+
+const mockSelectSession = vi.fn()
+const mockNewSession = vi.fn()
+const mockRenameSession = vi.fn()
+const mockDeleteSession = vi.fn()
+const mockClearAllSessions = vi.fn()
 
 const makeSessions = (): Session[] => [
   { id: 's1', title: '本月销售分析', messages: 5, last_active: Date.now() / 1000 - 100 },
@@ -19,39 +37,44 @@ const makeDatabases = (): DatabaseInfo[] => [
   { id: 'db2', name: '日志库', type: 'clickhouse' },
 ]
 
-const defaultProps = {
-  open: true,
-  sessions: [],
-  activeSessionId: null as string | null,
-  databases: [],
-  activeDbId: null as string | null,
-  onSelectSession: vi.fn(),
-  onNewSession: vi.fn(),
-  onRenameSession: vi.fn(),
-  onDeleteSession: vi.fn(),
-  onSelectDb: vi.fn(),
-  onDatabasesChange: vi.fn(),
-}
+beforeEach(() => {
+  vi.clearAllMocks()
+  useSessionStore.setState({
+    sessions: [],
+    activeSessionId: null,
+    messages: [],
+    isLoading: false,
+  })
+  useConfigStore.setState({
+    databases: [],
+    activeDbId: null,
+  })
+  useUIStore.setState({
+    leftOpen: true,
+    error: null,
+  })
+})
 
 describe('Sidebar', () => {
   it('renders nothing when closed', () => {
-    const { container } = render(<Sidebar {...defaultProps} open={false} />)
+    const { container } = render(<Sidebar open={false} />)
     expect(container.innerHTML).toBe('')
   })
 
   it('shows empty state when no sessions', () => {
-    render(<Sidebar {...defaultProps} />)
+    render(<Sidebar open={true} />)
     expect(screen.getByText('暂无历史会话')).toBeInTheDocument()
   })
 
   it('shows empty database prompt when no databases', () => {
-    render(<Sidebar {...defaultProps} />)
+    render(<Sidebar open={true} />)
     expect(screen.getByText('尚未添加数据库')).toBeInTheDocument()
   })
 
   it('renders session list grouped by time', () => {
     const sessions = makeSessions()
-    render(<Sidebar {...defaultProps} sessions={sessions} />)
+    useSessionStore.setState({ sessions })
+    render(<Sidebar open={true} />)
     expect(screen.getByText('今天')).toBeInTheDocument()
     expect(screen.getByText('本周')).toBeInTheDocument()
     expect(screen.getByText('本月销售分析')).toBeInTheDocument()
@@ -60,53 +83,52 @@ describe('Sidebar', () => {
 
   it('shows message count for each session', () => {
     const sessions = makeSessions()
-    render(<Sidebar {...defaultProps} sessions={sessions} />)
-    // Message count badges
+    useSessionStore.setState({ sessions })
+    render(<Sidebar open={true} />)
     expect(screen.getByText('5')).toBeInTheDocument()
     expect(screen.getByText('3')).toBeInTheDocument()
   })
 
-  it('calls onSelectSession when clicking a session', () => {
-    const onSelect = vi.fn()
+  it('calls handleSelectSession when clicking a session', () => {
     const sessions = makeSessions()
-    render(<Sidebar {...defaultProps} sessions={sessions} onSelectSession={onSelect} />)
+    useSessionStore.setState({ sessions })
+    render(<Sidebar open={true} />)
     fireEvent.click(screen.getByText('本月销售分析'))
-    expect(onSelect).toHaveBeenCalledWith('s1')
+    expect(mockSelectSession).toHaveBeenCalledWith('s1')
   })
 
-  it('calls onNewSession when clicking the new button', () => {
-    const onNew = vi.fn()
-    render(<Sidebar {...defaultProps} onNewSession={onNew} />)
+  it('calls handleNewSession when clicking the new button', () => {
+    render(<Sidebar open={true} />)
     fireEvent.click(screen.getByLabelText('新建会话'))
-    expect(onNew).toHaveBeenCalled()
+    expect(mockNewSession).toHaveBeenCalled()
   })
 
   it('renders database list', () => {
     const dbs = makeDatabases()
-    render(<Sidebar {...defaultProps} databases={dbs} />)
+    useConfigStore.setState({ databases: dbs })
+    render(<Sidebar open={true} />)
     expect(screen.getByText('零售数据库')).toBeInTheDocument()
     expect(screen.getByText('日志库')).toBeInTheDocument()
   })
 
   it('highlights the active session', () => {
     const sessions = makeSessions()
-    render(<Sidebar {...defaultProps} sessions={sessions} activeSessionId="s1" />)
+    useSessionStore.setState({ sessions, activeSessionId: 's1' })
+    render(<Sidebar open={true} />)
     const btn = screen.getByText('本月销售分析').closest('button')
     expect(btn?.className).toContain('bg-celadon')
   })
 
   it('renders database tree on click', async () => {
-    // Mock the API for this test
     const { api } = await import('../api')
     vi.spyOn(api, 'getDatabaseTables').mockResolvedValue({
       tables: [{ name: 'orders', columns: [{ name: 'id', type: 'INT' }] }],
     })
 
     const dbs = makeDatabases()
-    render(<Sidebar {...defaultProps} databases={dbs} />)
-    // Click on first database to expand
+    useConfigStore.setState({ databases: dbs })
+    render(<Sidebar open={true} />)
     fireEvent.click(screen.getByText('零售数据库'))
-    // Should show table names eventually
     expect(await screen.findByText('orders')).toBeInTheDocument()
   })
 })

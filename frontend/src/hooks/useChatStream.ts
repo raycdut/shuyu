@@ -5,6 +5,7 @@ import { api } from '../api'
 import { Message, nextMsgId, ProgressStep } from '../types'
 import { useSessions } from './useSessions'
 import { useTranslation } from 'react-i18next'
+import { parseSSEStream } from '../utils/sse'
 
 /**
  * 聊天流 Hook
@@ -103,13 +104,11 @@ export function useChatStream() {
         if (!resp.body) throw new Error('ReadableStream not supported')
         
         const reader = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
         let sqlCount = 0
 
         console.log('[Chat] SSE 连接已建立，开始解析数据流...')
 
-        const handleEvent = (event: any) => {
+        await parseSSEStream(reader, (event) => {
           console.log(`[SSE Event] ${event.type}`, event)
 
           if (event.type === 'thinking') {
@@ -163,60 +162,7 @@ export function useChatStream() {
             console.error('[Chat] SSE 收到错误事件', event)
             throw new Error(event.content || t('message.analysisError'))
           }
-        }
-
-        // 3. 循环处理 SSE 流
-        while (true) {
-          const { done, value } = await reader.read()
-
-          if (value) {
-            buffer += decoder.decode(value, { stream: true })
-          } else if (done) {
-            buffer += decoder.decode() // flush
-          }
-
-          // 处理缓冲区中所有完整的 SSE 事件 (\n\n 分隔)
-          while (buffer.indexOf('\n\n') !== -1) {
-            const eventEndIndex = buffer.indexOf('\n\n')
-            const completeEvent = buffer.substring(0, eventEndIndex)
-            buffer = buffer.substring(eventEndIndex + 2)
-
-            const lines = completeEvent.split('\n')
-            let eventData = ''
-            
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (trimmed.startsWith('data: ')) {
-                eventData += trimmed.slice(6)
-              }
-            }
-
-            if (eventData) {
-              try {
-                const event = JSON.parse(eventData)
-                handleEvent(event)
-              } catch (e) {
-                console.error('[Chat] SSE 事件解析失败', e, eventData)
-              }
-            }
-          }
-
-          if (done) {
-            console.log('[Chat] SSE 流读取完成')
-            
-            // 处理流结束但缓冲区中可能剩下的最后一段（通常 SSE 以 \n\n 结尾，但做个保险）
-            if (buffer.trim().startsWith('data: ')) {
-              const eventData = buffer.trim().slice(6)
-              try {
-                const event = JSON.parse(eventData)
-                handleEvent(event)
-              } catch (e) {
-                console.error('[Chat] 剩余 buffer 解析失败', e, buffer)
-              }
-            }
-            break
-          }
-        }
+        })
       } else {
         // 快速模式
         const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)

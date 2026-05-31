@@ -20,7 +20,7 @@ function SchemaDetailView({
   onBack: () => void
 }) {
   const { t } = useTranslation()
-  const { databases } = useConfigStore()
+  const databases = useConfigStore(s => s.databases)
   const db = databases.find(d => d.id === dbId)
   const [schema, setSchema] = useState<ImportedTable[]>([])
   const [schemaStatus, setSchemaStatus] = useState<SchemaStatus | null>(null)
@@ -369,7 +369,8 @@ function SchemaDetailView({
 
 export function DatabaseManagementTab() {
   const { t } = useTranslation()
-  const { databases, setDatabases } = useConfigStore()
+  const databases = useConfigStore(s => s.databases)
+  const setDatabases = useConfigStore(s => s.setDatabases)
   const [view, setView] = useState<PageView>('list')
   const [detailDbId, setDetailDbId] = useState<string | null>(null)
   const [stats, setStats] = useState<Record<string, SchemaStatus>>({})

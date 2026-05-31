@@ -75,7 +75,7 @@ async def chat(req: ChatRequest):
     session = state.session_manager.get_or_create(session_id)
 
     if not req.db_id:
-        session.add_message("user", req.message)
+        session.add_message("user", f"<user_query>\n{req.message}\n</user_query>")
         content = "⚠️ 请先在左侧选择一个数据库，然后再提问。"
         session.add_message("assistant", content)
         return ChatResponse(
@@ -181,8 +181,9 @@ async def chat(req: ChatRequest):
             "content": f"<database name=\"{db_entry['name']}\">\n{inject_schema}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
         })
 
-    session.add_message("user", req.message)
-    agent_messages.append({"role": "user", "content": req.message})
+    safe_message = f"<user_query>\n{req.message}\n</user_query>"
+    session.add_message("user", safe_message)
+    agent_messages.append({"role": "user", "content": safe_message})
 
     # Run agent (fast or quality mode)
     agent = state.advanced_agent if req.mode == "quality" else state.agent_loop

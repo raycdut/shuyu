@@ -170,6 +170,15 @@ def update_user(user_id: str, role: str | None = None, is_active: bool | None = 
 def delete_user(user_id: str, changed_by: str | None = None) -> bool:
     db = _get_db()
     old_user = get_user_by_id(user_id)
+    # Cascade delete user's sessions and messages
+    try:
+        db.execute("DELETE FROM messages WHERE session_id IN (SELECT id FROM sessions WHERE user_id = ?)", (user_id,))
+    except sqlite3.OperationalError:
+        pass
+    try:
+        db.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    except sqlite3.OperationalError:
+        pass
     cursor = db.execute("DELETE FROM users WHERE id = ?", (user_id,))
     db.commit()
     deleted = cursor.rowcount > 0

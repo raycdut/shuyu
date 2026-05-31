@@ -67,3 +67,79 @@ Created two comprehensive test files under `backend/tests/`:
 #### Test results
 - All 78 tests passed successfully
 - Follows existing patterns: pytest classes, SQLite `:memory:` fixtures (where applicable), `from app.xxx import yyy` style, function-level docstrings
+
+## 2026-06-01
+
+### 系统级安全与工程质量修复（全量审查修复）
+
+**动机**: 对系统进行了全方位架构、工程、安全审查，修复了审查中发现的全部 P0 严重问题和主要 P1 问题。
+
+**修复清单**:
+
+#### P0 - 严重问题修复
+
+1. **F-String SQL 注入修复**（3处）:
+   - `backend/app/db/duckdb.py:62` — `get_schema()` 中 `WHERE table_name = ?` 参数化查询
+   - `backend/app/routes/database.py:104` — `get_database_tables()` 中参数化查询
+   - `backend/app/routes/database.py:265` — `import_schema()` 中参数化查询
+
+2. **COUNT(*) 子查询安全加固** (`backend/app/db/duckdb.py:105`):
+   - 多语句检测：仅当 SQL 为单语句时执行 `SELECT COUNT(*)` 计数
+
+3. **XSS 修复** (`backend/app/db/base.py:71`):
+   - `to_html()` 添加 `html.escape(str(val))` 防止数据库内容中的 XSS 攻击
+
+4. **SQLite 线程安全修复** (`backend/app/persistence/__init__.py:149`):
+   - 生产环境 SQLite 连接添加 `check_same_thread=False` 防止多请求并发崩溃
+
+5. **密码/API Key 加密存储**:
+   - 新增 `backend/app/utils/crypto.py` — 基于 Fernet (AES) 的对称加密工具，密钥从 `AUTH_SECRET_KEY` 派生
+   - `backend/app/persistence/database.py` — 数据库密码保存时加密、加载时解密
+   - `backend/app/admin_config/service.py` — LLM API Key 保存时加密、加载时解密
+   - `backend/requirements.txt` — 新增 `cryptography>=41.0.0`
+
+6. **`except Exception: pass` 修复**（4处，`backend/app/persistence/__init__.py`）:
+   - 全部替换为带 `logger.info()` 的日志输出，明确标注迁移已跳过
+
+#### P1 - 强烈建议修复
+
+7. **CORS 安全加固** (`backend/app/main.py`):
+   - `allow_methods` 从 `["*"]` 收紧为白名单 `["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]`
+   - `allow_headers` 从 `["*"]` 收紧为 `["Content-Type", "Authorization", "Accept"]`
+   - `allow_origins` 支持通过 `CORS_ORIGINS` 环境变量配置
+
+8. **密码策略增强** (`backend/app/auth/router.py`):
+   - 最小长度 6 → 8
+   - 新增字母和数字要求
+
+9. **外键 CASCADE 完善**:
+   - `backend/app/persistence/__init__.py` — 启用 `PRAGMA foreign_keys=ON`
+   - `backend/app/auth/service.py` — `delete_user()` 新增级联删除用户会话和消息
+
+#### 验证结果
+- 后端 337 测试全部通过（88 根级 + 249 backend/tests）
+- 前端 126 测试全部通过
+- 总计 463 测试全部通过
+
+### 补充 Agent 和 Chat 路由测试
+
+**动机**: 审查报告中指出 `describe_schema_agent.py`（0 测试）和 `routes/chat.py`（0 集成测试）是测试覆盖缺口，需要补齐。
+
+**新增测试文件**:
+
+1. **`tests/test_describe_schema_agent.py`**（21 个测试）:
+   - `TestBuildTableBlock`（5 tests）: 基础表/含描述/示例值/截断/无字段
+   - `TestBuildUserPrompt`（2 tests）: 单表/多表
+   - `TestParseLlmResponse`（7 tests）: 合法JSON/markdown包裹/空内容/非法JSON/无tables键/dict/无内容
+   - `TestGenerateDescriptions`（7 tests）: 无表/指定表ID/完整管线/LLM错误/数据库不存在/批次处理/空table_ids
+
+2. **`backend/tests/test_routes_chat.py`**（8 个测试）:
+   - `TestChatRoute`: Agent未初始化503/无API Key/无db_id/Fast模式/Quality模式/Session ID保持/消息持久化/无效db_id
+
+**同时修复的 bug**:
+- `_parse_llm_response()` 不支持顶层 JSON 数组格式（不兼容 OpenAI 工具的 `response_format` 输出），已修复
+
+#### 验证结果
+- 后端 366 测试全部通过（88 根级 + 278 backend/tests）
+- 前端 126 测试全部通过
+- 总计 **492 测试全部通过**

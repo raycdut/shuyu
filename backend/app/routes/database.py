@@ -99,11 +99,11 @@ async def get_database_tables(db_id: str):
 
             tables = []
             for table_name, table_type in filtered:
-                cols = conn.execute(f"""
+                cols = conn.execute("""
                     SELECT column_name, data_type FROM information_schema.columns
-                    WHERE table_name = '{table_name}'
+                    WHERE table_name = ?
                     ORDER BY ordinal_position
-                """).fetchall()
+                """, (table_name,)).fetchall()
                 tables.append({
                     "name": table_name,
                     "type": table_type,
@@ -258,14 +258,14 @@ async def import_schema(db_id: str, req: SchemaImportRequest, _admin: dict = Dep
             for table_name, table_type in rows:
                 if _should_exclude(table_name, include, exclude):
                     continue
-                cols = conn.execute(f"""
+                cols = conn.execute("""
                     SELECT column_name, data_type, is_nullable,
                            COALESCE(column_default, '') as column_default
                     FROM information_schema.columns
-                    WHERE table_name = '{table_name}'
+                    WHERE table_name = ?
                       AND table_schema NOT IN ('information_schema', 'pg_catalog')
                     ORDER BY ordinal_position
-                """).fetchall()
+                """, (table_name,)).fetchall()
 
                 columns = []
                 for i, col in enumerate(cols):
