@@ -119,3 +119,62 @@ def init_sqlite() -> None:
         state._sqlite.execute("ALTER TABLE llm_providers ADD COLUMN timeout INTEGER DEFAULT 120")
     except Exception:
         pass
+
+    # ---- Auth tables ----
+    _migrate_auth_tables()
+
+    # ---- Config tables ----
+    _migrate_config_tables()
+
+
+def _migrate_auth_tables():
+    """Create users + user_databases tables, add user_id to sessions."""
+    state._sqlite.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id            TEXT PRIMARY KEY,
+            username      TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role          TEXT NOT NULL DEFAULT 'user'
+                          CHECK(role IN ('admin', 'user')),
+            is_active     INTEGER NOT NULL DEFAULT 1,
+            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS user_databases (
+            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            database_id TEXT NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
+            PRIMARY KEY (user_id, database_id)
+        );
+    """)
+    try:
+        state._sqlite.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id)")
+    except Exception:
+        pass
+    state._sqlite.commit()
+
+
+def _migrate_config_tables():
+    """Create system_config + user_configs + config_changelog tables."""
+    state._sqlite.executescript("""
+        CREATE TABLE IF NOT EXISTS system_config (
+            id          INTEGER PRIMARY KEY CHECK (id = 1),
+            config      TEXT NOT NULL DEFAULT '{}',
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_by  TEXT
+        );
+        CREATE TABLE IF NOT EXISTS user_configs (
+            user_id     TEXT PRIMARY KEY,
+            config      TEXT NOT NULL DEFAULT '{}',
+            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS config_changelog (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user')),
+            user_id     TEXT,
+            changed_by  TEXT NOT NULL,
+            summary     TEXT NOT NULL,
+            diff        TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+    state._sqlite.commit()

@@ -25,6 +25,9 @@ from .persistence.database import load_db_connections_sqlite
 from .client import call_llm
 from .agent.tools.sql_tool import handle_query_database
 from .routes import chat, config as config_route, database, schema, sessions
+from .auth.router import router as auth_router
+from .auth.service import init_auth_config
+from .admin_config.router import router as admin_config_router
 from .session.manager import SessionManager
 
 # ---------------------------------------------------------------------------
@@ -93,6 +96,9 @@ async def lifespan(app: FastAPI):
     state.config = load_config()
     _setup_logging()
     logger.info(f"Config loaded: LLM={state.config.llm.provider}/{state.config.llm.model}")
+
+    # 1.1 Init auth config (JWT secret etc.)
+    init_auth_config()
 
     # 2. Init SQLite persistence
     init_sqlite()
@@ -195,6 +201,8 @@ if ui_dist and ui_dist.exists():
     app.mount("/assets", StaticFiles(directory=str(ui_dist / "assets")), name="assets")
 
 # Register routers
+app.include_router(auth_router)
+app.include_router(admin_config_router)
 app.include_router(schema.router)
 app.include_router(chat.router)
 app.include_router(sessions.router)
