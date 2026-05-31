@@ -71,7 +71,7 @@ export default function AdminSettingsPage() {
         <nav className="w-56 flex-shrink-0 bg-white/60 border-r border-tea py-6 shadow-sm z-10">
           <div className="px-6 mb-6">
             <button
-              onClick={() => navigate('/')}
+              onClick={() => navigate('/chat')}
               className="flex items-center gap-2 text-sm text-ink-light hover:text-celadon transition-colors font-sans mb-4"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
