@@ -113,6 +113,7 @@ export interface QueryResultInfo {
   ok: boolean
   row_count?: number
   columns?: string[]
+  data?: any[][]
   preview_text?: string
   error?: string
 }
@@ -136,4 +137,112 @@ export interface AppConfig {
   llm?: Partial<LLMConfig>
   safety?: Partial<SafetyConfig>
   database?: any
+}
+
+// ===== 认证 =====
+export interface UserInfo {
+  id: string
+  username: string
+  role: 'admin' | 'user'
+  is_active: boolean
+  created_at?: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: UserInfo
+}
+
+export interface RegisterRequest {
+  username: string
+  password: string
+}
+
+// ===== 配置管理 =====
+export interface ProviderPoolItem {
+  provider: string
+  label: string
+  models: string[]
+  enabled: boolean
+}
+
+export interface SystemConfig {
+  llm: {
+    provider_pool: ProviderPoolItem[]
+    default_model: string
+  }
+  safety: {
+    read_only: boolean
+    require_approval: boolean
+    max_rows: number
+    blocked_tables: string[]
+    masked_columns: string[]
+  }
+  advanced: {
+    session_expire_minutes: number
+    max_sessions_per_user: number
+    allow_user_llm_config: boolean
+    allow_user_safety_override: boolean
+    llm_temperature_range: { min: number; max: number; default: number }
+  }
+  storage: {
+    log_interval: string
+    log_retention_days: number
+  }
+}
+
+export interface UserPreferences {
+  language: string
+  temperature: number
+  theme: string
+  default_view: string
+}
+
+export interface UserConfig {
+  llm: {
+    provider: string
+    model: string
+    api_key: string
+    api_base: string
+    timeout: number
+  }
+  safety: {
+    read_only: boolean
+    require_approval: boolean
+    max_rows: number
+  }
+  preferences: UserPreferences
+}
+
+export interface UserAvailableOptions {
+  llm: {
+    providers: { provider: string; label: string; models: string[] }[]
+    can_use_custom_api_key: boolean
+    can_use_custom_api_base: boolean
+  }
+  safety: {
+    read_only: { editable: boolean; value: boolean }
+    require_approval: { editable: boolean; value: boolean }
+    max_rows: { editable: boolean; min: number; max: number; default: number }
+  }
+  preferences: {
+    language: { options: string[] }
+    temperature: { min: number; max: number; step: number }
+  }
+}
+
+export interface ConfigChangeLogEntry {
+  id: number
+  config_type: string
+  user_id: string | null
+  changed_by: string
+  summary: string
+  diff: string | null
+  created_at: string
 }

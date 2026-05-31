@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import App from './App'
-import type { AppConfig } from './types'
 
 // Mock the api module
 const mockApi = vi.hoisted(() => ({
@@ -20,18 +19,38 @@ const mockApi = vi.hoisted(() => ({
   testConnection: vi.fn(),
   getDatabaseTables: vi.fn(),
   updateDatabase: vi.fn(),
+  getMe: vi.fn(),
 }))
 
 vi.mock('./api', () => ({ api: mockApi }))
 
+// Mock auth store to return a logged-in user
+vi.mock('./store/authStore', () => ({
+  useAuthStore: Object.assign(
+    vi.fn((selector?: any) => {
+      const state = {
+        user: { id: '1', username: 'admin', role: 'admin' as const, is_active: true },
+        token: 'test-token',
+        isLoading: false,
+        isInitialized: true,
+        login: vi.fn(),
+        register: vi.fn(),
+        logout: vi.fn(),
+        checkAuth: vi.fn(),
+      }
+      return selector ? selector(state) : state
+    }),
+    { getState: vi.fn(() => ({ logout: vi.fn() })) }
+  ),
+}))
+
 describe('App', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Default successful responses
     mockApi.getSessions.mockResolvedValue({ sessions: [] })
     mockApi.getSchema.mockResolvedValue({ tables: [] })
     mockApi.getDatabases.mockResolvedValue({ databases: [] })
-    mockApi.getConfig.mockResolvedValue({} as AppConfig)
+    mockApi.getConfig.mockResolvedValue({})
     mockApi.testLLM.mockResolvedValue({ ok: true, message: 'connected' })
   })
 
@@ -78,9 +97,7 @@ describe('App', () => {
     fireEvent.change(input, { target: { value: '帮我查一下数据' } })
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
 
-    // User message should appear
     expect(await screen.findByText('帮我查一下数据')).toBeInTheDocument()
-    // Assistant reply should appear
     expect(await screen.findByText('这是分析结果')).toBeInTheDocument()
   })
 
@@ -98,21 +115,15 @@ describe('App', () => {
 
   it('toggles sidebar visibility', () => {
     render(<App />)
-    // Sidebar is visible by default
     expect(screen.getByText('暂无历史会话')).toBeInTheDocument()
-    // Click toggle button
     fireEvent.click(screen.getByLabelText('切换侧栏'))
-    // Sidebar should be hidden
     expect(screen.queryByText('暂无历史会话')).not.toBeInTheDocument()
   })
 
   it('toggles config panel visibility', () => {
     render(<App />)
-    // Config panel is visible by default
     expect(screen.getByText('LLM 提供商')).toBeInTheDocument()
-    // Click toggle button
     fireEvent.click(screen.getByLabelText('切换配置面板'))
-    // Config panel should be hidden
     expect(screen.queryByText('LLM 提供商')).not.toBeInTheDocument()
   })
 
@@ -120,7 +131,6 @@ describe('App', () => {
     mockApi.getSessions.mockRejectedValue(new Error('连接被拒绝'))
 
     render(<App />)
-    // The error should be displayed as a toast (called during init)
     expect(await screen.findByText(/加载会话失败/)).toBeInTheDocument()
     expect(screen.getByText(/连接被拒绝/)).toBeInTheDocument()
   })
@@ -140,5 +150,15 @@ describe('App', () => {
     fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true })
 
     expect(await screen.findByText('Ctrl+Enter 发送测试')).toBeInTheDocument()
+  })
+
+  it('shows admin badge for admin users', () => {
+    render(<App />)
+    expect(screen.getByText('管理员')).toBeInTheDocument()
+  })
+
+  it('shows username in header', () => {
+    render(<App />)
+    expect(screen.getByText('admin')).toBeInTheDocument()
   })
 })

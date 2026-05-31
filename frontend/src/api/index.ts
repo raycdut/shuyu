@@ -6,15 +6,38 @@ import type {
   DatabaseListResponse,
   DBConnectRequest,
   AppConfig,
+  LoginRequest,
+  LoginResponse,
+  RegisterRequest,
+  UserInfo,
+  SystemConfig,
+  UserConfig,
+  UserAvailableOptions,
+  ConfigChangeLogEntry,
 } from '../types'
 
 const BASE = '/api'
 
+function getToken(): string | null {
+  return localStorage.getItem('auth_token')
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getToken()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
   const res = await fetch(`${BASE}${url}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     ...options,
   })
+  if (res.status === 401) {
+    localStorage.removeItem('auth_token')
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => '')
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
@@ -23,6 +46,25 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // ===== 认证 =====
+  login(data: LoginRequest): Promise<LoginResponse> {
+    return request('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  register(data: RegisterRequest): Promise<UserInfo> {
+    return request('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    })
+  },
+
+  getMe(): Promise<UserInfo> {
+    return request('/auth/me')
+  },
+
   // ===== 聊天 =====
   sendMessage(message: string, sessionId?: string, dbId?: string, mode?: string): Promise<ChatResponse> {
     return request('/chat', {
@@ -111,5 +153,64 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     })
+  },
+
+  // ===== 管理员：用户管理 =====
+  getUsers(): Promise<UserInfo[]> {
+    return request('/admin/users')
+  },
+
+  updateUser(userId: string, data: { role?: string; is_active?: boolean }): Promise<UserInfo> {
+    return request(`/admin/users/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
+  deleteUser(userId: string): Promise<void> {
+    return request(`/admin/users/${userId}`, { method: 'DELETE' })
+  },
+
+  getUserDatabases(userId: string): Promise<{ database_ids: string[] }> {
+    return request(`/admin/users/${userId}/databases`)
+  },
+
+  setUserDatabases(userId: string, databaseIds: string[]): Promise<{ database_ids: string[] }> {
+    return request(`/admin/users/${userId}/databases`, {
+      method: 'PUT',
+      body: JSON.stringify({ database_ids: databaseIds }),
+    })
+  },
+
+  // ===== 管理员：系统配置 =====
+  getSystemConfig(): Promise<SystemConfig> {
+    return request('/admin/config')
+  },
+
+  updateSystemConfig(config: Partial<SystemConfig>): Promise<SystemConfig> {
+    return request('/admin/config', {
+      method: 'PATCH',
+      body: JSON.stringify(config),
+    })
+  },
+
+  getConfigChangelog(): Promise<ConfigChangeLogEntry[]> {
+    return request('/admin/config/changelog')
+  },
+
+  // ===== 用户：个人配置 =====
+  getUserConfig(): Promise<UserConfig> {
+    return request('/user/config')
+  },
+
+  updateUserConfig(config: Partial<Record<string, any>>): Promise<{ merged: UserConfig; overrides: Partial<UserConfig> }> {
+    return request('/user/config', {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    })
+  },
+
+  getUserAvailableOptions(): Promise<UserAvailableOptions> {
+    return request('/user/config/available')
   },
 }

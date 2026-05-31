@@ -1,65 +1,71 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useEffect, useCallback, useRef, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import Chat from './components/Chat'
 import ConfigPanel from './components/ConfigPanel'
 import StatusBar from './components/StatusBar'
-import { Session, DatabaseInfo, LLMConfig, SafetyConfig, Message, nextMsgId } from './types'
+import Dashboard from './components/Dashboard'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import AdminSettingsPage from './pages/AdminSettingsPage'
 import { api } from './api'
+import { useStore } from './store'
+import { useAuthStore } from './store/authStore'
+import { useSessions } from './hooks/useSessions'
+import { useChatStream } from './hooks/useChatStream'
 
 export default function App() {
-  // --- 状态 ---
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
-  const [messages, setMessages] = useState<Message[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+  const {
+    sessions,
+    activeSessionId,
+    messages,
+    isLoading,
+    databases,
+    activeDbId,
+    mode,
+    schema,
+    llmConnected,
+    llmConfig,
+    safetyConfig,
+    leftOpen,
+    rightOpen,
+    showDashboard,
+    error,
+    setDatabases,
+    setActiveDbId,
+    setMode,
+    setSchema,
+    setLlmConnected,
+    setLLMConfig,
+    setSafetyConfig,
+    setLeftOpen,
+    setRightOpen,
+    setShowDashboard,
+    setError,
+  } = useStore()
 
-  // 数据库
-  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
-  const [activeDbId, setActiveDbId] = useState<string | null>(null)
-  const [mode, setMode] = useState('fast')
-  const [schema, setSchema] = useState<{ name: string; columns: { name: string; type: string }[] }[]>([])
+  const { user, isInitialized, checkAuth, logout } = useAuthStore()
+  const [showAuth, setShowAuth] = useState<'login' | 'register'>('login')
+  const [showAdminSettings, setShowAdminSettings] = useState(false)
 
-  // LLM 连接状态
-  const [llmConnected, setLlmConnected] = useState<boolean | null>(null)
+  const {
+    loadSessions,
+    handleSelectSession,
+    handleNewSession,
+    handleRenameSession,
+    handleDeleteSession,
+    handleClearAllSessions,
+  } = useSessions()
 
-  // 配置
-  const [llmConfig, setLLMConfig] = useState<LLMConfig>({
-    provider: 'openai',
-    model: 'gpt-4o',
-    api_key: '',
-    api_base: '',
-    timeout: 60,
-  })
-  const [safetyConfig, setSafetyConfig] = useState<SafetyConfig>({
-    read_only: true,
-    require_approval: true,
-    max_rows: 1000,
-  })
+  const { handleSendMessage } = useChatStream()
 
-  // 面板展开
-  const [leftOpen, setLeftOpen] = useState(true)
-  const [rightOpen, setRightOpen] = useState(true)
-
-  // 全局错误状态
-  const [error, setError] = useState<string | null>(null)
   const errorTimerRef = useRef<ReturnType<typeof setTimeout>>()
 
   const showError = useCallback((msg: string) => {
     setError(msg)
     clearTimeout(errorTimerRef.current)
     errorTimerRef.current = setTimeout(() => setError(null), 5000)
-  }, [])
+  }, [setError])
 
-  // --- 初始化 ---
-  useEffect(() => {
-    loadSessions()
-    loadSchema()
-    loadDatabases()
-    loadConfig()
-    checkLLM()
-  }, [])
-
-  // --- LLM 连接检查 ---
   const checkLLM = useCallback(async () => {
     try {
       const res = await api.testLLM()
@@ -67,37 +73,27 @@ export default function App() {
     } catch {
       setLlmConnected(false)
     }
-  }, [])
+  }, [setLlmConnected])
 
-  // --- API 加载函数 ---
-  const loadSessions = async () => {
-    try {
-      const data = await api.getSessions()
-      setSessions(data.sessions || [])
-    } catch (err: any) {
-      showError(`加载会话失败: ${err.message || '未知错误'}`)
-    }
-  }
-
-  const loadSchema = async () => {
-    try {
-      const data = await api.getSchema()
-      setSchema(data.tables || [])
-    } catch (err: any) {
-      showError(`加载 Schema 失败: ${err.message || '未知错误'}`)
-    }
-  }
-
-  const loadDatabases = async () => {
+  const loadDatabases = useCallback(async () => {
     try {
       const data = await api.getDatabases()
       setDatabases(data.databases || [])
     } catch (err: any) {
       showError(`加载数据库列表失败: ${err.message || '未知错误'}`)
     }
-  }
+  }, [setDatabases, showError])
 
-  const loadConfig = async () => {
+  const loadSchema = useCallback(async () => {
+    try {
+      const data = await api.getSchema()
+      setSchema(data.tables || [])
+    } catch (err: any) {
+      showError(`加载 Schema 失败: ${err.message || '未知错误'}`)
+    }
+  }, [setSchema, showError])
+
+  const loadConfig = useCallback(async () => {
     try {
       const data = await api.getConfig()
       if (data?.llm) setLLMConfig(prev => ({ ...prev, ...data.llm }))
@@ -105,203 +101,38 @@ export default function App() {
     } catch (err: any) {
       showError(`加载配置失败: ${err.message || '未知错误'}`)
     }
+  }, [setLLMConfig, setSafetyConfig, showError])
+
+  useEffect(() => {
+    checkAuth()
+  }, [checkAuth])
+
+  useEffect(() => {
+    if (!user) return
+    loadSessions()
+    loadSchema()
+    loadDatabases()
+    loadConfig()
+    checkLLM()
+  }, [user, loadSessions, loadSchema, loadDatabases, loadConfig, checkLLM])
+
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-paper-light">
+        <p className="text-ink-lighter font-kai">加载中…</p>
+      </div>
+    )
   }
 
-  // --- 对话 ---
-  const handleSendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || isLoading) return
-
-    const userMsg: Message = { id: nextMsgId(), role: 'user', content: text }
-    setMessages(prev => [...prev, userMsg])
-    setIsLoading(true)
-
-    try {
-      if (mode === 'quality') {
-        if (!activeDbId) {
-          const warnMsg: Message = {
-            id: nextMsgId(),
-            role: 'assistant',
-            content: '⚠️ 请先在左侧选择一个数据库，然后再提问。',
-          }
-          setMessages(prev => [...prev, warnMsg])
-          return
-        }
-        // 深度分析模式：合并为一个进度面板
-        const resp = await fetch('/api/chat/stream', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: text,
-            session_id: activeSessionId || null,
-            db_id: activeDbId || null,
-            mode: 'quality'
-          }),
-        })
-        const reader = resp.body!.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        // 进度步骤外部管理（避免闭包陈旧引用）
-        let planReflected = false
-        let executionDone = false
-        let progressSteps: { label: string; status: 'pending' | 'running' | 'done' | 'error'; detail?: string }[] = [
-          { label: '生成分析计划', status: 'running' },
-          { label: '审核分析计划', status: 'pending' },
-          { label: '执行查询', status: 'pending' },
-          { label: '生成分析报告', status: 'pending' },
-        ]
-
-        // 创建进度消息
-        const progressId = nextMsgId()
-        setMessages(prev => [...prev, {
-          id: progressId,
-          role: 'assistant',
-          content: '',
-          isProgress: true,
-          progressSteps: [...progressSteps],
-          progressTitle: '深度分析中',
-        }])
-
-        const updateProgress = () => {
-          setMessages(prev => prev.map(m =>
-            m.id === progressId ? { ...m, progressSteps: [...progressSteps], isProgress: true } : m
-          ))
-        }
-
-        let sqlCount = 0
-        let allSqlQueries: string[] = []
-        let allQueryResults: any[] = []
-
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          buffer += decoder.decode(value, { stream: true })
-
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue
-            try {
-              const event = JSON.parse(line.slice(6))
-              console.log('[SSE]', event.type, (event.content || '').slice(0, 60))
-
-              if (event.type === 'plan') {
-                // Plan ready — plan step done, reflect starts
-                progressSteps[0].status = 'done'
-                progressSteps[1].status = 'running'
-                updateProgress()
-              } else if (event.type === 'plan_reflect') {
-                if (event.content?.includes('通过')) {
-                  progressSteps[1].status = 'done'
-                  progressSteps[2].status = 'running'
-                  planReflected = true
-                  updateProgress()
-                }
-              } else if (event.type === 'query') {
-                sqlCount++
-                progressSteps[2].detail = `📊 查询 ${sqlCount}`
-              } else if (event.type === 'step') {
-                if (event.step && event.total) {
-                  progressSteps[2].label = `执行查询（第 ${event.step}/${event.total} 步）`
-                }
-                updateProgress()
-              } else if (event.type === 'step_done') {
-                // step completed — keep running
-              } else if (event.type === 'summarize') {
-                progressSteps[2].status = 'done'
-                progressSteps[3].status = 'running'
-                executionDone = true
-                updateProgress()
-              } else if (event.type === 'session_id') {
-                setActiveSessionId(event.session_id)
-              } else if (event.type === 'thinking') {
-                // skip
-              } else if (event.type === 'done') {
-                allSqlQueries = event.sql_queries || []
-                allQueryResults = event.query_results || []
-                // Replace progress message with final answer
-                setMessages(prev => prev.map(m =>
-                  m.id === progressId
-                    ? { id: progressId, role: 'assistant', content: event.content, sql_queries: allSqlQueries, query_results: allQueryResults }
-                    : m
-                ))
-              }
-            } catch { /* skip */ }
-          }
-        }
-      } else {
-        // 快速模式：原有逻辑
-        const res = await api.sendMessage(text, activeSessionId ?? undefined, activeDbId ?? undefined, mode)
-        setActiveSessionId(res.session_id)
-
-        const agentMsg: Message = {
-          id: nextMsgId(),
-          role: 'assistant',
-          content: res.reply,
-          tool_calls: res.tool_calls,
-          sql_queries: res.sql_queries,
-          query_results: res.query_results,
-        }
-        setMessages(prev => [...prev, agentMsg])
-      }
-      loadSessions()
-    } catch (err: any) {
-      const errorMsg: Message = {
-        id: nextMsgId(),
-        role: 'assistant',
-        content: `抱歉，请求失败：${err.message || '未知错误'}`,
-      }
-      setMessages(prev => [...prev, errorMsg])
-    } finally {
-      setIsLoading(false)
+  if (!user) {
+    if (showAuth === 'register') {
+      return <RegisterPage onSwitchToLogin={() => setShowAuth('login')} />
     }
-  }, [activeSessionId, activeDbId, isLoading, mode])
-
-  // --- 选择会话 ---
-  const handleSelectSession = async (sessionId: string) => {
-    setActiveSessionId(sessionId)
-    try {
-      const data = await api.getSessionMessages(sessionId)
-      setMessages(data.messages || [])
-    } catch {
-      setMessages([])
-    }
-  }
-
-  // --- 新建会话 ---
-  const handleNewSession = () => {
-    setActiveSessionId(null)
-    setMessages([])
-  }
-
-  // --- 重命名会话 ---
-  const handleRenameSession = async (sessionId: string, title: string) => {
-    try {
-      await api.renameSession(sessionId, title)
-      loadSessions()
-    } catch (err: any) {
-      showError(`重命名失败: ${err.message || '未知错误'}`)
-    }
-  }
-
-  // --- 删除会话 ---
-  const handleDeleteSession = async (sessionId: string) => {
-    try {
-      await api.deleteSession(sessionId)
-      if (activeSessionId === sessionId) {
-        setActiveSessionId(null)
-        setMessages([])
-      }
-      loadSessions()
-    } catch (err: any) {
-      showError(`删除会话失败: ${err.message || '未知错误'}`)
-    }
+    return <LoginPage onSwitchToRegister={() => setShowAuth('register')} />
   }
 
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* ===== 顶部栏 ===== */}
       <header className="flex-shrink-0 flex items-center justify-between px-6 py-3 bg-white/80 backdrop-blur-sm ink-border border-t-0 border-x-0">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-song font-semibold text-ink tracking-wider">
@@ -310,6 +141,29 @@ export default function App() {
           <span className="text-xs text-ink-lighter font-kai">问你的数据</span>
         </div>
         <div className="flex items-center gap-4 text-ink-light">
+          {user.role === 'admin' && (
+            <button
+              onClick={() => setShowAdminSettings(!showAdminSettings)}
+              className={`p-1 rounded-sm transition-colors hover:bg-smoke ${showAdminSettings ? 'text-celadon' : ''}`}
+              title="系统设置"
+              aria-label="系统设置"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+              </svg>
+            </button>
+          )}
+          <button
+            onClick={() => setShowDashboard(!showDashboard)}
+            aria-label="切换看板"
+            className={`p-1 rounded-sm transition-colors hover:bg-smoke ${showDashboard ? 'text-celadon' : ''}`}
+            title="数据看板"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 3h7v7H3zM14 3h7v7h-7zM14 14h7v7h-7zM3 14h7v7H3z" />
+            </svg>
+          </button>
           <button
             onClick={() => setLeftOpen(!leftOpen)}
             aria-label="切换侧栏"
@@ -332,10 +186,21 @@ export default function App() {
               <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
             </svg>
           </button>
+          <div className="flex items-center gap-2 pl-2 border-l border-tea">
+            <span className="text-xs text-ink-lighter font-kai">{user.username}</span>
+            {user.role === 'admin' && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-celadon/10 text-celadon-dark font-kai">管理员</span>
+            )}
+            <button
+              onClick={logout}
+              className="text-xs text-ink-lighter hover:text-cinnabar transition-colors font-kai"
+            >
+              退出
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* ===== 错误提示 Toast ===== */}
       {error && (
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-2 bg-cinnabar/10 text-cinnabar text-sm border-b border-cinnabar/20">
           <span>{error}</span>
@@ -347,62 +212,53 @@ export default function App() {
         </div>
       )}
 
-      {/* ===== 三栏主体 ===== */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左栏 — 会话 + 数据库 */}
-        <Sidebar
-          open={leftOpen}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          databases={databases}
-          activeDbId={activeDbId}
-          onSelectSession={handleSelectSession}
-          onNewSession={handleNewSession}
-          onRenameSession={handleRenameSession}
-          onDeleteSession={handleDeleteSession}
-          onSelectDb={setActiveDbId}
-          onDatabasesChange={loadDatabases}
-          onClearAllSessions={async () => {
-            handleNewSession()
-            try {
-              const res = await fetch('/api/sessions/clear', { method: 'POST' })
-              if (!res.ok) throw new Error(`HTTP ${res.status}`)
-              loadSessions()
-            } catch (err: any) {
-              showError(`清空会话失败: ${err.message || '未知错误'}`)
-              loadSessions()
-            }
-          }}
-        />
+        {showAdminSettings ? (
+          <AdminSettingsPage />
+        ) : showDashboard ? (
+          <Dashboard />
+        ) : (
+          <div className="flex-1 flex overflow-hidden">
+            <Sidebar
+              open={leftOpen}
+              sessions={sessions}
+              activeSessionId={activeSessionId}
+              databases={databases}
+              activeDbId={activeDbId}
+              onSelectSession={handleSelectSession}
+              onNewSession={handleNewSession}
+              onRenameSession={handleRenameSession}
+              onDeleteSession={handleDeleteSession}
+              onSelectDb={setActiveDbId}
+              onDatabasesChange={loadDatabases}
+              onClearAllSessions={handleClearAllSessions}
+            />
 
-        {/* 分隔线 */}
-        {leftOpen && <div className="w-px bg-tea flex-shrink-0" />}
+            {leftOpen && <div className="w-px bg-tea flex-shrink-0" />}
 
-        {/* 中栏 — 聊天 */}
-              <Chat
-                messages={messages}
-                isLoading={isLoading}
-                onSend={handleSendMessage}
-                schema={schema}
-                mode={mode}
-                onModeChange={setMode}
-              />
+            <Chat
+              messages={messages}
+              isLoading={isLoading}
+              onSend={handleSendMessage}
+              schema={schema}
+              mode={mode}
+              onModeChange={setMode}
+            />
 
-        {/* 分隔线 */}
-        {rightOpen && <div className="w-px bg-tea flex-shrink-0" />}
+            {rightOpen && <div className="w-px bg-tea flex-shrink-0" />}
 
-        {/* 右栏 — 配置 */}
-        <ConfigPanel
-          open={rightOpen}
-          llmConfig={llmConfig}
-          safetyConfig={safetyConfig}
-          onLLMChange={setLLMConfig}
-          onSafetyChange={setSafetyConfig}
-          onConfigSave={() => { loadConfig(); checkLLM() }}
-        />
+            <ConfigPanel
+              open={rightOpen}
+              llmConfig={llmConfig}
+              safetyConfig={safetyConfig}
+              onLLMChange={setLLMConfig}
+              onSafetyChange={setSafetyConfig}
+              onConfigSave={() => { loadConfig(); checkLLM() }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* ===== 底部状态栏 ===== */}
       <StatusBar
         llmModel={llmConfig.model}
         llmConnected={llmConnected}

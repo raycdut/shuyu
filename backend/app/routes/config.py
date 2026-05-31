@@ -5,33 +5,51 @@ from __future__ import annotations
 import logging
 import os
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .. import state
 from ..persistence.config import save_config_sqlite
 from ..client import call_llm
 from ..models.config import ConfigUpdate, LLMTestResult
+from ..auth.middleware import get_current_user
+from ..admin_config.service import get_merged_config
 
 logger = logging.getLogger("shuyu.main")
 
 router = APIRouter()
 
+security = HTTPBearer(auto_error=False)
+
+
+async def optional_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)):
+    """Get current user if token is provided, otherwise return None."""
+    if credentials is None:
+        return None
+    try:
+        from ..auth.middleware import get_current_user as _get_user
+        return await _get_user(authorization=f"Bearer {credentials.credentials}")
+    except Exception:
+        return None
+
 
 @router.get("/api/config")
-async def get_config():
-    """Get current runtime configuration."""
+async def get_config(current_user: dict | None = Depends(optional_current_user)):
+    """Get current runtime configuration (merged with user config if authenticated)."""
+    user_id = current_user["id"] if current_user else None
+    merged = get_merged_config(user_id)
     return {
         "llm": {
-            "provider": state.config.llm.provider,
-            "model": state.config.llm.model,
-            "api_key": "••••••" if state.config.llm.api_key else "",
-            "api_base": state.config.llm.api_base or "",
-            "timeout": state.config.llm.timeout,
+            "provider": merged["llm"]["provider"],
+            "model": merged["llm"]["model"],
+            "api_key": "••••••" if merged["llm"]["api_key"] else "",
+            "api_base": merged["llm"]["api_base"] or "",
+            "timeout": merged["llm"]["timeout"],
         },
         "safety": {
-            "read_only": state.config.safety.read_only,
-            "require_approval": True,
-            "max_rows": state.config.safety.max_rows,
+            "read_only": merged["safety"]["read_only"],
+            "require_approval": merged["safety"]["require_approval"],
+            "max_rows": merged["safety"]["max_rows"],
         },
     }
 
