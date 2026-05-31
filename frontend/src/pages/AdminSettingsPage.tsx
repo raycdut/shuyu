@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api'
 import type { SystemConfig } from '../types'
 import { LLMSettingsTab } from './AdminSettings/tabs/LLMSettingsTab'
@@ -28,6 +29,7 @@ export default function AdminSettingsPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>('llm')
   const [config, setConfig] = useState<SystemConfig | null>(null)
   const [saving, setSaving] = useState(false)
+  const navigate = useNavigate()
 
   const loadConfig = useCallback(async () => {
     try {
@@ -62,6 +64,15 @@ export default function AdminSettingsPage() {
     <div className="flex-1 flex bg-paper-light overflow-hidden w-full">
       <nav className="w-56 flex-shrink-0 bg-white/60 border-r border-tea py-6 shadow-sm z-10">
         <div className="px-6 mb-6">
+          <button
+            onClick={() => navigate('/')}
+            className="flex items-center gap-2 text-sm text-ink-light hover:text-celadon transition-colors font-kai mb-4"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
+            </svg>
+            返回聊天
+          </button>
           <h2 className="text-xs font-song font-bold text-ink-lighter uppercase tracking-widest">系统管理</h2>
         </div>
         <div className="space-y-1">
