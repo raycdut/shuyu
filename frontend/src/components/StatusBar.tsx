@@ -2,12 +2,17 @@ import React from 'react'
 
 interface StatusBarProps {
   llmModel: string
+  llmName?: string
   llmConnected: boolean | null
   dbName: string
   sessionTitle?: string
 }
 
-const StatusBar = React.memo(function StatusBar({ llmModel, llmConnected, dbName, sessionTitle }: StatusBarProps) {
+/**
+ * 状态栏组件
+ * 在底部显示当前会话标题、数据库连接和 LLM 模型状态
+ */
+const StatusBar = React.memo(function StatusBar({ llmModel, llmName, llmConnected, dbName, sessionTitle }: StatusBarProps) {
   return (
     <footer className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 bg-white/70 ink-border border-b-0 border-x-0 text-[11px] text-ink-lighter">
       <div className="flex items-center gap-4">
@@ -53,7 +58,7 @@ const StatusBar = React.memo(function StatusBar({ llmModel, llmConnected, dbName
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <path d="M9 9h.01M15 9h.01M9 15h6" />
           </svg>
-          <span>{llmModel}</span>
+          <span title={llmModel}>{llmName || llmModel}</span>
         </span>
       </div>
     </footer>

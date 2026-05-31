@@ -127,7 +127,7 @@ export const api = {
   },
 
   // ===== LLM 测试 =====
-  testLLM(config?: { api_key?: string; api_base?: string; model?: string }): Promise<{ ok: boolean; message: string }> {
+  testLLM(config?: { model_id?: string; provider?: string }): Promise<{ ok: boolean; message: string }> {
     return request('/config/llm/test', {
       method: 'POST',
       body: JSON.stringify(config || {}),

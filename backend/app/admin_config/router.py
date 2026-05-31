@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from ..auth.middleware import get_current_user, require_admin
 from .service import (
     get_system_config,
+    get_system_config_masked,
     update_system_config,
     get_user_config,
     update_user_config,
@@ -23,7 +24,7 @@ router = APIRouter()
 
 @router.get("/api/admin/config")
 async def admin_get_config(_admin: dict = Depends(require_admin)) -> dict:
-    return get_system_config()
+    return get_system_config_masked()
 
 
 @router.put("/api/admin/config")

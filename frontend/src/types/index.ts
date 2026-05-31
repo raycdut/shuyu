@@ -120,6 +120,8 @@ export interface QueryResultInfo {
 
 // ===== 配置 =====
 export interface LLMConfig {
+  id?: string
+  name?: string
   provider: string
   model: string
   api_key: string
@@ -165,17 +167,22 @@ export interface RegisterRequest {
 }
 
 // ===== 配置管理 =====
-export interface ProviderPoolItem {
+export interface LLMModelInstance {
+  id: string
+  name: string
   provider: string
-  label: string
-  models: string[]
+  model: string
+  api_key?: string
+  api_base?: string
+  timeout?: number
   enabled: boolean
+  is_system_default: boolean
+  is_connected?: boolean | null
 }
 
 export interface SystemConfig {
   llm: {
-    provider_pool: ProviderPoolItem[]
-    default_model: string
+    models: LLMModelInstance[]
   }
   safety: {
     read_only: boolean
@@ -223,6 +230,7 @@ export interface UserConfig {
 export interface UserAvailableOptions {
   llm: {
     providers: { provider: string; label: string; models: string[] }[]
+    models: { id: string; name: string; provider: string; model: string }[]
     can_use_custom_api_key: boolean
     can_use_custom_api_base: boolean
   }

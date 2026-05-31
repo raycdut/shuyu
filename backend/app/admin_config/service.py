@@ -11,14 +11,30 @@ logger = logging.getLogger("shuyu.main")
 
 DEFAULT_SYSTEM_CONFIG: dict[str, Any] = {
     "llm": {
-        "provider_pool": [
-            {"provider": "openai", "label": "OpenAI", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"], "enabled": True},
-            {"provider": "deepseek", "label": "DeepSeek", "models": ["deepseek-v4-flash", "deepseek-v4-pro"], "enabled": True},
-            {"provider": "azure", "label": "Azure OpenAI", "models": ["gpt-4o", "gpt-4", "gpt-35-turbo"], "enabled": False},
-            {"provider": "anthropic", "label": "Anthropic", "models": ["claude-3-5-sonnet", "claude-3-haiku"], "enabled": False},
-            {"provider": "ollama", "label": "Ollama", "models": ["llama3.1", "qwen2.5", "mistral"], "enabled": True},
+        "models": [
+            {
+                "id": "default-openai",
+                "name": "OpenAI (Default)",
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "",
+                "api_base": "https://api.openai.com/v1",
+                "timeout": 120,
+                "enabled": True,
+                "is_system_default": True
+            },
+            {
+                "id": "default-deepseek",
+                "name": "DeepSeek",
+                "provider": "openai",  # DeepSeek uses OpenAI compatible API
+                "model": "deepseek-chat",
+                "api_key": "",
+                "api_base": "https://api.deepseek.com/v1",
+                "timeout": 120,
+                "enabled": True,
+                "is_system_default": False
+            }
         ],
-        "default_model": "gpt-4o",
     },
     "safety": {
         "read_only": True,
@@ -69,13 +85,61 @@ def get_system_config() -> dict[str, Any]:
         return dict(DEFAULT_SYSTEM_CONFIG)
 
 
+def _mask_api_key(key: str) -> str:
+    """Mask API key for safe display (show first 4 + last 4 chars if long enough)."""
+    if not key or len(key) < 8:
+        return ""
+    return key[:4] + "••••" + key[-4:]
+
+
+def _unmask_and_merge_api_keys(old_models: list[dict], new_models: list[dict]) -> list[dict]:
+    """Merge API keys from old models if new ones are masked placeholders."""
+    old_map = {m["id"]: m.get("api_key", "") for m in old_models if m.get("id")}
+    result = []
+    for m in new_models:
+        mid = m.get("id", "")
+        key = m.get("api_key", "")
+        if key and "••••" in key and mid in old_map:
+            key = old_map[mid]
+        result.append({**m, "api_key": key})
+    return result
+
+
+def _ensure_default_model(models: list[dict]) -> list[dict]:
+    """Ensure exactly one model has is_system_default=True."""
+    defaults = [m for m in models if m.get("is_system_default")]
+    if len(defaults) > 1:
+        for m in defaults[1:]:
+            m["is_system_default"] = False
+    if not defaults:
+        enabled = [m for m in models if m.get("enabled")]
+        if enabled:
+            enabled[0]["is_system_default"] = True
+    return models
+
+
 def update_system_config(config: dict[str, Any], updated_by: str | None = None) -> dict[str, Any]:
     db = _get_db()
     old = get_system_config()
-    merged = {**old, **config}
-    for key in ("llm", "safety", "advanced", "storage"):
+    merged = {**old}
+
+    for key in ("safety", "advanced", "storage"):
         if key in config and isinstance(config[key], dict):
             merged[key] = {**old.get(key, {}), **config[key]}
+
+    # Handle models list specially (full replacement, not dict merge)
+    if "llm" in config:
+        merged_llm = {**old.get("llm", {})}
+        if "models" in config["llm"]:
+            old_models = old.get("llm", {}).get("models", [])
+            incoming = config["llm"]["models"]
+            # Preserve real API keys if masked values were sent
+            incoming = _unmask_and_merge_api_keys(old_models, incoming)
+            # Ensure exacty one model is system default
+            incoming = _ensure_default_model(incoming)
+            merged_llm["models"] = incoming
+        merged["llm"] = merged_llm
+
     now = datetime.now(timezone.utc).isoformat()
     db.execute(
         "INSERT INTO system_config (id, config, updated_at, updated_by) VALUES (1, ?, ?, ?) "
@@ -85,6 +149,16 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
     db.commit()
     _log_config_change("system", None, updated_by or "unknown", f"更新系统配置: {list(config.keys())}")
     return get_system_config()
+
+
+def get_system_config_masked() -> dict[str, Any]:
+    """Return system config with API keys masked for frontend display."""
+    config = get_system_config()
+    models = config.get("llm", {}).get("models", [])
+    for m in models:
+        if m.get("api_key"):
+            m["api_key"] = _mask_api_key(m["api_key"])
+    return config
 
 
 def get_user_config(user_id: str) -> dict[str, Any]:
@@ -126,17 +200,39 @@ def get_merged_config(user_id: str | None = None) -> dict[str, Any]:
 
 
 def _system_to_runtime(system: dict[str, Any]) -> dict[str, Any]:
-    pool = system.get("llm", {}).get("provider_pool", [])
-    enabled = [p for p in pool if p.get("enabled")]
-    first_provider = enabled[0]["provider"] if enabled else "openai"
-    first_model = enabled[0]["models"][0] if enabled and enabled[0].get("models") else "gpt-4o"
+    models = system.get("llm", {}).get("models", [])
+    # Find system default model, or first enabled one
+    default_model = next((m for m in models if m.get("is_system_default")), None)
+    if not default_model:
+        default_model = next((m for m in models if m.get("enabled")), None)
+    
+    if not default_model:
+        # Fallback to something safe
+        return {
+            "llm": {
+                "id": "fallback",
+                "provider": "openai",
+                "model": "gpt-4o",
+                "api_key": "",
+                "api_base": "",
+                "timeout": 120,
+            },
+            "safety": {
+                "read_only": system.get("safety", {}).get("read_only", True),
+                "require_approval": system.get("safety", {}).get("require_approval", True),
+                "max_rows": system.get("safety", {}).get("max_rows", 1000),
+            },
+        }
+
     return {
         "llm": {
-            "provider": first_provider,
-            "model": system.get("llm", {}).get("default_model", first_model),
-            "api_key": state.config.llm.api_key if state.config.llm.api_key else "",
-            "api_base": state.config.llm.api_base or "",
-            "timeout": state.config.llm.timeout,
+            "id": default_model.get("id"),
+            "name": default_model.get("name"),
+            "provider": default_model.get("provider", "openai"),
+            "model": default_model.get("model", "gpt-4o"),
+            "api_key": default_model.get("api_key") or state.config.llm.api_key or "",
+            "api_base": default_model.get("api_base") or state.config.llm.api_base or "",
+            "timeout": default_model.get("timeout", 120),
         },
         "safety": {
             "read_only": system.get("safety", {}).get("read_only", True),
@@ -153,10 +249,23 @@ def _merge_configs(system: dict[str, Any], user: dict[str, Any]) -> dict[str, An
     user_safety = user.get("safety", {})
     user_prefs = user.get("preferences", {})
 
-    if advanced.get("allow_user_llm_config") and user_llm.get("provider"):
-        runtime["llm"]["provider"] = user_llm["provider"]
-    if advanced.get("allow_user_llm_config") and user_llm.get("model"):
-        runtime["llm"]["model"] = user_llm["model"]
+    # If user has a default model selected
+    user_default_id = user_llm.get("default_model_id")
+    if user_default_id:
+        models = system.get("llm", {}).get("models", [])
+        target = next((m for m in models if m.get("id") == user_default_id), None)
+        if target and target.get("enabled"):
+            runtime["llm"] = {
+                "id": target.get("id"),
+                "name": target.get("name"),
+                "provider": target.get("provider", "openai"),
+                "model": target.get("model", "gpt-4o"),
+                "api_key": target.get("api_key") or state.config.llm.api_key or "",
+                "api_base": target.get("api_base") or state.config.llm.api_base or "",
+                "timeout": target.get("timeout", 120),
+            }
+
+    # Allow user to override API Key if needed (legacy or specific use cases)
     if user_llm.get("api_key"):
         runtime["llm"]["api_key"] = user_llm["api_key"]
 
@@ -182,15 +291,31 @@ def _merge_configs(system: dict[str, Any], user: dict[str, Any]) -> dict[str, An
 def get_user_available_options(user_id: str) -> dict[str, Any]:
     system = get_system_config()
     advanced = system.get("advanced", {})
-    pool = system.get("llm", {}).get("provider_pool", [])
-    enabled_providers = [
-        {"provider": p["provider"], "label": p.get("label", p["provider"]), "models": p.get("models", [])}
-        for p in pool if p.get("enabled")
+    models = system.get("llm", {}).get("models", [])
+    enabled_models = [
+        {
+            "id": m.get("id"),
+            "name": m.get("name", ""),
+            "provider": m.get("provider", ""),
+            "model": m.get("model", ""),
+        }
+        for m in models if m.get("enabled")
     ]
+    # Group by provider for backwards compatibility
+    from collections import OrderedDict
+    provider_groups: dict[str, dict] = OrderedDict()
+    for m in enabled_models:
+        provider = m["provider"]
+        if provider not in provider_groups:
+            provider_groups[provider] = {"provider": provider, "label": provider.capitalize(), "models": []}
+        provider_groups[provider]["models"].append(m["model"])
+    enabled_providers = list(provider_groups.values())
+
     temp_range = advanced.get("llm_temperature_range", {"min": 0, "max": 1, "default": 0.3})
     return {
         "llm": {
             "providers": enabled_providers,
+            "models": enabled_models,
             "can_use_custom_api_key": True,
             "can_use_custom_api_base": True,
         },

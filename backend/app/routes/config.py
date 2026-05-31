@@ -13,7 +13,7 @@ from ..persistence.config import save_config_sqlite
 from ..client import call_llm
 from ..models.config import ConfigUpdate, LLMTestResult
 from ..auth.middleware import get_current_user
-from ..admin_config.service import get_merged_config
+from ..admin_config.service import get_merged_config, get_system_config
 
 logger = logging.getLogger("shuyu.main")
 
@@ -40,6 +40,8 @@ async def get_config(current_user: dict | None = Depends(optional_current_user))
     merged = get_merged_config(user_id)
     return {
         "llm": {
+            "id": merged["llm"].get("id"),
+            "name": merged["llm"].get("name", merged["llm"]["model"]),
             "provider": merged["llm"]["provider"],
             "model": merged["llm"]["model"],
             "api_key": "••••••" if merged["llm"]["api_key"] else "",
@@ -79,14 +81,40 @@ async def update_config(req: ConfigUpdate):
 
 
 @router.post("/api/config/llm/test", response_model=LLMTestResult)
-async def test_llm(req: Request):
+async def test_llm(req: Request, current_user: dict | None = Depends(optional_current_user)):
     """Test the LLM connection with provided (or saved) config."""
     body = await req.json() if req.headers.get("content-type") == "application/json" else {}
-    logger.info(f"POST /api/config/llm/test: provider={body.get('provider','?')} model={body.get('model','?')}")
+    
+    user_id = current_user["id"] if current_user else None
+    merged = get_merged_config(user_id)
+    
+    # Priority: 1. model_id lookup → 2. Request body → 3. User/System Config → 4. Env
+    model_id = body.get("model_id")
+    resolved_key = None
+    resolved_base = None
+    resolved_model = None
 
-    test_key = body.get("api_key") or state.config.llm.api_key or os.environ.get("OPENAI_API_KEY", "")
-    test_base = body.get("api_base") or state.config.llm.api_base or ""
-    test_model = body.get("model") or state.config.llm.model or "gpt-4o"
+    if model_id:
+        # Look up the model by ID from the unmasked system config
+        system = get_system_config()
+        for m in system.get("llm", {}).get("models", []):
+            if m.get("id") == model_id:
+                resolved_key = m.get("api_key", "")
+                resolved_base = m.get("api_base", "") or ""
+                resolved_model = m.get("model", "")
+                break
+
+    test_key = (
+        resolved_key
+        or body.get("api_key")
+        or merged["llm"].get("api_key")
+        or os.environ.get("OPENAI_API_KEY", "")
+    )
+    test_base = resolved_base or body.get("api_base") or merged["llm"].get("api_base") or ""
+    test_model = resolved_model or body.get("model") or merged["llm"].get("model") or "gpt-4o"
+    test_provider = body.get("provider") or merged["llm"].get("provider") or "openai"
+
+    logger.info(f"POST /api/config/llm/test: provider={test_provider} model={test_model} base={test_base} model_id={model_id}")
 
     if not test_key:
         return LLMTestResult(ok=False, message="未设置 API Key")
