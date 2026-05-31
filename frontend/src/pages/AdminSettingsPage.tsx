@@ -60,7 +60,7 @@ export default function AdminSettingsPage() {
         ))}
       </nav>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex-1 overflow-y-auto pl-6 pr-0 py-6">
         {activeTab === 'llm' && <LLMSettingsTab config={config} onSave={handleSave} saving={saving} />}
         {activeTab === 'safety' && <SafetySettingsTab config={config} onSave={handleSave} saving={saving} />}
         {activeTab === 'storage' && <StorageSettingsTab config={config} onSave={handleSave} saving={saving} />}
