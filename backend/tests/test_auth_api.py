@@ -21,7 +21,8 @@ def setup_app():
                           CHECK(role IN ('admin', 'user')),
             is_active     INTEGER NOT NULL DEFAULT 1,
             created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            last_login_at TEXT
         );
         CREATE TABLE IF NOT EXISTS user_databases (
             user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -32,6 +33,15 @@ def setup_app():
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'duckdb'
+        );
+        CREATE TABLE IF NOT EXISTS config_changelog (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user', 'user_mgmt', 'database')),
+            user_id     TEXT,
+            changed_by  TEXT NOT NULL,
+            summary     TEXT NOT NULL,
+            diff        TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
         );
     """)
     from app.main import app
@@ -85,6 +95,14 @@ class TestLogin:
         assert data["token_type"] == "bearer"
         assert data["user"]["username"] == "admin"
 
+    async def test_login_returns_last_login_at(self, client):
+        await client.post("/api/auth/register", json={"username": "admin", "password": "admin123"})
+        resp = await client.post("/api/auth/login", json={"username": "admin", "password": "admin123"})
+        assert resp.status_code == 200
+        user = resp.json()["user"]
+        assert "last_login_at" in user
+        assert user["last_login_at"] is not None
+
     async def test_login_wrong_password(self, client):
         await client.post("/api/auth/register", json={"username": "admin", "password": "admin123"})
         resp = await client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
@@ -117,6 +135,13 @@ class TestAdminUsers:
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 2
+
+    async def test_list_users_includes_last_login(self, client, admin_token):
+        await client.post("/api/auth/register", json={"username": "alice", "password": "alice123"})
+        resp = await client.get("/api/admin/users", headers={"Authorization": f"Bearer {admin_token}"})
+        assert resp.status_code == 200
+        for user in resp.json():
+            assert "last_login_at" in user
 
     async def test_list_users_forbidden_for_user(self, client):
         await client.post("/api/auth/register", json={"username": "admin1", "password": "admin123"})

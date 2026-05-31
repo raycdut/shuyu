@@ -4,6 +4,7 @@ import { useConfigStore } from '../store/configStore'
 import { api } from '../api'
 import { Message, nextMsgId, ProgressStep } from '../types'
 import { useSessions } from './useSessions'
+import { useTranslation } from 'react-i18next'
 
 /**
  * 聊天流 Hook
@@ -20,6 +21,7 @@ export function useChatStream() {
   const mode = useConfigStore(s => s.mode)
 
   const { loadSessions } = useSessions()
+  const { t } = useTranslation()
 
   /**
    * 发送消息
@@ -34,7 +36,7 @@ export function useChatStream() {
       const warnMsg: Message = {
         id: nextMsgId(),
         role: 'assistant',
-        content: '⚠️ 请先在左侧选择一个数据库，然后再提问。',
+        content: t('chat.noDbSelected'),
       }
       setMessages(prev => [...prev, warnMsg])
       return
@@ -47,10 +49,10 @@ export function useChatStream() {
         // 1. 立即初始化进度消息
         const progressId = nextMsgId()
         let progressSteps: ProgressStep[] = [
-          { label: '生成分析计划', status: 'pending' },
-          { label: '审核分析计划', status: 'pending' },
-          { label: '执行查询', status: 'pending' },
-          { label: '生成分析报告', status: 'pending' },
+          { label: t('message.progressGeneratePlan'), status: 'pending' },
+          { label: t('message.progressReviewPlan'), status: 'pending' },
+          { label: t('message.progressExecuteQuery'), status: 'pending' },
+          { label: t('message.progressGenerateReport'), status: 'pending' },
         ]
 
         setMessages(prev => [...prev, {
@@ -59,7 +61,7 @@ export function useChatStream() {
           content: '',
           isProgress: true,
           progressSteps: [...progressSteps],
-          progressTitle: '准备分析中...',
+          progressTitle: t('message.progressPreparing'),
         }])
 
         const updateProgress = (title?: string) => {
@@ -77,9 +79,13 @@ export function useChatStream() {
 
         // 2. 发起请求
         console.log('[Chat] 发起深度分析请求...', { text, activeSessionId, activeDbId })
+        const token = localStorage.getItem('auth_token')
         const resp = await fetch('/api/chat/stream', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+          },
           body: JSON.stringify({
             message: text,
             session_id: activeSessionId || null,
@@ -107,33 +113,33 @@ export function useChatStream() {
           console.log(`[SSE Event] ${event.type}`, event)
 
           if (event.type === 'thinking') {
-            updateProgress(event.content || '正在分析问题...')
+            updateProgress(event.content || t('message.progressAnalyzing'))
           } else if (event.type === 'plan') {
             progressSteps[0].status = 'done'
             progressSteps[1].status = 'running'
-            updateProgress('正在审核分析计划')
+            updateProgress(t('message.progressReviewing'))
           } else if (event.type === 'plan_reflect') {
             if (event.content?.includes('通过')) {
               progressSteps[1].status = 'done'
               progressSteps[2].status = 'running'
-              updateProgress('正在执行数据查询')
+              updateProgress(t('message.progressExecuting'))
             } else {
-              updateProgress(`计划审核: ${event.content?.slice(0, 20)}...`)
+              updateProgress(t('message.progressReviewResult', { content: event.content?.slice(0, 20) }))
             }
           } else if (event.type === 'query') {
             sqlCount++
             progressSteps[2].status = 'running'
-            progressSteps[2].detail = `📊 正在执行查询 ${sqlCount}`
+            progressSteps[2].detail = t('message.progressExecQuery', { sqlCount })
             updateProgress()
           } else if (event.type === 'step') {
             if (event.step && event.total) {
-              progressSteps[2].label = `执行查询（第 ${event.step}/${event.total} 步）`
+              progressSteps[2].label = t('message.progressStep', { step: event.step, total: event.total })
             }
             updateProgress()
           } else if (event.type === 'summarize') {
             progressSteps[2].status = 'done'
             progressSteps[3].status = 'running'
-            updateProgress('正在生成分析报告')
+            updateProgress(t('message.progressGenerating'))
           } else if (event.type === 'session_id') {
             console.log(`[Chat] 收到 Session ID: ${event.session_id}`)
             setActiveSessionId(event.session_id)
@@ -146,7 +152,7 @@ export function useChatStream() {
                     ...m,
                     isProgress: false, 
                     role: 'assistant', 
-                    content: event.content || '分析完成。', 
+                    content: event.content || t('message.analysisComplete'), 
                     sql_queries: event.sql_queries || [], 
                     query_results: event.query_results || [],
                     progressSteps: progressSteps.map(s => ({ ...s }))
@@ -155,7 +161,7 @@ export function useChatStream() {
             ))
           } else if (event.type === 'error') {
             console.error('[Chat] SSE 收到错误事件', event)
-            throw new Error(event.content || '分析过程中发生错误')
+            throw new Error(event.content || t('message.analysisError'))
           }
         }
 
@@ -231,13 +237,13 @@ export function useChatStream() {
       const errorMsg: Message = {
         id: nextMsgId(),
         role: 'assistant',
-        content: `抱歉，请求失败：${err.message || '未知错误'}`,
+        content: t('message.requestFailed', { msg: err.message || t('session.unknownError') }),
       }
       setMessages(prev => [...prev, errorMsg])
     } finally {
       setIsLoading(false)
     }
-  }, [activeSessionId, activeDbId, isLoading, mode, setIsLoading, setMessages, setActiveSessionId, loadSessions])
+  }, [activeSessionId, activeDbId, isLoading, mode, setIsLoading, setMessages, setActiveSessionId, loadSessions, t])
 
   return { handleSendMessage }
 }

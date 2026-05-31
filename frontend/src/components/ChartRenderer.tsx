@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -26,7 +27,35 @@ function isNumeric(val: any): boolean {
   return typeof val === 'number' && !Number.isNaN(val)
 }
 
+function isDimensionColumn(name: string): boolean {
+  const lower = name.toLowerCase()
+  // ID-like: id, customer_id, orderId
+  if (lower === 'id' || lower.endsWith('_id') || lower.endsWith('id')) return true
+  // Time periods: year, month, quarter, week, hour, day_of_month, fiscal_year, etc.
+  if (lower === 'year' || lower === 'yr' || lower === 'month' || lower === 'mon'
+    || lower === 'quarter' || lower === 'qtr' || lower === 'week' || lower === 'wk'
+    || lower === 'hour' || lower === 'day' || lower === 'minute' || lower === 'second'
+    || lower.includes('year') || lower.includes('年')
+    || lower.includes('month') || lower.includes('月')
+    || lower.includes('quarter') || lower.includes('季度')
+    || lower.includes('week') || lower.includes('周')
+    || lower.includes('hour') || lower.includes('时')
+    || lower.includes('dayofweek') || lower.includes('day_of_week')
+    || lower.includes('dayofmonth') || lower.includes('day_of_month')
+    || lower.includes('fiscal_') || lower.includes('fiscal')) return true
+  // Rank/sequence: rank, dense_rank, row_number, seq, rownum
+  if (lower === 'rank' || lower === 'dense_rank' || lower === 'row_number'
+    || lower === 'rownum' || lower === 'row_num' || lower === 'seq'
+    || lower === 'sequence' || lower.endsWith('_rank')) return true
+  // Boolean flags: is_*, has_* (stored as 0/1)
+  if (lower.startsWith('is_') || lower.startsWith('has_')) return true
+  // Geo/code columns: zip, postal_code, area_code, status_code, type_code
+  if (lower === 'zip' || lower.endsWith('_code') || lower.endsWith('_number')) return true
+  return false
+}
+
 const ChartRenderer: React.FC<ChartRendererProps> = ({ columns, data, title }) => {
+  const { t } = useTranslation()
   const [chartType, setChartType] = useState<ChartType | null>(null)
 
   const chartConfig = useMemo(() => {
@@ -34,16 +63,48 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ columns, data, title }) =
     const sampleRow = data[0]
     const numericIndices = sampleRow.map((v: any) => isNumeric(v))
     const numericCols: string[] = []
+    const dimensionCols: string[] = []
     columns.forEach((col, i) => {
-      if (numericIndices[i]) numericCols.push(col)
+      if (numericIndices[i]) {
+        if (isDimensionColumn(col)) {
+          dimensionCols.push(col)
+        } else {
+          numericCols.push(col)
+        }
+      }
     })
+    // Data-driven heuristic: if a remaining numeric column has very few distinct
+    // integer values, it's likely a category/dimension rather than a metric.
+    if (numericCols.length > 0) {
+      const reclassify: string[] = []
+      for (const col of numericCols) {
+        const idx = columns.indexOf(col)
+        const values = data.map(row => row[idx]).filter(v => v != null)
+        const distinct = new Set(values).size
+        const allIntegers = values.every(v => Number.isInteger(v))
+        if (allIntegers && distinct <= 12 && distinct < values.length / 2) {
+          reclassify.push(col)
+        }
+      }
+      for (const col of reclassify) {
+        const i = numericCols.indexOf(col)
+        if (i >= 0) {
+          numericCols.splice(i, 1)
+          dimensionCols.push(col)
+        }
+      }
+    }
     if (numericCols.length === 0) return null
-    const xAxisKey = columns.find((_, i) => !numericIndices[i]) || columns[0]
+    const xAxisKey = columns.find((_, i) => !numericIndices[i]) || dimensionCols[0] || columns[0]
     const yAxisKeys = numericCols
-    const detected = detectType(xAxisKey, yAxisKeys, columns)
-    if (!chartType) setChartType(detected)
+    const detected = detectType(xAxisKey, yAxisKeys, sampleRow)
     return { xAxisKey, yAxisKeys, detected }
   }, [columns, data])
+
+  const detectedType = chartConfig?.detected
+  useEffect(() => {
+    if (!chartType && detectedType) setChartType(detectedType)
+  }, [chartType, detectedType])
 
   const chartData = useMemo(() => {
     return data.map(row => {
@@ -105,6 +166,12 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ columns, data, title }) =
     )
   }
 
+  const chartLabels: Record<ChartType, string> = {
+    bar: t('chart.bar'),
+    line: t('chart.line'),
+    pie: t('chart.pie'),
+  }
+
   const types: ChartType[] = ['bar', 'line', 'pie']
 
   return (
@@ -120,7 +187,7 @@ const ChartRenderer: React.FC<ChartRendererProps> = ({ columns, data, title }) =
                 type === t ? 'bg-celadon/10 text-celadon-dark font-medium' : 'text-ink-lighter hover:bg-smoke'
               }`}
             >
-              {t === 'bar' ? '柱状图' : t === 'line' ? '折线图' : '饼图'}
+              {chartLabels[t]}
             </button>
           ))}
         </div>

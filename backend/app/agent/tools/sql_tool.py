@@ -23,8 +23,13 @@ async def handle_sql_query(
     This is NOT a registered tool itself — it's the core logic invoked by
     the agent loop when the LLM decides to call the 'query_database' tool.
     """
-    # Build prompt for SQL generation
-    system_prompt = f"""你是一个 SQL 专家。根据用户的问题和数据库结构，生成正确的 SQL 查询。
+    from ... import state as _state
+
+    sql_gen_template = _state.sql_gen_prompt
+    if sql_gen_template:
+        system_prompt = sql_gen_template.format(schema_prompt=schema_prompt)
+    else:
+        system_prompt = f"""你是一个 SQL 专家。根据用户的问题和数据库结构，生成正确的 SQL 查询。
 
 数据库结构：
 {schema_prompt}

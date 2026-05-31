@@ -24,7 +24,7 @@ from .persistence.config import load_config_sqlite
 from .persistence.database import load_db_connections_sqlite
 from .client import call_llm
 from .agent.tools.sql_tool import handle_query_database
-from .routes import chat, config as config_route, dashboard, database, schema, sessions
+from .routes import admin_stats, chat, config as config_route, database, schema, sessions
 from .auth.router import router as auth_router
 from .auth.service import init_auth_config
 from .admin_config.router import router as admin_config_router
@@ -125,37 +125,37 @@ async def lifespan(app: FastAPI):
         handler=handle_query_database,
     ))
 
-    # 4. Build system prompt (from DB with fallback)
-    system_prompt = None
-    if state._sqlite:
-        row = state._sqlite.execute(
-            "SELECT content FROM prompts WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1"
-        ).fetchone()
-        if row:
-            system_prompt = row[0]
-    if not system_prompt:
-        system_prompt = (
-            "<instructions>\n"
-            "  <role>data-analyst</role>\n"
-            "  <language>zh-CN</language>\n"
-            "  <workflow>\n"
-            "    <step>1. 理解用户的问题</step>\n"
-            "    <step>2. 必须调用 query_database 工具查询数据，不能凭表名猜测</step>\n"
-            "    <step>3. 根据查询结果回答用户</step>\n"
-            "    <step>4. 如果用户的问题不明确，主动澄清</step>\n"
-            "  </workflow>\n"
-            "  <rules>\n"
-            "    <rule>如果用户问「帮我分析一下」，主动问他们想分析什么维度和时间段</rule>\n"
-            "    <rule>使用中文回答</rule>\n"
-            "    <rule>回答简洁，突出关键数据</rule>\n"
-            "    <rule>如果工具返回了数据，直接根据数据回答，不要编造</rule>\n"
-            f"    <rule>每次查询最多返回 {state.config.safety.max_rows} 行数据</rule>\n"
-            "  </rules>\n"
-            "</instructions>"
-        )
+    # 4. Load all prompt categories (from DB with hardcoded fallbacks)
+    from .persistence import _get_default_prompt_content
+
+    PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe"]
+    loaded_prompts: dict[str, str] = {}
+    for cat in PROMPT_CATEGORIES:
+        content = None
+        if state._sqlite:
+            row = state._sqlite.execute(
+                "SELECT content FROM prompts WHERE name = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+                (cat,),
+            ).fetchone()
+            if row:
+                content = row[0]
+        if not content:
+            content = _get_default_prompt_content(cat) or ""
+        loaded_prompts[cat] = content
+
+    # Store prompts in state for other modules (sql_tool, describe_schema_agent, etc.)
+    state.sql_gen_prompt = loaded_prompts["sql_gen"]
+    state.plan_prompt = loaded_prompts["plan"]
+    state.plan_reflect_prompt = loaded_prompts["plan_reflect"]
+    state.report_reflect_prompt = loaded_prompts["report_reflect"]
+    state.schema_describe_prompt = loaded_prompts["schema_describe"]
+
+    # Build system prompt with read-only override
+    system_prompt = loaded_prompts["system"]
     if state.config.safety.read_only:
         system_prompt = system_prompt.replace("</rules>", "    <rule>你只能查询数据，不能修改</rule>\n  </rules>")
-    logger.info("System prompt loaded from DB" if state._sqlite and row else "System prompt loaded (fallback)")
+
+    logger.info("All prompt categories loaded from DB" if state._sqlite else "All prompt categories loaded (fallback)")
     logger.info("Creating ReAct agent loop...")
     state.agent_loop = SimpleAgent(
         tool_registry=state.tool_registry,
@@ -166,6 +166,9 @@ async def lifespan(app: FastAPI):
         tool_registry=state.tool_registry,
         call_llm_func=call_llm,
         system_prompt=system_prompt,
+        plan_prompt=loaded_prompts["plan"],
+        plan_reflect_prompt=loaded_prompts["plan_reflect"],
+        report_reflect_prompt=loaded_prompts["report_reflect"],
     )
 
     # 6. Session manager
@@ -203,12 +206,12 @@ if ui_dist and ui_dist.exists():
 # Register routers
 app.include_router(auth_router)
 app.include_router(admin_config_router)
-app.include_router(dashboard.router)
 app.include_router(schema.router)
 app.include_router(chat.router)
 app.include_router(sessions.router)
 app.include_router(database.router)
 app.include_router(config_route.router)
+app.include_router(admin_stats.router)
 
 
 # ---------------------------------------------------------------------------

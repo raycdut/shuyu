@@ -1,12 +1,11 @@
 import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { QueryResultInfo } from '../types'
 import ChartRenderer from './ChartRenderer'
-import { api } from '../api'
-import { useUIStore } from '../store/uiStore'
 
 interface MarkdownRendererProps {
   content: string
@@ -103,45 +102,10 @@ function processChildren(children: React.ReactNode, queryResults: QueryResultInf
  * 显示 [Qn] 并提供图表切换功能
  */
 function QueryBadge({ qn, result }: { qn: number, result?: QueryResultInfo }) {
+  const { t } = useTranslation()
   const [showChart, setShowChart] = useState(false)
-  const addDashboardItem = useUIStore(s => s.addDashboardItem)
-  const dashboardItems = useUIStore(s => s.dashboardItems)
-  const removeDashboardItem = useUIStore(s => s.removeDashboardItem)
   
   const canShowChart = !!(result?.ok && result.data && result.columns && result.columns.length >= 2)
-  const isPinned = dashboardItems.some(item => item.id === `q-${qn}-${result?.sql?.slice(0, 20)}`)
-
-  const handlePin = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (!result || !result.ok) return
-
-    const id = `q-${qn}-${result.sql.slice(0, 20)}`
-    if (isPinned) {
-      try {
-        await api.removeDashboardItem(id)
-        removeDashboardItem(id)
-      } catch { /* silent */ }
-    } else {
-      const chartData = { columns: result.columns || [], data: result.data || [] }
-      try {
-        await api.addDashboardItem({
-          title: result.question || `查询 Q${qn}`,
-          query: result.sql || '',
-          chart_type: showChart ? 'line' : 'table',
-          chart_data: chartData,
-        })
-        addDashboardItem({
-          id,
-          title: result.question || `查询 Q${qn}`,
-          columns: result.columns || [],
-          data: result.data || [],
-          type: showChart ? 'line' : 'table',
-          createdAt: Date.now()
-        })
-      } catch { /* silent */ }
-    }
-  }
   
   return (
     <span className="inline-block align-middle">
@@ -151,7 +115,7 @@ function QueryBadge({ qn, result }: { qn: number, result?: QueryResultInfo }) {
           <button 
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowChart(!showChart) }}
             className="hover:text-celadon transition-colors ml-0.5"
-            title={showChart ? "切换到表格" : "切换到图表"}
+            title={showChart ? t('chart.switchToTable') : t('chart.switchToChart')}
           >
             {showChart ? (
               <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
@@ -166,17 +130,6 @@ function QueryBadge({ qn, result }: { qn: number, result?: QueryResultInfo }) {
                 <path d="M22 12A10 10 0 0 0 12 2v10z" />
               </svg>
             )}
-          </button>
-        )}
-        {result?.ok && (
-          <button 
-            onClick={handlePin}
-            className={`hover:text-celadon transition-colors ml-0.5 ${isPinned ? 'text-celadon' : ''}`}
-            title={isPinned ? "从看板移除" : "固定到看板"}
-          >
-            <svg width="10" height="10" viewBox="0 0 24 24" fill={isPinned ? "currentColor" : "none"} stroke="currentColor" strokeWidth="3">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
           </button>
         )}
       </span>

@@ -1,11 +1,13 @@
-import { useState } from 'react'
-import type { DBConnectRequest } from '../types'
+import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
+import type { DBConnectRequest, DatabaseInfo } from '../types'
 import { api } from '../api'
 
 interface DBConnectModalProps {
   open: boolean
   onClose: () => void
   onConnected: () => void
+  editDb?: DatabaseInfo | null
 }
 
 const DB_TYPES = [
@@ -17,26 +19,57 @@ const DB_TYPES = [
   { value: 'snowflake', label: 'Snowflake' },
 ]
 
-export default function DBConnectModal({ open, onClose, onConnected }: DBConnectModalProps) {
-  const [form, setForm] = useState<DBConnectRequest>({
-    name: '',
-    type: 'duckdb',
-    path: '',
-    host: '',
-    port: 5432,
-    user: '',
-    password: '',
-    database: '',
-    connection_string: '',
-    include_tables: [],
-    exclude_tables: [],
-  })
+const emptyForm = (): DBConnectRequest => ({
+  name: '',
+  type: 'duckdb',
+  path: '',
+  host: '',
+  port: 5432,
+  user: '',
+  password: '',
+  database: '',
+  connection_string: '',
+  include_tables: [],
+  exclude_tables: [],
+})
+
+export default function DBConnectModal({ open, onClose, onConnected, editDb }: DBConnectModalProps) {
+  const { t } = useTranslation()
+  const [form, setForm] = useState<DBConnectRequest>(emptyForm())
   const [includeText, setIncludeText] = useState('')
   const [excludeText, setExcludeText] = useState('')
   const [testing, setTesting] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
   const [error, setError] = useState('')
+
+  const isEditing = !!editDb
+
+  useEffect(() => {
+    if (editDb) {
+      setForm({
+        name: editDb.name || '',
+        type: editDb.type || 'duckdb',
+        path: editDb.path || '',
+        host: editDb.host || '',
+        port: editDb.port || 5432,
+        user: editDb.user || '',
+        password: editDb.password || '',
+        database: editDb.database || '',
+        connection_string: editDb.connection_string || '',
+        include_tables: editDb.include_tables || [],
+        exclude_tables: editDb.exclude_tables || [],
+      })
+      setIncludeText((editDb.include_tables || []).join(', '))
+      setExcludeText((editDb.exclude_tables || []).join(', '))
+    } else {
+      setForm(emptyForm())
+      setIncludeText('')
+      setExcludeText('')
+    }
+    setTestResult(null)
+    setError('')
+  }, [editDb, open])
 
   if (!open) return null
 
@@ -58,15 +91,20 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
   }
 
   const handleConnect = async () => {
-    if (!form.name.trim()) { setError('请输入数据库名称'); return }
+    if (!form.name.trim()) { setError(t('dbConnect.nameRequired')); return }
     setConnecting(true)
     setError('')
     try {
-      await api.connectDatabase({
+      const payload = {
         ...form,
         include_tables: includeText.split(',').map(s => s.trim()).filter(Boolean),
         exclude_tables: excludeText.split(',').map(s => s.trim()).filter(Boolean),
-      })
+      }
+      if (isEditing && editDb) {
+        await api.updateDatabaseConnection(editDb.id, payload)
+      } else {
+        await api.connectDatabase(payload)
+      }
       onConnected()
     } catch (err: any) {
       setError(err.message)
@@ -78,13 +116,13 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onClose}>
       <div
-        className="bg-paper-light paper-shadow-md rounded-sm w-full max-w-lg max-h-[80vh] overflow-y-auto mx-4"
+        className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto mx-4"
         onClick={e => e.stopPropagation()}
       >
         {/* 标题 */}
-        <div className="flex items-center justify-between px-6 py-4 ink-border border-t-0 border-x-0">
-          <h2 className="text-base font-song font-semibold text-ink">添加数据库</h2>
-          <button onClick={onClose} className="p-1 text-ink-lighter hover:text-ink hover:bg-smoke rounded-sm transition-colors">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h2 className="text-base font-medium text-gray-800">{isEditing ? t('dbConnect.editTitle') : t('dbConnect.addTitle')}</h2>
+          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -94,11 +132,11 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
         <div className="p-6 space-y-4">
           {/* 数据库类型 */}
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">数据库类型</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.dbType')}</label>
             <select
               value={form.type}
               onChange={e => setForm({ ...form, type: e.target.value })}
-              className="ink-input"
+              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             >
               {DB_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
@@ -106,10 +144,10 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
 
           {/* 名称 */}
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">名称</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.name')}</label>
             <input
-              className="ink-input"
-              placeholder="例：零售数据库"
+              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              placeholder={t('dbConnect.namePlaceholder')}
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
             />
@@ -118,9 +156,9 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
           {/* 路径 (本地) */}
           {isLocal && (
             <div>
-              <label className="block text-xs text-ink-lighter mb-1 font-kai">文件路径</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.filePath')}</label>
               <input
-                className="ink-input"
+                className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                 placeholder="./data/analytics.db"
                 value={form.path}
                 onChange={e => setForm({ ...form, path: e.target.value })}
@@ -133,36 +171,36 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
             <>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-lighter mb-1 font-kai">主机</label>
-                  <input className="ink-input" value={form.host} onChange={e => setForm({ ...form, host: e.target.value })} />
+                  <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.host')}</label>
+                  <input className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none" value={form.host} onChange={e => setForm({ ...form, host: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-lighter mb-1 font-kai">端口</label>
-                  <input type="number" className="ink-input" value={form.port} onChange={e => setForm({ ...form, port: Number(e.target.value) })} />
+                  <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.port')}</label>
+                  <input type="number" className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none" value={form.port} onChange={e => setForm({ ...form, port: Number(e.target.value) })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-ink-lighter mb-1 font-kai">用户名</label>
-                  <input className="ink-input" value={form.user} onChange={e => setForm({ ...form, user: e.target.value })} />
+                  <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.username')}</label>
+                  <input className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none" value={form.user} onChange={e => setForm({ ...form, user: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-xs text-ink-lighter mb-1 font-kai">密码</label>
-                  <input type="password" className="ink-input" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
+                  <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.password')}</label>
+                  <input type="password" autoComplete="off" className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} />
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-ink-lighter mb-1 font-kai">数据库名</label>
-                <input className="ink-input" value={form.database} onChange={e => setForm({ ...form, database: e.target.value })} />
+                <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.dbName')}</label>
+                <input className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none" value={form.database} onChange={e => setForm({ ...form, database: e.target.value })} />
               </div>
             </>
           )}
 
-          {/* 连接字符串替代 */}
+          {/* 连接字符串 */}
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">连接字符串（可选，优先级高于上面字段）</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.connString')}</label>
             <input
-              className="ink-input"
+              className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none"
               value={form.connection_string}
               onChange={e => setForm({ ...form, connection_string: e.target.value })}
             />
@@ -171,18 +209,18 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
           {/* 表过滤 */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-ink-lighter mb-1 font-kai">包含表（可选）</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.includeTables')}</label>
               <input
-                className="ink-input"
+                className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none"
                 placeholder="fct_*, dim_*"
                 value={includeText}
                 onChange={e => setIncludeText(e.target.value)}
               />
             </div>
             <div>
-              <label className="block text-xs text-ink-lighter mb-1 font-kai">排除表（可选）</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.excludeTables')}</label>
               <input
-                className="ink-input"
+                className="w-full h-9 px-3 text-sm bg-white border border-gray-200 rounded-md focus:outline-none"
                 placeholder="temp_*"
                 value={excludeText}
                 onChange={e => setExcludeText(e.target.value)}
@@ -192,36 +230,36 @@ export default function DBConnectModal({ open, onClose, onConnected }: DBConnect
 
           {/* 测试结果 */}
           {testResult && (
-            <div className={`p-3 text-sm rounded-sm ${testResult.ok ? 'bg-celadon/10 text-celadon-dark' : 'bg-cinnabar/5 text-cinnabar'}`}>
+            <div className={`p-3 text-sm rounded-md ${testResult.ok ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
               {testResult.ok ? '✅ ' : '❌ '}{testResult.message}
             </div>
           )}
 
           {/* 错误 */}
           {error && (
-            <div className="p-3 text-sm rounded-sm bg-cinnabar/5 text-cinnabar">
+            <div className="p-3 text-sm rounded-md bg-red-50 text-red-700 border border-red-200">
               {error}
             </div>
           )}
 
           {/* 按钮组 */}
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={onClose} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">
-              取消
+            <button onClick={onClose} className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors">
+              {t('common.cancel')}
             </button>
             <button
               onClick={handleTest}
               disabled={testing}
-              className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke ink-border rounded-sm transition-colors disabled:opacity-40"
+              className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors disabled:opacity-40"
             >
-              {testing ? '测试中…' : '测试连接'}
+              {testing ? t('common.testing') : t('common.test')}
             </button>
             <button
               onClick={handleConnect}
               disabled={connecting}
-              className="btn-celadon"
+              className="h-9 px-4 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition-colors"
             >
-              {connecting ? '连接中…' : '保存并连接'}
+              {connecting ? t('common.saving') : isEditing ? t('dbConnect.saveModify') : t('dbConnect.saveAndConnect')}
             </button>
           </div>
         </div>

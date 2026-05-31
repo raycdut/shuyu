@@ -79,7 +79,12 @@ def get_request_active_db_id() -> str | None:
     """Get the active database ID for the current request context."""
     return request_active_db_id.get()
 
+# --- Prompt templates (loaded from DB at startup) ---
+sql_gen_prompt: str | None = None
+plan_prompt: str | None = None
+plan_reflect_prompt: str | None = None
+report_reflect_prompt: str | None = None
+schema_describe_prompt: str | None = None
+
 # --- Schema prompt (filled per-database at query time) ---
 schema_prompt: str = "请先在右侧配置面板中添加数据库。"
-
-# (intentionally left blank — _system_prompt was set but never read)

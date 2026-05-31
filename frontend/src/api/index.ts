@@ -157,6 +157,13 @@ export const api = {
     })
   },
 
+  updateDatabaseConnection(dbId: string, data: any): Promise<{ ok: boolean; message: string }> {
+    return request(`/database/${dbId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    })
+  },
+
   // ===== 管理员：用户管理 =====
   getUsers(): Promise<UserInfo[]> {
     return request('/admin/users')
@@ -207,7 +214,7 @@ export const api = {
     })
   },
 
-  updateDescription(dbId: string, data: { table_id?: string; column_id?: string; description: string }): Promise<{ ok: boolean; message: string }> {
+  updateDescription(dbId: string, data: { table_id?: string; column_id?: string; description: string; description_en?: string }): Promise<{ ok: boolean; message: string }> {
     return request(`/database/${dbId}/schema/describe`, {
       method: 'PATCH',
       body: JSON.stringify(data),
@@ -246,19 +253,38 @@ export const api = {
     return request('/user/config/available')
   },
 
-  // ===== 看板：数据持久化 =====
-  getDashboardItems(): Promise<{ id: string; title: string; query: string; chart_type: string; chart_data: any; created_at: number }[]> {
-    return request('/dashboard/items')
+  // ===== Prompt 管理 =====
+  getPrompts(category?: string): Promise<import('../types').PromptListResponse> {
+    const params = category ? `?category=${encodeURIComponent(category)}` : ''
+    return request(`/api/prompts${params}`)
   },
 
-  addDashboardItem(data: { title: string; query: string; chart_type: string; chart_data: any }): Promise<{ ok: boolean }> {
-    return request('/dashboard/items', {
-      method: 'POST',
-      body: JSON.stringify(data),
+  getPrompt(id: number): Promise<import('../types').PromptInfo> {
+    return request(`/api/prompts/${id}`)
+  },
+
+  upsertPrompt(category: string, content: string): Promise<import('../types').UpsertPromptResponse> {
+    return request('/api/prompts', {
+      method: 'PUT',
+      body: JSON.stringify({ category, content }),
     })
   },
 
-  removeDashboardItem(itemId: string): Promise<{ ok: boolean }> {
-    return request(`/dashboard/items/${itemId}`, { method: 'DELETE' })
+  activatePrompt(id: number): Promise<import('../types').ActivatePromptResponse> {
+    return request(`/api/prompts/${id}/activate`, { method: 'PATCH' })
+  },
+
+  getActivePrompts(): Promise<import('../types').ActivePromptsResponse> {
+    return request('/api/prompts/active')
+  },
+
+  getDefaultPrompt(category: string): Promise<import('../types').DefaultPromptResponse> {
+    return request(`/api/prompts/${encodeURIComponent(category)}/default`)
+  },
+
+  // ===== Admin Stats =====
+  getAdminStats(days?: number): Promise<import('../types').AdminStatsResponse> {
+    const params = days ? `?days=${days}` : ''
+    return request(`/admin/stats${params}`)
   },
 }

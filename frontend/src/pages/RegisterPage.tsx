@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
+import { useTranslation } from 'react-i18next'
 
 export default function RegisterPage() {
+  const { t } = useTranslation()
   const register = useAuthStore(s => s.register)
   const isLoading = useAuthStore(s => s.isLoading)
   const navigate = useNavigate()
@@ -16,7 +18,7 @@ export default function RegisterPage() {
     setError(null)
 
     if (password !== confirmPassword) {
-      setError('两次输入的密码不一致')
+      setError(t('auth.passwordMismatch'))
       return
     }
 
@@ -24,7 +26,7 @@ export default function RegisterPage() {
       await register(username, password)
       navigate('/', { replace: true })
     } catch (err: any) {
-      setError(err.message || '注册失败')
+      setError(err.message || t('auth.registerFailed'))
     }
   }
 
@@ -33,46 +35,48 @@ export default function RegisterPage() {
       <div className="w-full max-w-sm mx-4">
         <div className="text-center mb-10">
           <h1 className="text-2xl font-song font-semibold text-ink tracking-wider mb-2">
-            Data Chat
+            {t('app.name')}
           </h1>
-          <p className="text-sm text-ink-lighter font-kai">创建新账号</p>
+          <p className="text-sm text-ink-lighter font-kai">{t('auth.registerSubtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">用户名</label>
+            <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.username')}</label>
             <input
               type="text"
               value={username}
               onChange={e => setUsername(e.target.value)}
               className="ink-input text-sm w-full"
-              placeholder="请输入用户名"
+              placeholder={t('auth.usernamePlaceholder')}
               required
               minLength={2}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">密码</label>
+            <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.password')}</label>
             <input
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={e => setPassword(e.target.value)}
               className="ink-input text-sm w-full"
-              placeholder="至少 6 位密码"
+              placeholder={t('auth.passwordPlaceholder')}
               required
               minLength={6}
             />
           </div>
 
           <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">确认密码</label>
+            <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.confirmPassword')}</label>
             <input
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
               className="ink-input text-sm w-full"
-              placeholder="再次输入密码"
+              placeholder={t('auth.confirmPasswordPlaceholder')}
               required
               minLength={6}
             />
@@ -87,14 +91,14 @@ export default function RegisterPage() {
             disabled={isLoading}
             className="btn-celadon w-full"
           >
-            {isLoading ? '注册中…' : '注册'}
+            {isLoading ? t('auth.registering') : t('auth.register')}
           </button>
         </form>
 
         <p className="mt-6 text-center text-sm text-ink-lighter font-kai">
-          已有账号？{' '}
+          {t('auth.hasAccount')}{' '}
           <Link to="/login" className="text-celadon hover:underline">
-            去登录
+            {t('auth.goToLogin')}
           </Link>
         </p>
       </div>

@@ -1,11 +1,28 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { UserInfo } from '../../../types'
 
-/**
- * 用户管理标签页
- */
+function formatRelativeTime(dateStr: string): string {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffMs = now.getTime() - date.getTime()
+  const diffMin = Math.floor(diffMs / 60000)
+
+  if (diffMin < 1) return '刚刚'
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour} 小时前`
+  const diffDay = Math.floor(diffHour / 24)
+  if (diffDay < 7) return `${diffDay} 天前`
+  return date.toLocaleDateString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+  })
+}
+
 export function UserManagementTab() {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<UserInfo[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -24,19 +41,19 @@ export function UserManagementTab() {
   }
 
   const handleDelete = async (u: UserInfo) => {
-    if (!confirm(`确定删除用户 ${u.username}？`)) return
+    if (!confirm(t('userManagement.confirmDeleteUser', { username: u.username }))) return
     await api.deleteUser(u.id)
     setUsers(users.filter(user => user.id !== u.id))
   }
 
-  if (loading) return <div className="py-12 text-center text-ink-lighter font-kai">加载中…</div>
+  if (loading) return <div className="py-12 text-center text-ink-lighter font-kai">{t('common.loading')}</div>
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
       <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
         <div>
-          <h3 className="text-xl font-song font-bold text-ink">用户管理</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">管理系统访问账号、分配角色权限并控制账号状态</p>
+          <h3 className="text-xl font-song font-bold text-ink">{t('userManagement.title')}</h3>
+          <p className="text-xs text-ink-lighter font-kai mt-1">{t('userManagement.subtitle')}</p>
         </div>
       </div>
 
@@ -44,11 +61,12 @@ export function UserManagementTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-smoke/50 text-left text-xs text-ink-lighter font-kai uppercase tracking-wider">
-              <th className="px-6 py-4 font-bold">用户信息</th>
-              <th className="px-6 py-4 font-bold">角色权限</th>
-              <th className="px-6 py-4 font-bold">账号状态</th>
-              <th className="px-6 py-4 font-bold">注册日期</th>
-              <th className="px-6 py-4 font-bold text-right">操作</th>
+              <th className="px-6 py-4 font-bold">{t('userManagement.colUserInfo')}</th>
+              <th className="px-6 py-4 font-bold">{t('userManagement.colRole')}</th>
+              <th className="px-6 py-4 font-bold">{t('userManagement.colStatus')}</th>
+              <th className="px-6 py-4 font-bold">{t('userManagement.colLastLogin')}</th>
+              <th className="px-6 py-4 font-bold">{t('userManagement.colRegistered')}</th>
+              <th className="px-6 py-4 font-bold text-right">{t('userManagement.colActions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-tea/20">
@@ -68,16 +86,23 @@ export function UserManagementTab() {
                     onChange={e => handleRoleChange(u, e.target.value)}
                     className="bg-paper-light border border-tea/50 rounded px-2 py-1 text-xs focus:border-celadon outline-none transition-colors"
                   >
-                    <option value="user">普通用户</option>
-                    <option value="admin">管理员</option>
+                    <option value="user">{t('userManagement.roleUser')}</option>
+                    <option value="admin">{t('userManagement.roleAdmin')}</option>
                   </select>
                 </td>
                 <td className="px-6 py-4">
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                     u.is_active ? 'bg-celadon/10 text-celadon-dark' : 'bg-cinnabar/10 text-cinnabar'
                   }`}>
-                    {u.is_active ? '正常' : '已禁用'}
+                    {u.is_active ? t('userManagement.statusActive') : t('userManagement.statusDisabled')}
                   </span>
+                </td>
+                <td className="px-6 py-4 text-xs font-kai">
+                  {u.last_login_at ? (
+                    formatRelativeTime(u.last_login_at)
+                  ) : (
+                    <span className="text-ink-lighter italic">{t('userManagement.neverLoggedIn')}</span>
+                  )}
                 </td>
                 <td className="px-6 py-4 text-xs text-ink-lighter font-kai">
                   {u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}
@@ -85,10 +110,10 @@ export function UserManagementTab() {
                 <td className="px-6 py-4 text-right">
                   <div className="flex justify-end gap-3">
                     <button onClick={() => handleToggleActive(u)} className="text-xs text-celadon-dark hover:underline font-kai">
-                      {u.is_active ? '禁用' : '启用'}
+                      {u.is_active ? t('common.disable') : t('common.enable')}
                     </button>
                     <button onClick={() => handleDelete(u)} className="text-xs text-cinnabar hover:underline font-kai">
-                      删除
+                      {t('common.delete')}
                     </button>
                   </div>
                 </td>

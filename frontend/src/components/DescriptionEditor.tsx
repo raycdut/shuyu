@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface DescriptionEditorProps {
   value: string
@@ -8,6 +9,7 @@ interface DescriptionEditorProps {
 }
 
 export default function DescriptionEditor({ value, onSave, placeholder, className = '' }: DescriptionEditorProps) {
+  const { t } = useTranslation()
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState(value)
   const [saving, setSaving] = useState(false)
@@ -63,7 +65,7 @@ export default function DescriptionEditor({ value, onSave, placeholder, classNam
           rows={2}
           placeholder={placeholder}
         />
-        {saving && <span className="text-[10px] text-ink-lighter">保存中…</span>}
+        {saving && <span className="text-[10px] text-ink-lighter">{t('descriptionEditor.saving')}</span>}
       </div>
     )
   }
@@ -77,7 +79,7 @@ export default function DescriptionEditor({ value, onSave, placeholder, classNam
         <span className="text-xs text-ink leading-relaxed">{value}</span>
       ) : (
         <span className="text-xs text-ink-lighter/60 italic group-hover:text-ink-lighter transition-colors">
-          {placeholder || '点击添加描述…'}
+          {placeholder || t('descriptionEditor.placeholder')}
         </span>
       )}
       <span className="ml-1 text-[10px] text-ink-lighter/40 group-hover:text-ink-lighter/70 transition-colors">

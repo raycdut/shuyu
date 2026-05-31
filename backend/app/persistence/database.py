@@ -14,7 +14,7 @@ def load_db_connections_sqlite() -> None:
     try:
         rows = sql.execute("""
             SELECT id, name, type, path, connection_string, host, port,
-                   username, db_name, include_tables, exclude_tables, is_active
+                   username, db_name, include_tables, exclude_tables, is_active, schema_status
             FROM databases ORDER BY name
         """).fetchall()
         state._db_connections = []
@@ -26,6 +26,7 @@ def load_db_connections_sqlite() -> None:
                 "include_tables": r[9].split(",") if r[9] else None,
                 "exclude_tables": r[10].split(",") if r[10] else None,
                 "is_active": bool(r[11]),
+                "schema_status": r[12] or "pending",
             })
     except Exception:
         state._db_connections = []

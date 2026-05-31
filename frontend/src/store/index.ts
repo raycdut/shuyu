@@ -11,8 +11,6 @@ export { useConfigStore } from './configStore'
 export { useUIStore } from './uiStore'
 export { useAuthStore } from './authStore'
 
-export type { DashboardItem } from './uiStore'
-
 /**
  * @deprecated 请使用专门的 useSessionStore, useConfigStore, useUIStore 或 useAuthStore。
  * 为了向后兼容，暂时保留 useStore 接口，但内部已不再维护。

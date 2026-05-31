@@ -140,21 +140,53 @@ async def test_llm(req: Request, current_user: dict | None = Depends(optional_cu
 
 # ===== Prompt management =====
 
+PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe"]
+
 
 @router.get("/api/prompts")
-async def list_prompts():
-    """List all prompt versions."""
+async def list_prompts(category: str | None = None):
+    """List all prompt versions, optionally filtered by category."""
     if state._sqlite is None:
         return {"prompts": []}
-    rows = state._sqlite.execute(
-        "SELECT id, name, version, is_active, created_at FROM prompts ORDER BY created_at DESC"
-    ).fetchall()
+    if category:
+        rows = state._sqlite.execute(
+            "SELECT id, name, version, is_active, created_at FROM prompts WHERE name = ? ORDER BY created_at DESC",
+            (category,),
+        ).fetchall()
+    else:
+        rows = state._sqlite.execute(
+            "SELECT id, name, version, is_active, created_at FROM prompts ORDER BY created_at DESC"
+        ).fetchall()
     return {
         "prompts": [
             {"id": r[0], "name": r[1], "version": r[2], "is_active": bool(r[3]), "created_at": r[4]}
             for r in rows
         ]
     }
+
+
+@router.get("/api/prompts/active")
+async def get_active_prompts():
+    """Get all categories' active prompt (latest active version per category).
+
+    Falls back to hardcoded defaults for categories without DB records.
+    """
+    if state._sqlite is None:
+        return {cat: None for cat in PROMPT_CATEGORIES}
+    from ..persistence import _get_default_prompt_content
+
+    result = {}
+    for cat in PROMPT_CATEGORIES:
+        row = state._sqlite.execute(
+            "SELECT id, content, version FROM prompts WHERE name = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
+            (cat,),
+        ).fetchone()
+        if row:
+            result[cat] = {"id": row[0], "content": row[1], "version": row[2]}
+        else:
+            default_content = _get_default_prompt_content(cat)
+            result[cat] = {"id": None, "content": default_content, "version": None}
+    return result
 
 
 @router.get("/api/prompts/{prompt_id}")
@@ -171,29 +203,60 @@ async def get_prompt(prompt_id: int):
     return {"id": row[0], "name": row[1], "content": row[2], "version": row[3], "is_active": bool(row[4]), "created_at": row[5]}
 
 
+@router.get("/api/prompts/{category}/default")
+async def get_default_prompt(category: str):
+    """Get the hardcoded default prompt content for a category."""
+    from ..persistence import _get_default_prompt_content
+
+    content = _get_default_prompt_content(category)
+    if content is None:
+        return {"error": f"unknown category: {category}"}
+    return {"category": category, "content": content}
+
+
 @router.put("/api/prompts")
 async def upsert_prompt(req: Request):
-    """Create or update the active prompt (creates a new version)."""
+    """Create or update a prompt category (creates a new version).
+
+    Request body:
+      - category (str): prompt category name
+      - content (str): prompt content
+      - name (str, optional): legacy alias for category
+    """
     body = await req.json()
     content = body.get("content", "")
-    name = body.get("name", "default")
+    category = body.get("category") or body.get("name", "system")
     import time
 
     if state._sqlite is None:
         return {"ok": False, "error": "no db"}
 
-    # Get current max version
     row = state._sqlite.execute(
-        "SELECT MAX(version) FROM prompts WHERE name = ?", (name,)
+        "SELECT MAX(version) FROM prompts WHERE name = ?", (category,)
     ).fetchone()
     new_version = (row[0] or 0) + 1
 
-    # Deactivate old versions
-    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (name,))
-    # Insert new version as active
+    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (category,))
     state._sqlite.execute(
         "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
-        (name, content, new_version, time.time()),
+        (category, content, new_version, time.time()),
     )
     state._sqlite.commit()
     return {"ok": True, "version": new_version}
+
+
+@router.patch("/api/prompts/{prompt_id}/activate")
+async def activate_prompt_version(prompt_id: int):
+    """Activate a specific prompt version, deactivating others in the same category."""
+    if state._sqlite is None:
+        return {"ok": False, "error": "no db"}
+    row = state._sqlite.execute(
+        "SELECT name FROM prompts WHERE id = ?", (prompt_id,)
+    ).fetchone()
+    if not row:
+        return {"ok": False, "error": "not found"}
+    category = row[0]
+    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (category,))
+    state._sqlite.execute("UPDATE prompts SET is_active = 1 WHERE id = ?", (prompt_id,))
+    state._sqlite.commit()
+    return {"ok": True}

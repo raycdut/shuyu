@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { api } from '../api'
 import { useConfigStore } from '../store/configStore'
 import type { ImportedTable, SchemaStatus } from '../types'
@@ -11,14 +12,8 @@ const DB_ICONS: Record<string, string> = {
   duckdb: '🦆', postgres: '🐘', sqlite: '📄', mysql: '🐬', clickhouse: '🏠', snowflake: '❄️',
 }
 
-const STATUS_LABELS: Record<string, { label: string; className: string }> = {
-  pending: { label: '等待导入', className: 'bg-tea/20 text-tea-dark' },
-  importing: { label: '导入中…', className: 'bg-amber/10 text-amber' },
-  imported: { label: '已导入', className: 'bg-celadon/10 text-celadon-dark' },
-  error: { label: '导入失败', className: 'bg-cinnabar/5 text-cinnabar' },
-}
-
 export default function DatabaseManagerPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const databases = useConfigStore(s => s.databases)
   const setDatabases = useConfigStore(s => s.setDatabases)
@@ -35,6 +30,13 @@ export default function DatabaseManagerPage() {
   const [showAddModal, setShowAddModal] = useState(false)
 
   const selectedDb = databases.find(d => d.id === selectedDbId)
+
+  const STATUS_LABELS: Record<string, { label: string; className: string }> = {
+    pending: { label: t('dbSchema.statusPending'), className: 'bg-tea/20 text-tea-dark' },
+    importing: { label: t('dbSchema.statusImporting'), className: 'bg-amber/10 text-amber' },
+    imported: { label: t('dbSchema.statusImported'), className: 'bg-celadon/10 text-celadon-dark' },
+    error: { label: t('dbSchema.statusFailed'), className: 'bg-cinnabar/5 text-cinnabar' },
+  }
 
   useEffect(() => {
     if (databases.length > 0 && !selectedDbId) {
@@ -152,13 +154,13 @@ export default function DatabaseManagerPage() {
           <button
             onClick={() => navigate('/')}
             className="p-1 rounded-sm text-ink-lighter hover:text-ink hover:bg-smoke transition-colors"
-            title="返回"
+            title={t('common.back')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="19" y1="12" x2="5" y2="12" /><polyline points="12 19 5 12 12 5" />
             </svg>
           </button>
-          <h1 className="text-base font-song font-semibold text-ink">数据库管理</h1>
+          <h1 className="text-base font-song font-semibold text-ink">{t('dbManager.title')}</h1>
         </div>
         {message && (
           <div className={`px-3 py-1.5 text-xs rounded-sm ${
@@ -174,11 +176,11 @@ export default function DatabaseManagerPage() {
         <div className="w-56 flex-shrink-0 ink-border overflow-y-auto">
           <div className="px-3 py-3">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs text-ink-lighter font-kai tracking-wider">已添加的数据库</span>
+              <span className="text-xs text-ink-lighter font-kai tracking-wider">{t('dbManager.subtitle')}</span>
               <button
                 onClick={() => setShowAddModal(true)}
                 className="p-1 rounded-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors"
-                title="添加数据库"
+                title={t('dbManager.addDatabase')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -186,7 +188,7 @@ export default function DatabaseManagerPage() {
               </button>
             </div>
             {databases.length === 0 ? (
-              <div className="py-6 text-center text-xs text-ink-lighter font-kai">暂无数据库</div>
+              <div className="py-6 text-center text-xs text-ink-lighter font-kai">{t('dbManager.noDatabases')}</div>
             ) : (
               databases.map(db => (
                 <button
@@ -199,7 +201,7 @@ export default function DatabaseManagerPage() {
                   <span className="text-xs">{DB_ICONS[db.type] || '🗄'}</span>
                   <span className="truncate flex-1">{db.name}</span>
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-sm ${STATUS_LABELS[db.schema_status || 'pending']?.className || ''}`}>
-                    {STATUS_LABELS[db.schema_status || 'pending']?.label || '等待导入'}
+                    {STATUS_LABELS[db.schema_status || 'pending']?.label || t('dbSchema.statusPending')}
                   </span>
                 </button>
               ))
@@ -211,7 +213,7 @@ export default function DatabaseManagerPage() {
         <div className="flex-1 overflow-y-auto">
           {!selectedDb ? (
             <div className="h-full flex items-center justify-center text-sm text-ink-lighter font-kai">
-              请选择一个数据库
+              {t('dbSchema.selectDb')}
             </div>
           ) : (
             <div className="max-w-4xl mx-auto px-6 py-5">
@@ -229,30 +231,30 @@ export default function DatabaseManagerPage() {
                     disabled={importing}
                     className="px-3 py-1.5 text-xs text-ink-light hover:bg-smoke ink-border rounded-sm transition-colors disabled:opacity-40"
                   >
-                    {importing ? '导入中…' : '📥 导入 Schema'}
+                    {importing ? t('dbSchema.importing') : `📥 ${t('dbSchema.importSchema')}`}
                   </button>
                   <button
                     onClick={handleGenerateDescriptions}
                     disabled={describing || !schemaStatus || schemaStatus.tables_count === 0}
                     className="px-3 py-1.5 text-xs text-ink-light hover:bg-smoke ink-border rounded-sm transition-colors disabled:opacity-40"
                   >
-                    {describing ? '生成中…' : '🤖 生成描述'}
+                    {describing ? t('dbSchema.generating') : `🤖 ${t('dbSchema.generatingDesc')}`}
                   </button>
                   <button
                     onClick={() => { loadSchema(); loadStatus() }}
                     className="px-3 py-1.5 text-xs text-ink-lighter hover:bg-smoke rounded-sm transition-colors"
                   >
-                    🔄 刷新
+                    🔄 {t('dbSchema.refresh')}
                   </button>
                 </div>
 
                 {/* Schema Status Summary */}
                 {schemaStatus && schemaStatus.tables_count > 0 && (
                   <div className="mt-3 flex items-center gap-4 text-xs text-ink-lighter font-kai">
-                    <span>表: <strong className="text-ink">{schemaStatus.tables_count}</strong></span>
-                    <span>字段: <strong className="text-ink">{schemaStatus.columns_count}</strong></span>
-                    <span>已描述表: <strong className="text-celadon-dark">{schemaStatus.described_tables}</strong> / {schemaStatus.tables_count}</span>
-                    <span>已描述字段: <strong className="text-celadon-dark">{schemaStatus.described_columns}</strong> / {schemaStatus.columns_count}</span>
+                    <span>{t('dbSchema.table')}: <strong className="text-ink">{schemaStatus.tables_count}</strong></span>
+                    <span>{t('dbSchema.field')}: <strong className="text-ink">{schemaStatus.columns_count}</strong></span>
+                    <span>{t('dbSchema.describedTables')}: <strong className="text-celadon-dark">{schemaStatus.described_tables}</strong> / {schemaStatus.tables_count}</span>
+                    <span>{t('dbSchema.describedFields')}: <strong className="text-celadon-dark">{schemaStatus.described_columns}</strong> / {schemaStatus.columns_count}</span>
                   </div>
                 )}
               </div>
@@ -262,7 +264,7 @@ export default function DatabaseManagerPage() {
                 <div className="flex items-center gap-3 mb-4">
                   <input
                     className="ink-input text-xs flex-1 max-w-xs"
-                    placeholder="搜索表名或描述…"
+                    placeholder={t('dbSchema.searchTable')}
                     value={searchText}
                     onChange={e => setSearchText(e.target.value)}
                   />
@@ -271,31 +273,31 @@ export default function DatabaseManagerPage() {
                     onChange={e => setFilterDescribed(e.target.value as any)}
                     className="ink-input text-xs w-28"
                   >
-                    <option value="all">全部</option>
-                    <option value="undescribed">未描述</option>
-                    <option value="described">已描述</option>
+                    <option value="all">{t('dbSchema.filterAll')}</option>
+                    <option value="undescribed">{t('dbSchema.filterUndescribed')}</option>
+                    <option value="described">{t('dbSchema.filterDescribed')}</option>
                   </select>
                 </div>
               )}
 
               {/* Loading / Content */}
               {loading ? (
-                <div className="py-10 text-center text-sm text-ink-lighter font-kai">加载中…</div>
+                <div className="py-10 text-center text-sm text-ink-lighter font-kai">{t('common.loading')}</div>
               ) : filteredSchema.length === 0 ? (
                 <div className="py-10 text-center">
                   {schema.length === 0 ? (
                     <div>
-                      <p className="text-sm text-ink-lighter font-kai mb-3">尚未导入 Schema</p>
+                      <p className="text-sm text-ink-lighter font-kai mb-3">{t('dbSchema.notImportedYet')}</p>
                       <button
                         onClick={handleImport}
                         disabled={importing}
                         className="px-4 py-2 text-sm text-white bg-celadon hover:bg-celadon-dark rounded-sm transition-colors"
                       >
-                        {importing ? '导入中…' : '开始导入'}
+                        {importing ? t('dbSchema.importing') : t('dbSchema.startImport')}
                       </button>
                     </div>
                   ) : (
-                    <p className="text-sm text-ink-lighter font-kai">没有匹配的表</p>
+                    <p className="text-sm text-ink-lighter font-kai">{t('dbSchema.noMatch')}</p>
                   )}
                 </div>
               ) : (
@@ -327,7 +329,7 @@ export default function DatabaseManagerPage() {
                               setSchema(prev => prev.map(t => t.id === table.id ? { ...t, description: desc } : t))
                               loadStatus()
                             }}
-                            placeholder="添加表描述…"
+                            placeholder={t('dbSchema.addDescZh')}
                           />
                         </div>
                       </div>
@@ -336,7 +338,7 @@ export default function DatabaseManagerPage() {
                       {expandedTables.has(table.id) && (
                         <div className="ml-5 pb-3">
                           {table.columns.length === 0 ? (
-                            <div className="px-4 py-2 text-xs text-ink-lighter font-kai">无字段信息</div>
+                            <div className="px-4 py-2 text-xs text-ink-lighter font-kai">{t('dbSchema.noFields')}</div>
                           ) : (
                             <div className="space-y-0.5">
                               {table.columns.map(col => (
@@ -366,7 +368,7 @@ export default function DatabaseManagerPage() {
                                         ))
                                         loadStatus()
                                       }}
-                                      placeholder="添加字段描述…"
+                                      placeholder={t('dbSchema.addDescZh')}
                                     />
                                   </div>
                                 </div>

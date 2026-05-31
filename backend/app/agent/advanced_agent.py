@@ -93,11 +93,17 @@ class AdvancedAgent:
         tool_registry: ToolRegistry,
         call_llm_func: Callable,
         system_prompt: str,
+        plan_prompt: str | None = None,
+        plan_reflect_prompt: str | None = None,
+        report_reflect_prompt: str | None = None,
         max_iterations: int = 15,
     ):
         self.tool_registry = tool_registry
         self.call_llm = call_llm_func
         self.system_prompt = system_prompt
+        self._plan_prompt = plan_prompt or PLAN_PROMPT
+        self._plan_reflect_prompt = plan_reflect_prompt or PLAN_REFLECT_PROMPT
+        self._report_reflect_prompt = report_reflect_prompt or REPORT_REFLECT_PROMPT
         self.max_iterations = max_iterations
         self._tool_history: list[tuple[str, dict]] = []
         self._sql_queries: list[str] = []
@@ -203,7 +209,7 @@ class AdvancedAgent:
         logger.info("AdvancedAgent: Phase 1 — Plan")
         response = await self.call_llm(
             messages=[
-                {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
+                {"role": "system", "content": self._plan_prompt + "\n\n" + self.system_prompt},
                 *conversation,
             ],
             tools=None,
@@ -234,7 +240,7 @@ class AdvancedAgent:
 
             reflect_response = await self.call_llm(
                 messages=[
-                    {"role": "system", "content": PLAN_REFLECT_PROMPT},
+                    {"role": "system", "content": self._plan_reflect_prompt},
                     {"role": "assistant", "content": f"## 分析计划\n{current_plan}"},
                 ],
                 tools=None,
@@ -279,7 +285,7 @@ class AdvancedAgent:
             # Regenerate plan with reflection feedback
             response = await self.call_llm(
                 messages=[
-                    {"role": "system", "content": PLAN_PROMPT + "\n\n" + self.system_prompt},
+                    {"role": "system", "content": self._plan_prompt + "\n\n" + self.system_prompt},
                     *conversation,
                     {"role": "assistant", "content": current_plan},
                     {"role": "user", "content": f"请根据以下审核意见修改分析计划：\n{reflect_text}"},
@@ -625,7 +631,7 @@ class AdvancedAgent:
 
             reflect_response = await self.call_llm(
                 messages=[
-                    {"role": "system", "content": REPORT_REFLECT_PROMPT},
+                    {"role": "system", "content": self._report_reflect_prompt},
                     {"role": "assistant", "content": current_report},
                     *[m for m in conversation if m["role"] in ("user",)][-1:],  # Last user query
                 ],

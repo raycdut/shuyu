@@ -7,6 +7,7 @@ from app.auth.service import (
     authenticate_user,
     create_token,
     decode_token,
+    update_last_login,
     get_user_by_id,
     get_all_users,
     update_user,
@@ -34,7 +35,8 @@ def setup_auth():
                           CHECK(role IN ('admin', 'user')),
             is_active     INTEGER NOT NULL DEFAULT 1,
             created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
+            last_login_at TEXT
         );
         CREATE TABLE IF NOT EXISTS user_databases (
             user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -45,6 +47,15 @@ def setup_auth():
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             type TEXT NOT NULL DEFAULT 'duckdb'
+        );
+        CREATE TABLE IF NOT EXISTS config_changelog (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user', 'user_mgmt', 'database')),
+            user_id     TEXT,
+            changed_by  TEXT NOT NULL,
+            summary     TEXT NOT NULL,
+            diff        TEXT,
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
         );
     """)
     yield
@@ -151,6 +162,40 @@ class TestUserManagement:
 
     def test_delete_nonexistent_user(self):
         assert delete_user("nonexistent-id") is False
+
+
+class TestLastLogin:
+    def test_create_user_has_no_last_login(self):
+        user = create_user("admin", "pass")
+        assert "last_login_at" in user
+        assert user["last_login_at"] is None
+
+    def test_update_last_login_sets_timestamp(self):
+        user = create_user("admin", "pass")
+        assert user["last_login_at"] is None
+        update_last_login(user["id"])
+        updated = get_user_by_id(user["id"])
+        assert updated["last_login_at"] is not None
+
+    def test_authenticate_user_returns_last_login(self):
+        user = create_user("admin", "pass")
+        assert user["last_login_at"] is None
+        # authenticate_user does not update last_login_at
+        result = authenticate_user("admin", "pass")
+        assert result is not None
+        assert "last_login_at" in result
+
+    def test_get_all_users_includes_last_login(self):
+        create_user("admin", "pass")
+        users = get_all_users()
+        assert len(users) == 1
+        assert "last_login_at" in users[0]
+
+    def test_get_user_by_id_includes_last_login(self):
+        user = create_user("admin", "pass")
+        fetched = get_user_by_id(user["id"])
+        assert fetched is not None
+        assert "last_login_at" in fetched
 
 
 class TestUserDatabases:

@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import { useSessionStore } from '../store/sessionStore'
 import { useUIStore } from '../store/uiStore'
 import { api } from '../api'
+import { useTranslation } from 'react-i18next'
 
 /**
  * 会话管理 Hook
@@ -14,6 +15,7 @@ export function useSessions() {
   const activeSessionId = useSessionStore(s => s.activeSessionId)
 
   const setError = useUIStore(s => s.setError)
+  const { t } = useTranslation()
 
   /**
    * 加载所有会话
@@ -26,9 +28,9 @@ export function useSessions() {
       console.log(`[Sessions] 加载完成，共 ${data.sessions?.length || 0} 个会话`)
     } catch (err: any) {
       console.error('[Sessions] 加载失败', err)
-      setError(`加载会话失败: ${err.message || '未知错误'}`)
+      setError(`${t('session.loadFailed')}: ${err.message || t('session.unknownError')}`)
     }
-  }, [setSessions, setError])
+  }, [setSessions, setError, t])
 
   /**
    * 选择会话
@@ -67,9 +69,9 @@ export function useSessions() {
       await api.renameSession(sessionId, title)
       await loadSessions()
     } catch (err: any) {
-      setError(`重命名失败: ${err.message || '未知错误'}`)
+      setError(`${t('session.renameFailed')}: ${err.message || t('session.unknownError')}`)
     }
-  }, [loadSessions, setError])
+  }, [loadSessions, setError, t])
 
   /**
    * 删除会话
@@ -82,9 +84,9 @@ export function useSessions() {
       }
       await loadSessions()
     } catch (err: any) {
-      setError(`删除会话失败: ${err.message || '未知错误'}`)
+      setError(`${t('session.deleteFailed')}: ${err.message || t('session.unknownError')}`)
     }
-  }, [activeSessionId, handleNewSession, loadSessions, setError])
+  }, [activeSessionId, handleNewSession, loadSessions, setError, t])
 
   /**
    * 清空所有会话
@@ -96,10 +98,10 @@ export function useSessions() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       await loadSessions()
     } catch (err: any) {
-      setError(`清空会话失败: ${err.message || '未知错误'}`)
+      setError(`${t('session.clearFailed')}: ${err.message || t('session.unknownError')}`)
       await loadSessions()
     }
-  }, [handleNewSession, loadSessions, setError])
+  }, [handleNewSession, loadSessions, setError, t])
 
   return {
     loadSessions,

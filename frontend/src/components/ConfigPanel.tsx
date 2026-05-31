@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import type { LLMConfig, SafetyConfig } from '../types'
 import { api } from '../api'
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface ConfigPanelProps {
   open: boolean
@@ -54,6 +55,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
   const [showKey, setShowKey] = useState(false)
   const [blockedText, setBlockedText] = useState('')
   const [temperature, setTemperature] = useState(0.3)
+  const { t } = useTranslation()
 
   if (!open) return null
 
@@ -75,9 +77,9 @@ const ConfigPanel = React.memo(function ConfigPanel({
       // Save config first so backend has the credentials, then test using saved data
       await onConfigSave()
       const res = await api.testLLM({})
-      setTestResult(res.ok ? '✅ 连接成功' : `❌ ${res.message}`)
+      setTestResult(res.ok ? t('dbConnect.testSuccess') : t('dbConnect.testFailure', { message: res.message }))
     } catch (err: any) {
-      setTestResult(`❌ ${err.message}`)
+      setTestResult(t('dbConnect.testFailure', { message: err.message }))
     }
     setTesting(false)
   }
@@ -88,7 +90,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
     <aside className="w-64 flex-shrink-0 bg-paper-light/50 overflow-y-auto">
       <div className="px-4 py-3">
         {/* ===== LLM 配置 ===== */}
-        <Section title="LLM 提供商">
+        <Section title={t('configPanel.llmProvider')}>
           <select
             value={localLLM.provider}
             onChange={e => {
@@ -149,7 +151,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
           />
         </Section>
 
-        <Section title="模型">
+        <Section title={t('configPanel.model')}>
           <select
             value={localLLM.model}
             onChange={e => setLocalLLM({ ...localLLM, model: e.target.value })}
@@ -159,7 +161,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
           </select>
         </Section>
 
-        <Section title="超时 (秒)">
+        <Section title={t('configPanel.timeout')}>
           <input
             type="number"
             value={localLLM.timeout}
@@ -177,7 +179,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
             disabled={testing || !localLLM.api_key}
             className="px-3 py-1 text-xs text-ink-light hover:bg-smoke ink-border rounded-sm transition-colors disabled:opacity-40"
           >
-            {testing ? '测试中…' : '🔌 测试'}
+            {testing ? t('common.testing') : t('common.test')}
           </button>
           {testResult && (
             <span className="text-xs text-celadon-dark">{testResult}</span>
@@ -188,23 +190,23 @@ const ConfigPanel = React.memo(function ConfigPanel({
         <div className="ink-divider my-4" />
 
         {/* ===== 数据安全 ===== */}
-        <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">数据安全</h3>
+        <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">{t('configPanel.dataSafety')}</h3>
 
         <ToggleRow
-          label="只读模式"
-          desc="禁止修改数据的 SQL"
+          label={t('configPanel.readonlyMode')}
+          desc={t('configPanel.readonlyDesc')}
           checked={localSafety.read_only}
           onChange={v => setLocalSafety({ ...localSafety, read_only: v })}
         />
 
         <ToggleRow
-          label="数据确认"
-          desc="将数据发送到 LLM 前确认"
+          label={t('configPanel.requireConfirmation')}
+          desc={t('configPanel.requireConfirmationDesc')}
           checked={localSafety.require_approval}
           onChange={v => setLocalSafety({ ...localSafety, require_approval: v })}
         />
 
-        <Section title="每页最多行数">
+        <Section title={t('configPanel.maxRowsPerPage')}>
           <input
             type="number"
             className="ink-input text-sm"
@@ -215,7 +217,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
           />
         </Section>
 
-        <Section title="屏蔽的表">
+        <Section title={t('configPanel.blockedTables')}>
           <input
             className="ink-input text-sm"
             value={blockedText}
@@ -228,17 +230,17 @@ const ConfigPanel = React.memo(function ConfigPanel({
         <div className="ink-divider my-4" />
 
         {/* ===== 高级设置 ===== */}
-        <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">高级设置</h3>
+        <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">{t('configPanel.advancedSettings')}</h3>
 
-        <Section title="对话语言">
+        <Section title={t('configPanel.dialogLanguage')}>
           <select className="ink-input text-sm" defaultValue="zh-CN">
-            <option value="zh-CN">中文</option>
+            <option value="zh-CN">{t('configPanel.langChinese')}</option>
             <option value="en">English</option>
-            <option value="ja">日本語</option>
+            <option value="ja">{t('configPanel.langJapanese')}</option>
           </select>
         </Section>
 
-        <Section title={`温度: ${temperature.toFixed(1)}`}>
+        <Section title={t('configPanel.temperature', { value: temperature.toFixed(1) })}>
           <input
             type="range"
             min="0"
@@ -249,12 +251,12 @@ const ConfigPanel = React.memo(function ConfigPanel({
             className="w-full accent-celadon"
           />
           <div className="flex justify-between text-[10px] text-ink-lighter">
-            <span>精确</span>
-            <span>创造</span>
+            <span>{t('configPanel.precise')}</span>
+            <span>{t('configPanel.creative')}</span>
           </div>
         </Section>
 
-        <Section title="会话过期">
+        <Section title={t('configPanel.sessionExpire')}>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -263,7 +265,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
               min={5}
               max={1440}
             />
-            <span className="text-xs text-ink-lighter">分钟</span>
+            <span className="text-xs text-ink-lighter">{t('configPanel.minutes')}</span>
           </div>
         </Section>
 
@@ -273,7 +275,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
           disabled={saving}
           className="btn-celadon w-full mt-4"
         >
-          {saving ? '保存中…' : '保存配置'}
+          {saving ? t('common.saving') : t('configPanel.saveConfig')}
         </button>
       </div>
     </aside>

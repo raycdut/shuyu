@@ -4,16 +4,8 @@ import Sidebar from './Sidebar'
 import type { Session, DatabaseInfo } from '../types'
 
 // Mock child modals
-vi.mock('./DBConnectModal', () => ({
-  default: ({ open }: { open: boolean }) => open ? <div data-testid="db-connect-modal">DBConnectModal</div> : null,
-}))
-
 vi.mock('./DBConfigModal', () => ({
   default: ({ open }: { open: boolean }) => open ? <div data-testid="db-config-modal">DBConfigModal</div> : null,
-}))
-
-vi.mock('react-router-dom', () => ({
-  useNavigate: () => vi.fn(),
 }))
 
 const makeSessions = (): Session[] => [
@@ -94,18 +86,6 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} databases={dbs} />)
     expect(screen.getByText('零售数据库')).toBeInTheDocument()
     expect(screen.getByText('日志库')).toBeInTheDocument()
-  })
-
-  it('renders "添加数据库" button', () => {
-    render(<Sidebar {...defaultProps} />)
-    expect(screen.getByText('添加数据库')).toBeInTheDocument()
-  })
-
-  it('opens DBConnectModal when clicking add database', () => {
-    render(<Sidebar {...defaultProps} />)
-    expect(screen.queryByTestId('db-connect-modal')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('添加数据库'))
-    expect(screen.getByTestId('db-connect-modal')).toBeInTheDocument()
   })
 
   it('highlights the active session', () => {

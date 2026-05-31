@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class DBConnectRequest(BaseModel):
@@ -56,6 +56,7 @@ class ImportedColumnInfo(BaseModel):
     is_nullable: bool = True
     is_primary_key: bool = False
     description: str = ""
+    description_en: str = ""
     sample_values: list[str] | None = None
 
 
@@ -65,8 +66,9 @@ class ImportedTableInfo(BaseModel):
     table_name: str
     table_type: str = "TABLE"
     description: str = ""
+    description_en: str = ""
     row_count: int | None = None
-    columns: list[ImportedColumnInfo] = []
+    columns: list[ImportedColumnInfo] = Field(default_factory=list)
     created_at: float = 0
     updated_at: float = 0
 
@@ -86,7 +88,8 @@ class DescriptionGenerateRequest(BaseModel):
 class DescriptionUpdateRequest(BaseModel):
     table_id: str | None = None
     column_id: str | None = None
-    description: str
+    description: str = ""
+    description_en: str = ""
 
 
 class SchemaStatusResponse(BaseModel):

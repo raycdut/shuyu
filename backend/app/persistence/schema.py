@@ -38,20 +38,21 @@ def load_imported_columns(table_id: str) -> list[dict]:
         return []
     rows = sql.execute(
         "SELECT id, table_id, column_name, data_type, is_nullable, is_primary_key, "
-        "default_value, ordinal_position, description, sample_values, created_at, updated_at "
+        "default_value, ordinal_position, description, description_en, sample_values, created_at, updated_at "
         "FROM imported_columns WHERE table_id = ? ORDER BY ordinal_position",
         (table_id,),
     ).fetchall()
     result = []
     for r in rows:
-        sample = json.loads(r[9]) if r[9] else None
+        sample = json.loads(r[10]) if r[10] else None
         result.append({
             "id": r[0], "table_id": r[1], "column_name": r[2],
             "data_type": r[3], "is_nullable": bool(r[4]),
             "is_primary_key": bool(r[5]), "default_value": r[6],
             "ordinal_position": r[7], "description": r[8] or "",
+            "description_en": r[9] or "",
             "sample_values": sample,
-            "created_at": r[10], "updated_at": r[11],
+            "created_at": r[11], "updated_at": r[12],
         })
     return result
 
@@ -102,15 +103,15 @@ def save_imported_schema(database_id: str, tables: list[dict]) -> None:
             sql.execute(
                 "INSERT INTO imported_columns "
                 "(id, table_id, column_name, data_type, is_nullable, is_primary_key, "
-                "default_value, ordinal_position, description, sample_values, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "default_value, ordinal_position, description, description_en, sample_values, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     col_id, table_id, col["column_name"], col["data_type"],
                     1 if col.get("is_nullable", True) else 0,
                     1 if col.get("is_primary_key", False) else 0,
                     col.get("default_value"), col.get("ordinal_position", 0),
-                    col.get("description", ""), sample_json,
-                    now, now,
+                    col.get("description", ""), col.get("description_en", ""),
+                    sample_json, now, now,
                 ),
             )
     sql.commit()
@@ -120,21 +121,22 @@ def update_description(
     table_id: str | None = None,
     column_id: str | None = None,
     description: str = "",
+    description_en: str = "",
 ) -> None:
-    """Update the description of a table or column."""
+    """Update the description (and optional English description) of a table or column."""
     sql = state._sqlite
     if sql is None:
         return
     now = time.time()
     if table_id:
         sql.execute(
-            "UPDATE imported_tables SET description = ?, updated_at = ? WHERE id = ?",
-            (description, now, table_id),
+            "UPDATE imported_tables SET description = ?, description_en = ?, updated_at = ? WHERE id = ?",
+            (description, description_en, now, table_id),
         )
     elif column_id:
         sql.execute(
-            "UPDATE imported_columns SET description = ?, updated_at = ? WHERE id = ?",
-            (description, now, column_id),
+            "UPDATE imported_columns SET description = ?, description_en = ?, updated_at = ? WHERE id = ?",
+            (description, description_en, now, column_id),
         )
     sql.commit()
 
@@ -195,7 +197,8 @@ def save_descriptions(database_id: str, descriptions: list[dict]) -> int:
         descriptions: List of dicts with keys:
             - table_name: str
             - table_description: str
-            - columns: list[dict] with column_name and column_description
+            - table_description_en: str (optional)
+            - columns: list[dict] with column_name, column_description, column_description_en (optional)
 
     Returns:
         Number of tables updated.
@@ -210,6 +213,7 @@ def save_descriptions(database_id: str, descriptions: list[dict]) -> int:
     for desc in descriptions:
         table_name = desc.get("table_name", "")
         table_desc = desc.get("table_description", "")
+        table_desc_en = desc.get("table_description_en", "")
 
         tbl = sql.execute(
             "SELECT id FROM imported_tables WHERE database_id = ? AND table_name = ?",
@@ -219,10 +223,10 @@ def save_descriptions(database_id: str, descriptions: list[dict]) -> int:
             continue
 
         table_id = tbl[0]
-        if table_desc:
+        if table_desc or table_desc_en:
             sql.execute(
-                "UPDATE imported_tables SET description = ?, updated_at = ? WHERE id = ?",
-                (table_desc, now, table_id),
+                "UPDATE imported_tables SET description = ?, description_en = ?, updated_at = ? WHERE id = ?",
+                (table_desc, table_desc_en, now, table_id),
             )
             count += 1
 
@@ -230,7 +234,8 @@ def save_descriptions(database_id: str, descriptions: list[dict]) -> int:
         for col_desc in cols:
             col_name = col_desc.get("column_name", "")
             col_desc_text = col_desc.get("column_description", "")
-            if not col_desc_text:
+            col_desc_en = col_desc.get("column_description_en", "")
+            if not col_desc_text and not col_desc_en:
                 continue
 
             col = sql.execute(
@@ -239,8 +244,8 @@ def save_descriptions(database_id: str, descriptions: list[dict]) -> int:
             ).fetchone()
             if col:
                 sql.execute(
-                    "UPDATE imported_columns SET description = ?, updated_at = ? WHERE id = ?",
-                    (col_desc_text, now, col[0]),
+                    "UPDATE imported_columns SET description = ?, description_en = ?, updated_at = ? WHERE id = ?",
+                    (col_desc_text, col_desc_en, now, col[0]),
                 )
 
     sql.commit()

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRequest(BaseModel):
@@ -15,9 +15,9 @@ class ChatResponse(BaseModel):
 
     reply: str
     session_id: str
-    tool_calls: list = []
-    sql_queries: list[str] = []
-    query_results: list[dict] = []
+    tool_calls: list = Field(default_factory=list)
+    sql_queries: list[str] = Field(default_factory=list)
+    query_results: list[dict] = Field(default_factory=list)
 
 
 # (intentionally left blank — SchemaInfo was unused and removed)

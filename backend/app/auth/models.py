@@ -25,6 +25,7 @@ class UserInfo(BaseModel):
     role: str
     is_active: bool = True
     created_at: str | None = None
+    last_login_at: str | None = None
 
 
 class UserUpdateRequest(BaseModel):

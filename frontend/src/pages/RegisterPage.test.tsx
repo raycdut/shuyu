@@ -50,7 +50,7 @@ describe('RegisterPage', () => {
 
   it('renders registration form with all inputs', () => {
     renderRegisterPage()
-    expect(screen.getByText('Data Chat')).toBeInTheDocument()
+    expect(screen.getByText('数语')).toBeInTheDocument()
     expect(screen.getByText('创建新账号')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('请输入用户名')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('请输入密码')).toBeInTheDocument()

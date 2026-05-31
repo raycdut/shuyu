@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Message } from '../types'
 import MarkdownRenderer from './MarkdownRenderer'
 import ChartRenderer from './ChartRenderer'
@@ -12,6 +13,7 @@ interface MessageBubbleProps {
  * 处理不同类型的消息渲染（普通消息、进度消息、计划消息）
  */
 const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubbleProps) {
+  const { t } = useTranslation()
   const isUser = message.role === 'user'
   const [planOpen, setPlanOpen] = React.useState(false)
   const [sqlPopoverOpen, setSqlPopoverOpen] = React.useState(false)
@@ -53,7 +55,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
       <div className="flex justify-start mb-4">
         <div className="bubble-agent max-w-lg w-full">
           <div className="flex items-center gap-1.5 mb-2">
-            <span className="text-xs text-celadon-dark font-kai">📋 {message.progressTitle || '分析进度'}</span>
+            <span className="text-xs text-celadon-dark font-kai">📋 {message.progressTitle || t('message.analysisProgress')}</span>
             <span className="text-[10px] text-ink-lighter ml-auto">{done}/{total}</span>
           </div>
           <div className="space-y-1">
@@ -83,7 +85,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
           </div>
           {done < total && (
             <div className="mt-2 text-[10px] text-ink-lighter font-kai animate-pulse">
-              正在执行…
+              {t('message.executing')}
             </div>
           )}
         </div>
@@ -97,13 +99,13 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
       <div className="flex justify-start mb-4">
         <div className="bubble-agent max-w-lg w-full">
           <div className="flex items-center gap-1.5 mb-1">
-            <span className="text-xs text-celadon-dark font-kai">📋 分析计划</span>
+            <span className="text-xs text-celadon-dark font-kai">📋 {t('message.analysisPlan')}</span>
           </div>
           <div
             className="text-xs text-ink-lighter font-kai cursor-pointer flex items-center gap-1 select-none"
             onClick={() => setPlanOpen(!planOpen)}
           >
-            {planOpen ? '▼ 收起' : '▶ 点击展开'}
+            {planOpen ? t('message.collapse') : t('message.expand')}
           </div>
           {planOpen && (
             <div className="mt-2 text-sm leading-relaxed text-ink">
@@ -132,7 +134,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
               <path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" />
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
             </svg>
-            Data Chat
+            {t('app.name')}
           </div>
         )}
 
@@ -164,7 +166,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
 
         {message.tool_calls && message.tool_calls.length > 0 && (
           <div className={`mt-2 text-xs ${isUser ? 'text-white/60' : 'text-ink-lighter'} font-kai`}>
-            🔍 查询了数据库
+            {t('message.queriedDatabase')}
           </div>
         )}
 
@@ -188,7 +190,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
                 onMouseLeave={hideSqlPopover}
               >
                 <div className="px-3 py-2 text-xs text-ink-lighter font-kai border-b border-ink-lighter/10">
-                  使用的查询语句
+                  {t('message.usedSQL')}
                 </div>
                 <div className="max-h-72 overflow-y-auto">
                   {queries.map(q => (
@@ -197,7 +199,7 @@ const MessageBubble = React.memo(function MessageBubble({ message }: MessageBubb
                         <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-celadon/20 text-celadon-dark text-[10px] font-bold leading-none">
                           {q.qn}
                         </span>
-                        <span className="font-kai">{q.ok ? '成功' : '失败'}</span>
+                        <span className="font-kai">{q.ok ? t('message.success') : t('message.failure')}</span>
                       </div>
                       <pre className="text-[10px] font-mono text-ink whitespace-pre-wrap break-words">{q.sql}</pre>
                       {!q.ok && q.error && (

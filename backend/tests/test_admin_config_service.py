@@ -31,7 +31,7 @@ def setup_db():
         );
         CREATE TABLE IF NOT EXISTS config_changelog (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user')),
+            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user', 'user_mgmt', 'database')),
             user_id     TEXT,
             changed_by  TEXT NOT NULL,
             summary     TEXT NOT NULL,
@@ -60,7 +60,7 @@ class TestSystemConfig:
         assert "safety" in config
         assert "advanced" in config
         assert "storage" in config
-        assert len(config["llm"]["provider_pool"]) > 0
+        assert len(config["llm"]["models"]) > 0
 
     def test_update_system_config(self):
         update_system_config({"safety": {"max_rows": 5000}}, updated_by="admin")
@@ -68,9 +68,11 @@ class TestSystemConfig:
         assert config["safety"]["max_rows"] == 5000
 
     def test_partial_update_merges(self):
-        update_system_config({"llm": {"default_model": "gpt-4o-mini"}}, updated_by="admin")
+        models = get_system_config()["llm"]["models"]
+        models[0]["model"] = "gpt-4o-mini"
+        update_system_config({"llm": {"models": models}}, updated_by="admin")
         config = get_system_config()
-        assert config["llm"]["default_model"] == "gpt-4o-mini"
+        assert config["llm"]["models"][0]["model"] == "gpt-4o-mini"
         assert config["safety"]["read_only"] is True
 
     def test_update_logs_changelog(self):
@@ -100,10 +102,12 @@ class TestUserConfig:
         assert get_user_config("user-2")["preferences"]["language"] == "ja"
 
     def test_user_llm_override(self):
+        models = get_system_config()["llm"]["models"]
+        deepseek_model = next((m for m in models if "deepseek" in m["model"]), models[0])
         update_system_config({"advanced": {"allow_user_llm_config": True}})
-        update_user_config("user-1", {"llm": {"provider": "deepseek", "model": "deepseek-v4-flash"}})
+        update_user_config("user-1", {"llm": {"default_model_id": deepseek_model["id"]}})
         merged = get_merged_config("user-1")
-        assert merged["llm"]["provider"] == "deepseek"
+        assert merged["llm"]["model"] == deepseek_model["model"]
 
 
 class TestMergedConfig:

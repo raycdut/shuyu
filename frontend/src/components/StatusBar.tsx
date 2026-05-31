@@ -1,4 +1,5 @@
 import React from 'react'
+import { useTranslation } from 'react-i18next'
 
 interface StatusBarProps {
   llmModel: string
@@ -8,11 +9,8 @@ interface StatusBarProps {
   sessionTitle?: string
 }
 
-/**
- * 状态栏组件
- * 在底部显示当前会话标题、数据库连接和 LLM 模型状态
- */
 const StatusBar = React.memo(function StatusBar({ llmModel, llmName, llmConnected, dbName, sessionTitle }: StatusBarProps) {
+  const { t } = useTranslation()
   return (
     <footer className="flex-shrink-0 flex items-center justify-between px-4 py-1.5 bg-white/70 ink-border border-b-0 border-x-0 text-[11px] text-ink-lighter">
       <div className="flex items-center gap-4">
@@ -35,9 +33,7 @@ const StatusBar = React.memo(function StatusBar({ llmModel, llmName, llmConnecte
           <span className="font-medium text-ink-light">{dbName}</span>
         </span>
 
-        {/* 模型 + 连接状态指示灯 */}
         <span className="flex items-center gap-1.5">
-          {/* 状态圆点 */}
           <span
             className={`inline-block w-2 h-2 rounded-full transition-colors duration-300 ${
               llmConnected === null
@@ -48,10 +44,10 @@ const StatusBar = React.memo(function StatusBar({ llmModel, llmName, llmConnecte
             }`}
             title={
               llmConnected === null
-                ? '检测中…'
+                ? t('statusBar.checking')
                 : llmConnected
-                  ? '已连接'
-                  : '未连接'
+                  ? t('statusBar.connected')
+                  : t('statusBar.disconnected')
             }
           />
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

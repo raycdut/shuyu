@@ -98,6 +98,7 @@ async def chat(req: ChatRequest):
     tok_qr = state.request_query_results.set(query_results_collector)
     tok_conn = state.request_active_connector.set(None)
     tok_schema = state.request_schema_prompt.set(None)
+    tok_db = state.request_active_db_id.set(req.db_id or None)
     active_connector = None
     db_entry = None
     if req.db_id:
@@ -112,15 +113,30 @@ async def chat(req: ChatRequest):
         full_schema_text = None
         same_db = req.db_id and req.db_id == session.metadata.get("_cached_db_id")
         if same_db and "_schema" in session.metadata:
-            # Reuse cached connector and schema
-            active_connector = session.metadata.get("_connector")
-            state.request_active_connector.set(active_connector)
-            state.request_active_db_id.set(req.db_id)
+            # Reuse cached schema, but always create a fresh connector per request
             schema_text = session.metadata["_schema"]
             full_schema_text = session.metadata.get("_schema_full")
-            if full_schema_text:
-                state.request_schema_prompt.set(full_schema_text)
-            logger.info(f"Session {session_id}: reuse cached connection ({db_entry['name']})")
+            try:
+                db_path = db_entry.get("path", "")
+                if db_path.startswith("~"):
+                    db_path = Path(db_path).expanduser().resolve()
+                active_connector = DuckDBConnector(
+                    db_path=str(db_path),
+                    include_tables=db_entry.get("include_tables"),
+                    exclude_tables=db_entry.get("exclude_tables"),
+                )
+                active_connector.connect()
+                state.request_active_connector.set(active_connector)
+                state.request_active_db_id.set(req.db_id)
+                if full_schema_text:
+                    state.request_schema_prompt.set(full_schema_text)
+                logger.info(f"Session {session_id}: reuse cached schema ({db_entry['name']})")
+            except Exception as e:
+                logger.error(f"Failed to connect to {db_entry['name']}: {e}")
+                agent_messages.insert(0, {
+                    "role": "system",
+                    "content": f"注意：你已选择数据库「{db_entry['name']}」，但无法连接（{e}）。请告知用户。"
+                })
         else:
             # First time or DB changed — connect fresh
             try:
@@ -142,7 +158,6 @@ async def chat(req: ChatRequest):
                 logger.info(f"Connected to {db_entry['name']}: {len(tables)} tables")
 
                 # Cache in session
-                session.metadata["_connector"] = active_connector
                 session.metadata["_schema"] = schema_text
                 session.metadata["_schema_full"] = full_schema_text
                 session.metadata["_cached_db_id"] = req.db_id
@@ -192,6 +207,7 @@ async def chat(req: ChatRequest):
     finally:
         state.request_schema_prompt.reset(tok_schema)
         state.request_active_connector.reset(tok_conn)
+        state.request_active_db_id.reset(tok_db)
         state.request_sql_queries.reset(tok_sql)
         state.request_query_results.reset(tok_qr)
         if active_connector:
@@ -256,6 +272,7 @@ async def chat_stream(req: ChatRequest):
             tok_qr = state.request_query_results.set(query_results_collector)
             tok_conn = state.request_active_connector.set(None)
             tok_schema = state.request_schema_prompt.set(None)
+            tok_db = state.request_active_db_id.set(req.db_id or None)
             active_connector = None
             db_entry = None
             if req.db_id:
@@ -269,11 +286,19 @@ async def chat_stream(req: ChatRequest):
                 same_db = req.db_id and req.db_id == session.metadata.get("_cached_db_id")
                 try:
                     if same_db and "_schema" in session.metadata:
-                        active_connector = session.metadata.get("_connector")
-                        state.request_active_connector.set(active_connector)
-                        state.request_active_db_id.set(req.db_id)
                         schema_text = session.metadata["_schema"]
                         full_schema_text = session.metadata.get("_schema_full")
+                        db_path = db_entry.get("path", "")
+                        if db_path.startswith("~"):
+                            db_path = Path(db_path).expanduser().resolve()
+                        active_connector = DuckDBConnector(
+                            db_path=str(db_path),
+                            include_tables=db_entry.get("include_tables"),
+                            exclude_tables=db_entry.get("exclude_tables"),
+                        )
+                        active_connector.connect()
+                        state.request_active_connector.set(active_connector)
+                        state.request_active_db_id.set(req.db_id)
                         if full_schema_text:
                             state.request_schema_prompt.set(full_schema_text)
                     else:
@@ -292,7 +317,6 @@ async def chat_stream(req: ChatRequest):
                         schema_text = build_schema_light(tables, req.db_id)
                         full_schema_text = build_schema_prompt(tables, req.db_id)
                         state.request_schema_prompt.set(full_schema_text)
-                        session.metadata["_connector"] = active_connector
                         session.metadata["_schema"] = schema_text
                         session.metadata["_schema_full"] = full_schema_text
                         session.metadata["_cached_db_id"] = req.db_id
@@ -364,6 +388,7 @@ async def chat_stream(req: ChatRequest):
 
             state.request_schema_prompt.reset(tok_schema)
             state.request_active_connector.reset(tok_conn)
+            state.request_active_db_id.reset(tok_db)
             state.request_sql_queries.reset(tok_sql)
             state.request_query_results.reset(tok_qr)
             if active_connector:

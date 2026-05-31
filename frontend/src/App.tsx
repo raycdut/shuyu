@@ -1,15 +1,16 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import AppLayout from './components/AppLayout'
+import IndexPage from './pages/IndexPage'
 import ChatPage from './pages/ChatPage'
-import Dashboard from './components/Dashboard'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import AdminSettingsPage from './pages/AdminSettingsPage'
-import DatabaseManagerPage from './pages/DatabaseManagerPage'
 import { useAuthStore } from './store/authStore'
+import { useTranslation } from 'react-i18next'
 
 export default function App() {
+  const { t } = useTranslation()
   const user = useAuthStore(s => s.user)
   const isInitialized = useAuthStore(s => s.isInitialized)
 
@@ -20,7 +21,7 @@ export default function App() {
   if (!isInitialized) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-paper-light">
-        <p className="text-ink-lighter font-kai">加载中…</p>
+        <p className="text-ink-lighter font-kai">{t('app.loading')}</p>
       </div>
     )
   }
@@ -38,10 +39,9 @@ export default function App() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route path="/" element={<ChatPage />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/" element={<IndexPage />} />
+        <Route path="/chat" element={<ChatPage />} />
         <Route path="/admin" element={<AdminSettingsPage />} />
-        <Route path="/databases" element={<DatabaseManagerPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

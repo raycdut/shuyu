@@ -1,11 +1,10 @@
 import React, { useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
 import type { Session, DatabaseInfo, SchemaTable } from '../types'
 import { api } from '../api'
-import DBConnectModal from './DBConnectModal'
 import DBConfigModal from './DBConfigModal'
 import SessionItem from './Sidebar/SessionItem'
 import DbTableNode from './Sidebar/DbTableNode'
+import { useTranslation } from 'react-i18next'
 
 interface SidebarProps {
   open: boolean
@@ -36,8 +35,7 @@ const Sidebar = React.memo(function Sidebar({
   onDatabasesChange,
   onClearAllSessions,
 }: SidebarProps) {
-  const navigate = useNavigate()
-  const [showDBModal, setShowDBModal] = useState(false)
+  const { t } = useTranslation()
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
   const [expandedDb, setExpandedDb] = useState<string | null>(null)
@@ -111,14 +109,14 @@ const Sidebar = React.memo(function Sidebar({
       <aside className="w-56 flex-shrink-0 flex flex-col bg-paper-light/50 overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="flex items-center justify-between px-3 py-2">
-            <span className="text-xs text-ink-lighter font-kai tracking-wider">历史会话</span>
+            <span className="text-xs text-ink-lighter font-kai tracking-wider">{t('sidebar.historySessions')}</span>
             <div className="flex items-center gap-1">
               {sessions.length > 0 && (
                 <button
                   onClick={() => setShowClearConfirm(true)}
-                  aria-label="清空所有会话"
+                  aria-label={t('sidebar.clearAllSessions')}
                   className="p-1 rounded-sm text-ink-lighter hover:text-cinnabar hover:bg-smoke transition-colors"
-                  title="清空所有会话"
+                  title={t('sidebar.clearAllSessions')}
                 >
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
@@ -127,9 +125,9 @@ const Sidebar = React.memo(function Sidebar({
               )}
               <button
                 onClick={onNewSession}
-                aria-label="新建会话"
+                aria-label={t('sidebar.newSession')}
                 className="p-1 rounded-sm text-ink-light hover:text-celadon hover:bg-smoke transition-colors"
-                title="新建会话"
+                title={t('sidebar.newSession')}
               >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -139,16 +137,16 @@ const Sidebar = React.memo(function Sidebar({
           </div>
 
           {today.length > 0 && (
-            <>{sectionTitle('今天')}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.today'))}{today.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {thisWeek.length > 0 && (
-            <>{sectionTitle('本周')}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.thisWeek'))}{thisWeek.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {earlier.length > 0 && (
-            <>{sectionTitle('更早')}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
+            <>{sectionTitle(t('sidebar.earlier'))}{earlier.map(s => <SessionItem key={s.id} session={s} isActive={s.id === activeSessionId} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onRequestDelete={handleRequestDelete} />)}</>
           )}
           {sessions.length === 0 && (
-            <div className="px-3 py-6 text-center text-xs text-ink-lighter font-kai">暂无历史会话</div>
+            <div className="px-3 py-6 text-center text-xs text-ink-lighter font-kai">{t('sidebar.noHistorySessions')}</div>
           )}
         </div>
 
@@ -156,7 +154,7 @@ const Sidebar = React.memo(function Sidebar({
 
         <div className="flex-shrink-0 overflow-y-auto max-h-64">
           <div className="px-3 py-2 flex items-center justify-between">
-            <span className="text-xs text-ink-lighter font-kai tracking-wider">数据库</span>
+            <span className="text-xs text-ink-lighter font-kai tracking-wider">{t('sidebar.database')}</span>
             {databases.length > 0 && (
               <button
                 onClick={() => {
@@ -169,9 +167,9 @@ const Sidebar = React.memo(function Sidebar({
                     onDatabasesChange();
                   }
                 }}
-                aria-label="刷新数据库列表"
+                aria-label={t('sidebar.refreshDatabaseList')}
                 className="p-1 rounded-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors"
-                title="刷新数据库列表"
+                title={t('sidebar.refreshDatabaseList')}
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                   <polyline points="23 4 23 10 17 10" />
@@ -181,7 +179,7 @@ const Sidebar = React.memo(function Sidebar({
             )}
           </div>
           {databases.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-ink-lighter font-kai">尚未添加数据库</div>
+            <div className="px-3 py-2 text-xs text-ink-lighter font-kai">{t('sidebar.noDatabases')}</div>
           ) : (
             databases.map(db => (
               <div key={db.id} className="relative group">
@@ -202,12 +200,12 @@ const Sidebar = React.memo(function Sidebar({
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); setConfigDb(db) }}
-                  aria-label="数据库配置"
+                  aria-label={t('sidebar.databaseConfig')}
                   className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 rounded-sm
                     opacity-0 group-hover:opacity-100
                     text-ink-lighter hover:text-celadon hover:bg-smoke
                     transition-all duration-200"
-                  title="数据库配置"
+                  title={t('sidebar.databaseConfig')}
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -227,41 +225,8 @@ const Sidebar = React.memo(function Sidebar({
               </div>
             ))
           )}
-
-          <button
-            onClick={() => setShowDBModal(true)}
-            className="w-full text-left px-3 py-1.5 text-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors flex items-center gap-2"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            添加数据库
-          </button>
-          {(
-            <button
-              onClick={() => navigate('/databases')}
-              className="w-full text-left px-3 py-1.5 text-sm text-ink-lighter hover:text-celadon hover:bg-smoke transition-colors flex items-center gap-2"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="3" y="3" width="7" height="7" rx="1" />
-                <rect x="14" y="3" width="7" height="7" rx="1" />
-                <rect x="3" y="14" width="7" height="7" rx="1" />
-                <rect x="14" y="14" width="7" height="7" rx="1" />
-              </svg>
-              数据库管理
-            </button>
-          )}
         </div>
       </aside>
-
-      <DBConnectModal
-        open={showDBModal}
-        onClose={() => setShowDBModal(false)}
-        onConnected={() => {
-          setShowDBModal(false)
-          onDatabasesChange()
-        }}
-      />
 
       <DBConfigModal
         open={configDb !== null}
@@ -276,7 +241,7 @@ const Sidebar = React.memo(function Sidebar({
       {confirmDeleteId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
           <div className="bg-paper-light paper-shadow-md rounded-sm p-6 max-w-sm">
-            <p className="text-sm text-ink mb-4">确定要删除这个会话吗？此操作不可恢复。</p>
+            <p className="text-sm text-ink mb-4">{t('sidebar.confirmDeleteSession')}</p>
             <div className="flex justify-end gap-3">
               <button onClick={() => setConfirmDeleteId(null)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">取消</button>
               <button onClick={() => handleDelete(confirmDeleteId)} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">删除</button>
@@ -288,11 +253,11 @@ const Sidebar = React.memo(function Sidebar({
       {showClearConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={() => setShowClearConfirm(false)}>
           <div className="bg-paper-light paper-shadow-md rounded-sm p-6 max-w-sm mx-4" onClick={e => e.stopPropagation()}>
-            <p className="text-sm text-ink mb-2">确定要清空所有会话？</p>
-            <p className="text-xs text-ink-lighter mb-4 font-kai">此操作不可恢复，共 {sessions.length} 个会话将被删除。</p>
+            <p className="text-sm text-ink mb-2">{t('sidebar.confirmClearAllSessions')}</p>
+            <p className="text-xs text-ink-lighter mb-4 font-kai">{t('sidebar.clearAllHint', { count: sessions.length })}</p>
             <div className="flex justify-end gap-3">
-              <button onClick={() => setShowClearConfirm(false)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">取消</button>
-              <button onClick={() => { setShowClearConfirm(false); if (onClearAllSessions) onClearAllSessions() }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">清空</button>
+              <button onClick={() => setShowClearConfirm(false)} className="px-3 py-1.5 text-sm text-ink-light hover:bg-smoke rounded-sm transition-colors">{t('common.cancel')}</button>
+              <button onClick={() => { setShowClearConfirm(false); if (onClearAllSessions) onClearAllSessions() }} className="px-3 py-1.5 text-sm text-white bg-cinnabar hover:bg-cinnabar-light rounded-sm transition-colors">{t('sidebar.confirmClear')}</button>
             </div>
           </div>
         </div>

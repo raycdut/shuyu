@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Message, SchemaTable } from '../types'
 import React from 'react'
 import MessageBubble from './MessageBubble'
@@ -12,20 +13,21 @@ interface ChatProps {
   onModeChange: (mode: string) => void
 }
 
-const EXAMPLE_QUESTIONS = [
-  '有哪些数据表？',
-  '给我看看数据概况',
-  '帮我分析一下数据',
-]
-
 /**
  * 聊天主区域组件
  * 包含消息列表展示和输入框
  */
 const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mode, onModeChange }: ChatProps) {
+  const { t } = useTranslation()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const EXAMPLE_QUESTIONS = [
+    t('chat.quickQuestion1'),
+    t('chat.quickQuestion2'),
+    t('chat.quickQuestion3'),
+  ]
 
   // 自动滚动到底部
   useEffect(() => {
@@ -65,14 +67,14 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
           // 空状态
           <div className="h-full flex flex-col items-center justify-center text-center">
             <div className="text-4xl mb-4 opacity-20">📊</div>
-            <h2 className="text-lg font-song text-ink-light mb-2">你好，我是你的数据分析助手</h2>
+            <h2 className="text-lg font-song text-ink-light mb-2">{t('chat.greetingTitle')}</h2>
             <p className="text-sm text-ink-lighter font-kai mb-6 max-w-md">
-              你可以直接问我关于数据的问题，我会查询数据库并回答你。
+              {t('chat.greetingDescription')}
             </p>
 
             {/* 快捷示例问题 */}
             <div className="space-y-2">
-              <p className="text-xs text-ink-lighter font-kai mb-3">试试这些问题：</p>
+              <p className="text-xs text-ink-lighter font-kai mb-3">{t('chat.tryThese')}</p>
               {EXAMPLE_QUESTIONS.map((q, i) => (
                 <button
                   key={i}
@@ -91,7 +93,7 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
             {schema.length > 0 && (
               <div className="mt-8 text-center">
                 <p className="text-xs text-ink-lighter font-kai mb-2">
-                  已发现 {schema.length} 张数据表
+                  {t('chat.databaseInfo', { count: schema.length })}
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {schema.map(t => (
@@ -122,7 +124,7 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" />
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
                 <span className="w-2 h-2 bg-celadon rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
-                <span className="text-xs ml-1">正在分析…</span>
+                <span className="text-xs ml-1">{t('chat.analyzing')}</span>
               </div>
             </div>
           </div>
@@ -141,7 +143,7 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="给 Shuyu 发送消息"
+              placeholder={t('chat.placeholder')}
               rows={1}
               className="w-full bg-transparent resize-none min-h-[52px] max-h-[180px] py-3 px-4 text-sm leading-relaxed outline-none"
               disabled={isLoading}
@@ -161,7 +163,7 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
                   <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
                     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
                   </svg>
-                  快速
+                  {t('chat.quickMode')}
                 </button>
                 <button
                   onClick={() => onModeChange('quality')}
@@ -175,7 +177,7 @@ const Chat = React.memo(function Chat({ messages, isLoading, onSend, schema, mod
                     <circle cx="12" cy="12" r="10" />
                     <path d="M12 6v6l4 2" />
                   </svg>
-                  深度分析
+                  {t('chat.deepMode')}
                 </button>
               </div>
               {/* 右侧：发送按钮 */}

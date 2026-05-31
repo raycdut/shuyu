@@ -356,3 +356,13 @@ def _log_config_change(config_type: str, user_id: str | None, changed_by: str, s
         (config_type, user_id, changed_by, summary, diff, datetime.now(timezone.utc).isoformat()),
     )
     db.commit()
+
+
+def log_user_management_change(changed_by: str, summary: str, target_user_id: str | None = None, diff: str | None = None):
+    """Record a user management operation (create / update / delete user) into config_changelog."""
+    _log_config_change("user_mgmt", target_user_id, changed_by, summary, diff)
+
+
+def log_database_change(changed_by: str, summary: str, diff: str | None = None):
+    """Record a database management operation (connect / update / delete / schema) into config_changelog."""
+    _log_config_change("database", None, changed_by, summary, diff)

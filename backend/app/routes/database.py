@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import logging
 import os
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from .. import state
+from ..auth.middleware import get_current_user, require_admin
 from ..persistence.database import save_db_connections_sqlite
 from ..persistence.schema import (
     get_schema_status,
@@ -116,7 +118,7 @@ async def get_database_tables(db_id: str):
 
 
 @router.post("/api/database/connect")
-async def connect_database(req: DBConnectRequest):
+async def connect_database(req: DBConnectRequest, _admin: dict = Depends(require_admin)):
     """Register a new database connection."""
     logger.info(f"POST /api/database/connect: name={req.name} type={req.type}")
 
@@ -141,6 +143,13 @@ async def connect_database(req: DBConnectRequest):
     }
     state._db_connections.append(entry)
     save_db_connections_sqlite()
+
+    from ..admin_config.service import log_database_change
+    log_database_change(
+        _admin["username"],
+        f"添加数据库连接: {entry['name']} (类型: {req.type})",
+    )
+
     return {"ok": True, "id": db_id, "message": f"已添加数据库 {entry['name']}"}
 
 
@@ -165,35 +174,58 @@ async def test_database_connection(req: DBConnectRequest):
 
 
 @router.delete("/api/database/{db_id}")
-async def disconnect_database(db_id: str):
+async def disconnect_database(db_id: str, _admin: dict = Depends(require_admin)):
     """Remove a registered database."""
     logger.info(f"DELETE /api/database/{db_id}")
+    entry = next((d for d in state._db_connections if d["id"] == db_id), None)
+    db_name = entry["name"] if entry else db_id
     state._db_connections = [d for d in state._db_connections if d["id"] != db_id]
     save_db_connections_sqlite()
+
+    from ..admin_config.service import log_database_change
+    log_database_change(
+        _admin["username"],
+        f"删除数据库连接: {db_name}",
+    )
+
     return {"ok": True}
 
 
 @router.patch("/api/database/{db_id}")
-async def update_database(db_id: str, req: Request):
-    """Update database connection settings (e.g. table filters)."""
+async def update_database(db_id: str, req: Request, _admin: dict = Depends(require_admin)):
+    """Update database connection settings."""
     body = await req.json()
-    logger.info(f"PATCH /api/database/{db_id}: include={body.get('include_tables')} exclude={body.get('exclude_tables')}")
+    logger.info(f"PATCH /api/database/{db_id}")
 
     entry = next((d for d in state._db_connections if d["id"] == db_id), None)
     if not entry:
         raise HTTPException(404, f"Database '{db_id}' not found")
 
-    if "include_tables" in body:
-        entry["include_tables"] = body["include_tables"]
-    if "exclude_tables" in body:
-        entry["exclude_tables"] = body["exclude_tables"]
+    # Update allowed fields
+    changed_fields = []
+    for field in ("name", "path", "connection_string", "host", "port", "user", "password", "database",
+                  "include_tables", "exclude_tables"):
+        if field in body:
+            old_val = entry.get(field)
+            new_val = body[field]
+            if old_val != new_val:
+                changed_fields.append(field)
+            entry[field] = body[field]
 
     save_db_connections_sqlite()
+
+    if changed_fields:
+        from ..admin_config.service import log_database_change
+        log_database_change(
+            _admin["username"],
+            f"更新数据库连接: {entry['name']} — 修改字段: {', '.join(changed_fields)}",
+        )
+
     return {"ok": True, "message": f"已更新 {entry['name']} 的配置"}
 
 
 @router.post("/api/database/{db_id}/schema/import")
-async def import_schema(db_id: str, req: SchemaImportRequest):
+async def import_schema(db_id: str, req: SchemaImportRequest, _admin: dict = Depends(require_admin)):
     """Connect to a database and import its schema (tables & columns) into local storage."""
     logger.info(f"POST /api/database/{db_id}/schema/import")
 
@@ -266,6 +298,13 @@ async def import_schema(db_id: str, req: SchemaImportRequest):
         tables_count = len(tables_data)
         columns_count = sum(len(t["columns"]) for t in tables_data)
         logger.info(f"Schema imported: {tables_count} tables, {columns_count} columns")
+
+        from ..admin_config.service import log_database_change
+        log_database_change(
+            _admin["username"],
+            f"导入数据库 Schema: {entry['name']} → {tables_count} 张表，{columns_count} 个字段",
+        )
+
         return {
             "ok": True,
             "tables_count": tables_count,
@@ -307,7 +346,7 @@ async def get_schema_status_endpoint(db_id: str):
 
 
 @router.post("/api/database/{db_id}/schema/describe")
-async def generate_descriptions(db_id: str, req: DescriptionGenerateRequest):
+async def generate_descriptions(db_id: str, req: DescriptionGenerateRequest, _admin: dict = Depends(require_admin)):
     """Use Agent to generate Chinese descriptions for tables and columns."""
     logger.info(f"POST /api/database/{db_id}/schema/describe")
 
@@ -327,11 +366,20 @@ async def generate_descriptions(db_id: str, req: DescriptionGenerateRequest):
             language=req.language or "zh",
             force=req.force or False,
         )
+        tables_described = result.get("tables_count", 0)
+        columns_described = result.get("columns_count", 0)
+
+        from ..admin_config.service import log_database_change
+        log_database_change(
+            _admin["username"],
+            f"AI 生成描述: {entry['name']} → {tables_described} 张表",
+        )
+
         return {
             "ok": True,
-            "tables_described": result.get("tables_count", 0),
-            "columns_described": result.get("columns_count", 0),
-            "message": f"已为 {result.get('tables_count', 0)} 张表生成描述",
+            "tables_described": tables_described,
+            "columns_described": columns_described,
+            "message": f"已为 {tables_described} 张表生成描述",
         }
     except Exception as e:
         logger.error(f"Description generation failed: {e}")
@@ -339,7 +387,7 @@ async def generate_descriptions(db_id: str, req: DescriptionGenerateRequest):
 
 
 @router.patch("/api/database/{db_id}/schema/describe")
-async def update_description_endpoint(db_id: str, req: DescriptionUpdateRequest):
+async def update_description_endpoint(db_id: str, req: DescriptionUpdateRequest, _admin: dict = Depends(require_admin)):
     """Manually update the description of a table or column."""
     logger.info(f"PATCH /api/database/{db_id}/schema/describe")
 
@@ -354,7 +402,16 @@ async def update_description_endpoint(db_id: str, req: DescriptionUpdateRequest)
         table_id=req.table_id,
         column_id=req.column_id,
         description=req.description,
+        description_en=req.description_en,
     )
+
+    target_name = req.table_id or req.column_id or ""
+    from ..admin_config.service import log_database_change
+    log_database_change(
+        _admin["username"],
+        f"更新描述: {entry['name']} → {'表' if req.table_id else '字段'} {target_name}",
+    )
+
     return {"ok": True, "message": "描述已更新"}
 
 

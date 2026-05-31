@@ -24,7 +24,7 @@ describe('MessageBubble', () => {
 
   it('shows agent name for assistant messages', () => {
     render(<MessageBubble message={msg({ role: 'assistant', content: '回答' })} />)
-    expect(screen.getByText('Data Chat')).toBeInTheDocument()
+    expect(screen.getByText('数语')).toBeInTheDocument()
   })
 
   it('renders markdown table', () => {
