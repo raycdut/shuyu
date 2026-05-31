@@ -1,5 +1,7 @@
 **Shuyu (数语)** — An open-source, ChatGPT-like data analyst. Ask questions in plain language, get answers from your database. Built-in ReAct agent (no LangChain), LLM-agnostic, Song-dynasty aesthetic UI.
 
+> ⚠️ **Work in progress** — under active development. DuckDB connector works today; more databases coming soon.
+
 Supports DuckDB, PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, Redshift, ClickHouse, MSSQL, Oracle, and any JDBC/ODBC database via connection string.
 
 ```bash
