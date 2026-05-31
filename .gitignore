@@ -10,4 +10,6 @@ __pycache__/
 data/
 backend/data/
 .reasonix/
-\n# Coverage artifacts\n.coverage
+
+# Coverage artifacts
+.coverage
