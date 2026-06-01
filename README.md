@@ -119,6 +119,8 @@ Browser (React) ──→ FastAPI ──→ ReAct Agent Loop
 
 The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
 
+> **Note:** The official DeepSeek API ([api.deepseek.com](https://api.deepseek.com)) has been thoroughly tested and is the recommended LLM provider. Other providers (OpenAI, Ollama, OpenAI-compatible APIs) are supported but have not been extensively tested.
+
 ---
 
 ## Project Structure
@@ -238,6 +240,8 @@ docker compose up -d
 | OpenAI | API key | 标准费率 |
 | Ollama（本地） | 无需 key | 免费，零泄露 |
 | 任何兼容 OpenAI 的 API | Base URL + Key | 自定 |
+
+> **说明：** 官方 DeepSeek API（[api.deepseek.com](https://api.deepseek.com)）经过充分测试，是最推荐的 LLM 提供商。其他提供商（OpenAI、Ollama、兼容 OpenAI 的 API）虽支持但未做充分测试。
 
 ## 技术沉淀
 
