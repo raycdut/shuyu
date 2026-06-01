@@ -9,6 +9,15 @@ from app.agent.tools.sql_tool import handle_sql_query
 from app.db.duckdb import DuckDBConnector
 
 
+@pytest.fixture(autouse=True)
+def setup_sql_gen_prompt():
+    """Set up sql_gen_prompt in state so handle_sql_query can access it."""
+    import app.state as state
+    state.sql_gen_prompt = "根据以下表结构生成 SQL。\n{schema_prompt}\n请生成 SQL 查询语句。"
+    yield
+    state.sql_gen_prompt = None
+
+
 @pytest.fixture
 def memory_db():
     """Create an in-memory DuckDB with a sample table."""
