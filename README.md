@@ -1,56 +1,105 @@
-**Shuyu (数语)** — An open-source, ChatGPT-like data analyst. Ask questions in plain language, get answers from your database. Built-in ReAct agent (no LangChain), LLM-agnostic, Song-dynasty aesthetic UI.
+<p align="center">
+  <img src="https://img.shields.io/github/license/raycdut/shuyu?color=%237ba893" alt="License">
+  <img src="https://img.shields.io/github/actions/workflow/status/raycdut/shuyu/ci.yml?branch=main&label=CI&color=%237ba893" alt="CI">
+  <img src="https://img.shields.io/badge/python-3.11-%232c2c2c" alt="Python">
+  <img src="https://img.shields.io/badge/react-18-%237ba893" alt="React">
+  <img src="https://img.shields.io/badge/license-MIT-%232c2c2c" alt="MIT">
+</p>
 
-> ⚠️ **Work in progress** — under active development. DuckDB connector works today; more databases coming soon.
+# Shuyu (数语) — Open-Source Conversational Data Analyst
 
-Supports DuckDB, PostgreSQL, MySQL, SQLite, Snowflake, BigQuery, Redshift, ClickHouse, MSSQL, Oracle, and any JDBC/ODBC database via connection string.
+**Talk to any database in plain language. Built-in ReAct agent, no LangChain. LLM-agnostic. Multi-database.**
 
 ```bash
 docker compose up -d
-# Open http://localhost:3000 → configure → start asking
+# Open http://localhost:3000 → configure LLM + database → start asking
 ```
 
-# 数语 (Shuyu)
+---
 
-> Talk to your database like ChatGPT.  
-> 开源的数据库对话助手，docker compose up 就能用。
+## What is Shuyu?
+
+Shuyu is an **open-source, ChatGPT-like data analyst** for non-technical users. Instead of writing SQL or building dashboards, you type questions in plain Chinese or English — the agent writes the SQL, queries your database, and returns the answer.
+
+Built for **small businesses, startup teams, and anyone who has data but no BI team**.
+
+### How it works
 
 ```
-"上月赚了多少？"
-    ↓
-Agent writes SQL → queries your DB → returns answer
-    ↓
-"跟去年比呢？"
-    ↓
-Agent remembers → generates comparison SQL → shows the trend
+"上月赚了多少？"                                 "跟去年比呢？"
+       ↓                                               ↓
+  ┌─────────────────────────────────────────────────────────┐
+  │  Agent writes SQL → queries your DB → returns answer    │
+  │  Context preserved across turns → multi-turn analysis   │
+  └─────────────────────────────────────────────────────────┘
 ```
 
-## Who is this for?
+No training. No dashboard building. No SQL required.
 
-**Small businesses and non-technical users** who have data in a database but can't afford a BI team.
+---
 
-- Warehouse inventory in DuckDB? → Agent reads it, you ask questions
-- E-commerce store on Postgres? → Agent sees your tables, you ask about sales
-- Want to know last month's sales? → Just type the question, no SQL needed
+## Features
 
-No training. No dashboard building. Just type what you want to know.
+| Feature | Description |
+|---------|-------------|
+| 🗣️ **Natural language queries** | Ask in Chinese or English — the agent interprets intent, generates SQL, and returns answers |
+| 🔄 **Multi-turn conversations** | Follow-up questions preserve context. *"What about last month?"* |
+| 🧠 **Custom ReAct agent** | Self-built ReAct loop — no LangChain, no LangGraph. See every step |
+| 🎯 **Dual-mode analysis** | Fast mode (ReAct) for precise questions, Deep mode (Plan→Reflect→Execute→Report) for complex analysis |
+| 🔌 **Multi-database** | DuckDB ✅, MySQL ✅ — PostgreSQL, Snowflake, and more coming |
+| 🔐 **Privacy-first** | Read-only mode, data approval gate, max row limits. Run fully offline with Ollama |
+| 🎨 **Song dynasty UI** | Traditional Chinese aesthetic — ink, celadon, rice paper colors |
+| 📁 **Database tree** | SSMS-like tree view in the sidebar — browse tables and columns |
+| 💾 **Session persistence** | Conversations survive restarts (SQLite-backed) |
+| 🐳 **One-command deploy** | `docker compose up -d` — backend, frontend, database all in one |
+
+---
 
 ## Quick Start
 
 ```bash
 docker compose up -d
-# Open http://localhost:3000 → configure LLM + database in the right panel → start asking
 ```
 
-## Features
+Then open **http://localhost:3000**, register an account, configure your LLM (DeepSeek/OpenAI/Ollama) and database connection in the settings panel, and start asking questions.
 
-- **Natural language queries** — ask questions in plain Chinese/English, get answers
-- **Multi-turn conversation** — follow-up questions, context preserved
-- **ReAct agent loop** — self-built, no heavy framework (no LangChain/LangGraph)
-- **LLM-agnostic** — OpenAI, DeepSeek, Ollama, or any OpenAI-compatible API
-- **Database tree** — SSMS-like tree view of tables and columns in the sidebar
-- **Table filtering** — include/exclude tables by pattern (`fct_*`, `dim_*`)
-- **Session history** — conversations persist across restarts (SQLite)
-- **Song dynasty UI** — traditional Chinese aesthetic (ink, celadon, rice paper)
+---
+
+## Database Support
+
+| Database | Status |
+|----------|--------|
+| **DuckDB** (local `.duckdb`/`.db` files) | ✅ Working |
+| **MySQL / MariaDB** | ✅ Working (feature branch) |
+| **SQLite** | ⏳ Coming soon |
+| **PostgreSQL** | ⏳ Coming soon |
+| **Snowflake** | 🚧 Planned |
+| **BigQuery** | 🚧 Planned |
+| **Redshift** | 🚧 Planned |
+| **ClickHouse** | 🚧 Planned |
+| **MSSQL Server** | 🚧 Planned |
+| **Oracle** | 🚧 Planned |
+| **Databricks** | 🚧 Planned |
+
+Each database type is a thin connector (~100 lines of Python) implementing the `DatabaseConnector` interface.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.11 + FastAPI |
+| Frontend | React 18 + Tailwind CSS + Vite |
+| Agent | Custom ReAct loop (no LangChain) |
+| Data Storage | DuckDB (analytics) + SQLite (config, sessions) |
+| Auth | JWT + bcrypt |
+| LLM Providers | OpenAI, DeepSeek, Ollama, any OpenAI-compatible API |
+| Vector Store | ChromaDB |
+| CI/CD | GitHub Actions (3 jobs: backend + frontend + docker) |
+| Deployment | Docker Compose |
+
+---
 
 ## Architecture
 
@@ -60,12 +109,16 @@ Browser (React) ──→ FastAPI ──→ ReAct Agent Loop
                         ┌──────────┼──────────┐
                         ▼          ▼          ▼
                     SQL Tool    RAG Tool    Session
-                    (DuckDB)    (ChromaDB)  Manager
+                    (connector) (ChromaDB)  Manager
                         │                     │
                         ▼                     ▼
                    analytics.db          config.db
                    (your data)           (SQLite config + history)
 ```
+
+The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
+
+---
 
 ## Project Structure
 
@@ -76,69 +129,141 @@ shuyu/
 │   │   ├── main.py            # API routes + startup
 │   │   ├── config.py          # Default config (no YAML needed)
 │   │   ├── agent/
-│   │   │   ├── loop.py        # ReAct agent loop
-│   │   │   └── tools/         # SQL tool, tool registry
-│   │   ├── db/                # Database connectors (DuckDB, etc.)
-│   │   ├── session/           # SQLite-backed session manager
+│   │   │   ├── simple_agent.py    # ReAct loop
+│   │   │   ├── advanced_agent.py  # Plan→Reflect→Execute→Report
+│   │   │   └── tools/             # SQL tool, tool registry
+│   │   ├── db/                # Database connectors (DuckDB, MySQL, base)
+│   │   ├── auth/              # JWT + bcrypt auth
+│   │   ├── admin_config/      # Admin settings API
+│   │   ├── routes/            # Chat, config, database, schema routes
 │   │   └── models/            # Pydantic schemas
 │   ├── Dockerfile
 │   └── requirements.txt
-├── frontend/                  # React + Tailwind CSS
+├── frontend/                  # React + Tailwind CSS + Vite
 │   ├── src/
-│   │   ├── App.tsx
-│   │   ├── components/        # Sidebar, Chat, ConfigPanel, etc.
-│   │   ├── api/               # API client
-│   │   └── types/             # TypeScript types
+│   │   ├── components/        # Sidebar, Chat, ConfigPanel, MessageBubble, etc.
+│   │   ├── pages/             # Chat, Login, Register, Admin, Database manager
+│   │   ├── store/             # Zustand state management
+│   │   ├── hooks/             # useChatStream, useSessions, useDatabases
+│   │   └── i18n/              # Multi-language support
 │   ├── package.json
-│   └── vite.config.ts
+│   └── Dockerfile (nginx)
 ├── docker-compose.yml         # One-command deploy
-└── docs/                      # Design specs
-    ├── ui-spec.md
-    └── phase1-prompt.md
+└── docs/                      # Design specs (19 design documents)
 ```
+
+---
 
 ## Configuration
 
 No YAML files needed. All settings are configured through the web UI and persisted in SQLite:
 
-- **LLM** — provider, API key, model, base URL
-- **Database** — connection info, table filters
-- **Safety** — read-only mode, data approval, max rows
+- **LLM** — provider, API key, model, base URL, connection test
+- **Database** — connection info, table include/exclude filters
+- **Safety** — read-only mode, data approval gate, max rows limit
+- **Prompt management** — customize system prompts per agent mode
 
-Settings survive restarts.
+All settings survive restarts.
 
-## Database Support
+---
 
-| Type | Status |
-|------|--------|
-| DuckDB (local file) | ✅ Working |
-| SQLite | ⏳ Coming soon |
-| PostgreSQL | ⏳ Coming soon |
-| MySQL / MariaDB | ⏳ Coming soon |
-| Snowflake | 🚧 Planned |
-| BigQuery | 🚧 Planned |
-| Redshift | 🚧 Planned |
-| ClickHouse | 🚧 Planned |
-| MSSQL Server | 🚧 Planned |
-| Oracle | 🚧 Planned |
-| Databricks | 🚧 Planned |
-| Trino / Starburst | 🚧 Planned |
+## Why no LangChain?
 
-Any JDBC/ODBC-compatible database can be added via a connector plugin.
+Shuyu's ReAct agent loop is built from scratch (~300 lines). This means:
 
-> **Architecture**: Each database type is a thin connector implementing the `DatabaseConnector` interface (`backend/app/db/base.py`). Adding a new database is ~100 lines of Python.
+- ✅ Full control over every step — no framework surprises
+- ✅ Easy to debug — single-threaded, linear execution
+- ✅ 109+ tests — comprehensive coverage
+- ✅ Lightweight — no dependency bloat
+- ✅ **Better for interviews** — you can explain every line
 
-## Tech Stack
+---
 
-| Component | Choice |
-|-----------|--------|
-| Backend | FastAPI (Python 3.11) |
-| Frontend | React 18 + Tailwind CSS + Vite |
-| Agent Loop | Custom ReAct (no framework) |
-| Database | DuckDB (analytics) / SQLite (config + sessions) |
-| Vector Store | ChromaDB |
-| LLM | OpenAI / DeepSeek / Ollama / any OpenAI-compatible API |
+## Comparison
+
+| | Shuyu | Databricks Genie | WrenAI |
+|---|---|---|---|
+| Open source | ✅ MIT | ❌ Proprietary | ✅ Apache 2.0 |
+| Self-hosted | ✅ `docker compose up` | ❌ Cloud only | ✅ Docker |
+| Agent | Custom ReAct | Unknown | LangChain-based |
+| UI | Song dynasty aesthetic | Standard enterprise | Modern dashboard |
+| Database connectors | DuckDB + MySQL | Delta Lake | PostgreSQL |
+| Privacy | ✅ Read-only + approval gate | Enterprise controls | Data masking |
+
+---
 
 ## License
 
-MIT — free to use, modify, and deploy.
+MIT — free to use, modify, and deploy. See [LICENSE](./LICENSE).
+
+---
+
+# 数语 (Shuyu) — 开源数据库对话助手
+
+> 像 ChatGPT 一样跟数据库对话。docker compose up 就能用。
+
+## 谁适合用？
+
+**小公司老板和非技术用户**——有数据但没有 BI 团队。
+
+- 仓库库存数据在 DuckDB 里？→ Agent 帮你查
+- 电商订单在 MySQL 里？→ 直接打字问销售额
+- 想知道上月利润？→ 打字就行，不用写 SQL
+
+不用培训，不用搭仪表盘，直接问。
+
+## 快速开始
+
+```bash
+git clone https://github.com/raycdut/shuyu.git
+cd shuyu
+docker compose up -d
+```
+
+打开 http://localhost:3000 → 注册账号 → 配置 LLM（DeepSeek / OpenAI / Ollama）→ 连接数据库 → 开始提问。
+
+## 适用场景
+
+- **电商运营**：查询每日/每月销售额、订单趋势、客户分析
+- **仓库管理**：库存盘点、出入库统计、商品周转率
+- **财务分析**：收入支出对比、毛利计算、同比环比
+- **制造业**：生产数据查询、质量统计、设备效率分析
+
+## 支持的 LLM
+
+| Provider | 配置方式 | 费用 |
+|----------|---------|------|
+| DeepSeek | API key | 极低 (~$0.02/次分析) |
+| OpenAI | API key | 标准费率 |
+| Ollama（本地） | 无需 key | 免费，零泄露 |
+| 任何兼容 OpenAI 的 API | Base URL + Key | 自定 |
+
+## 技术沉淀
+
+- 自建 ReAct Agent Loop，不依赖 LangChain/LangGraph
+- 双模式分析：快速模式（ReAct）+ 深度模式（Plan→Reflect→Execute→Report→Reflect）
+- 多数据库连接器抽象：DuckDB ✅ / MySQL ✅ / PostgreSQL ⏳
+- 前后端分离：React + Tailwind + FastAPI
+- 宋氏美学 UI：水墨色、青瓷绿、宣纸白配色
+- 完整用户体系：注册 / 登录 / JWT 鉴权 / 管理员设置
+- 19 篇架构设计文档
+- 109 个测试用例，CI 全自动验证
+
+## 贡献
+
+欢迎提交 Issue 和 PR。当前优先需要的贡献：
+
+- PostgreSQL 连接器
+- 更多数据库类型支持
+- Docker Compose 自动配置指南
+
+## 联系
+
+- GitHub: [raycdut/shuyu](https://github.com/raycdut/shuyu)
+- 作者：陈冬 (Ray Chen) — Senior Data Engineer
+
+---
+
+<p align="center">
+  <sub>Made with ❤️ and a lot of tea. 宋氏美学 · 自建 Agent · 开源 MIT</sub>
+</p>
