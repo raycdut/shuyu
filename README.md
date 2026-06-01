@@ -104,18 +104,9 @@ Each database type is a thin connector (~100 lines of Python) implementing the `
 
 ## Architecture
 
-```
-Browser (React) ──→ FastAPI ──→ ReAct Agent Loop
-                                   │
-                        ┌──────────┼──────────┐
-                        ▼          ▼          ▼
-                    SQL Tool    RAG Tool    Session
-                    (connector) (ChromaDB)  Manager
-                        │                     │
-                        ▼                     ▼
-                   analytics.db          config.db
-                   (your data)           (SQLite config + history)
-```
+<p align="center">
+  <img src="docs/assets/shuyu-architecture.svg" alt="Shuyu Architecture Diagram" width="100%">
+</p>
 
 The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
 
