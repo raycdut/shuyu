@@ -62,7 +62,8 @@ def decrypt_value(ciphertext: str | None) -> str | None:
         return plain.decode("utf-8")
     except Exception:
         # If decryption fails, probably encryption key changed.
-        # Return empty string instead of raw ciphertext.
+        # Return empty string so the frontend shows a blank field,
+        # prompting the user to re-enter the password.
         return ""
 
 
