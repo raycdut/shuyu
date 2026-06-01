@@ -1,29 +1,6 @@
 import pytest
-import sqlite3
 import time
 from fastapi.testclient import TestClient
-
-
-@pytest.fixture(autouse=True)
-def setup_db():
-    import app.state as state
-    state._sqlite = sqlite3.connect(":memory:", check_same_thread=False)
-    state._sqlite.execute("PRAGMA journal_mode=WAL")
-    state._sqlite.execute("""
-        CREATE TABLE IF NOT EXISTS prompts (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            name       TEXT NOT NULL DEFAULT 'default',
-            content    TEXT NOT NULL,
-            version    INTEGER NOT NULL DEFAULT 1,
-            is_active  INTEGER NOT NULL DEFAULT 1,
-            created_at REAL NOT NULL
-        )
-    """)
-    from app.config import Config
-    state.config = Config()
-    yield
-    state._sqlite.close()
-    state._sqlite = None
 
 
 @pytest.fixture
@@ -51,56 +28,42 @@ class TestPromptPersistence:
         assert _get_default_prompt_content("unknown") is None
 
     def test_migrate_default_to_system(self):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("default", "old content", now),
-        )
-        state._sqlite.commit()
+        from app.configdb import _migrate_prompt_names
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
 
-        from app.persistence import _migrate_prompt_names
+        with scoped_session() as s:
+            s.add(Prompt(name="default", content="old content", version=1, is_active=1, created_at=time.time()))
+
         _migrate_prompt_names()
 
-        default_count = state._sqlite.execute(
-            "SELECT COUNT(*) FROM prompts WHERE name = 'default'"
-        ).fetchone()[0]
-        system_count = state._sqlite.execute(
-            "SELECT COUNT(*) FROM prompts WHERE name = 'system'"
-        ).fetchone()[0]
-        assert default_count == 0
-        assert system_count >= 1
-        content = state._sqlite.execute(
-            "SELECT content FROM prompts WHERE name = 'system'"
-        ).fetchone()[0]
-        assert content == "old content"
+        with scoped_session() as s:
+            default_count = s.query(Prompt).filter_by(name="default").count()
+            system_count = s.query(Prompt).filter_by(name="system").count()
+            assert default_count == 0
+            assert system_count >= 2
+            # "old content" should be the latest version (merged into system)
+            latest = s.query(Prompt).filter_by(name="system").order_by(Prompt.version.desc()).first()
+            assert latest.content == "old content"
 
     def test_migrate_merge_default_into_existing_system(self):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("system", "existing system", now),
-        )
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 0, ?)",
-            ("default", "old default", now + 1),
-        )
-        state._sqlite.commit()
+        from app.configdb import _migrate_prompt_names
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
 
-        from app.persistence import _migrate_prompt_names
+        with scoped_session() as s:
+            s.add(Prompt(name="system", content="existing system", version=1, is_active=1, created_at=time.time()))
+            s.add(Prompt(name="default", content="old default", version=1, is_active=0, created_at=time.time() + 1))
+
         _migrate_prompt_names()
 
-        default_count = state._sqlite.execute(
-            "SELECT COUNT(*) FROM prompts WHERE name = 'default'"
-        ).fetchone()[0]
-        assert default_count == 0
-        rows = state._sqlite.execute(
-            "SELECT content, version FROM prompts WHERE name = 'system' ORDER BY version"
-        ).fetchall()
-        contents = [r[0] for r in rows]
-        assert "existing system" in contents
-        assert "old default" in contents
+        with scoped_session() as s:
+            default_count = s.query(Prompt).filter_by(name="default").count()
+            assert default_count == 0
+            rows = s.query(Prompt).filter_by(name="system").order_by(Prompt.version).all()
+            contents = [r.content for r in rows]
+            assert "existing system" in contents
+            assert "old default" in contents
 
 
 class TestPromptAPI:
@@ -111,13 +74,10 @@ class TestPromptAPI:
         assert "prompts" in data
 
     def test_list_prompts_with_category(self, client):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("system", "test prompt", now),
-        )
-        state._sqlite.commit()
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
+        with scoped_session() as s:
+            s.add(Prompt(name="system", content="test prompt", version=1, is_active=1, created_at=time.time()))
 
         resp = client.get("/api/prompts?category=system")
         assert resp.status_code == 200
@@ -127,8 +87,8 @@ class TestPromptAPI:
 
     def test_create_prompt(self, client):
         resp = client.put("/api/prompts", json={
-            "category": "system",
-            "content": "new system prompt",
+            "category": "my_custom_prompt",
+            "content": "new custom prompt",
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -137,64 +97,46 @@ class TestPromptAPI:
 
     def test_create_prompt_increments_version(self, client):
         client.put("/api/prompts", json={
-            "category": "sql_gen",
+            "category": "test_ver_cat",
             "content": "version 1",
         })
         resp = client.put("/api/prompts", json={
-            "category": "sql_gen",
+            "category": "test_ver_cat",
             "content": "version 2",
         })
         assert resp.json()["version"] == 2
 
     def test_get_prompt_by_id(self, client):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("system", "test content", now),
-        )
-        state._sqlite.commit()
-        row = state._sqlite.execute("SELECT id FROM prompts WHERE name = 'system'").fetchone()
-        prompt_id = row[0]
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
+        with scoped_session() as s:
+            s.add(Prompt(name="test_custom", content="test content", version=1, is_active=1, created_at=time.time()))
+            prompt_id = s.query(Prompt).filter_by(name="test_custom").first().id
 
         resp = client.get(f"/api/prompts/{prompt_id}")
         assert resp.status_code == 200
         data = resp.json()
         assert data["content"] == "test content"
-        assert data["name"] == "system"
+        assert data["name"] == "test_custom"
 
     def test_activate_prompt_version(self, client):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("system", "v1", now),
-        )
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 2, 0, ?)",
-            ("system", "v2", now + 1),
-        )
-        state._sqlite.commit()
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
+        with scoped_session() as s:
+            s.add(Prompt(name="system", content="v1", version=1, is_active=1, created_at=time.time()))
+            s.add(Prompt(name="system", content="v2", version=2, is_active=0, created_at=time.time() + 1))
 
-        v1_id = state._sqlite.execute(
-            "SELECT id FROM prompts WHERE name = 'system' AND version = 1"
-        ).fetchone()[0]
-        v2_id = state._sqlite.execute(
-            "SELECT id FROM prompts WHERE name = 'system' AND version = 2"
-        ).fetchone()[0]
+        with scoped_session() as s:
+            v1 = s.query(Prompt).filter_by(name="system", version=1).first()
+            v2 = s.query(Prompt).filter_by(name="system", version=2).first()
 
-        resp = client.patch(f"/api/prompts/{v2_id}/activate")
+        resp = client.patch(f"/api/prompts/{v2.id}/activate")
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
-        v1_active = state._sqlite.execute(
-            "SELECT is_active FROM prompts WHERE id = ?", (v1_id,)
-        ).fetchone()[0]
-        v2_active = state._sqlite.execute(
-            "SELECT is_active FROM prompts WHERE id = ?", (v2_id,)
-        ).fetchone()[0]
-        assert v1_active == 0
-        assert v2_active == 1
+        with scoped_session() as s:
+            assert s.query(Prompt).filter_by(id=v1.id).first().is_active == 0
+            assert s.query(Prompt).filter_by(id=v2.id).first().is_active == 1
 
     def test_activate_nonexistent(self, client):
         resp = client.patch("/api/prompts/9999/activate")
@@ -202,22 +144,22 @@ class TestPromptAPI:
         assert resp.json()["ok"] is False
 
     def test_get_active_prompts(self, client):
-        import app.state as state
-        now = time.time()
-        state._sqlite.execute(
-            "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-            ("system", "active system", now),
-        )
-        state._sqlite.commit()
+        from app.configdb.base import scoped_session
+        from app.configdb.models.prompt import Prompt
+        with scoped_session() as s:
+            existing = s.query(Prompt).filter_by(name="exec_freeform", is_active=1).first()
+            if existing:
+                existing.is_active = 0
+            s.add(Prompt(name="exec_freeform", content="active test content", version=2, is_active=1, created_at=time.time()))
 
         resp = client.get("/api/prompts/active")
         assert resp.status_code == 200
         data = resp.json()
-        assert "system" in data
-        assert data["system"]["content"] == "active system"
-        assert data["system"]["version"] == 1
+        assert "exec_freeform" in data
+        assert data["exec_freeform"]["content"] == "active test content"
+        assert data["exec_freeform"]["version"] == 2
         assert "sql_gen" in data
-        assert data["sql_gen"]["id"] is None  # fallback to default
+        assert data["sql_gen"]["id"] is not None
 
     def test_get_default_prompt(self, client):
         resp = client.get("/api/prompts/system/default")

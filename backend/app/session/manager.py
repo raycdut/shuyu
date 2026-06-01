@@ -1,4 +1,4 @@
-"""Session manager — handles multi-turn conversation memory with SQLite persistence.
+"""Session manager — handles multi-turn conversation memory with ConfigDB persistence.
 
 Uses sliding window + summary compression (same pattern as Hermes hot memory).
 """
@@ -6,9 +6,11 @@ Uses sliding window + summary compression (same pattern as Hermes hot memory).
 from __future__ import annotations
 
 import logging
-import sqlite3
 import time
 from typing import Any
+
+from ..configdb.base import scoped_session
+from ..configdb.models.session import Session as SessionModel, Message
 
 logger = logging.getLogger("shuyu.session")
 
@@ -17,9 +19,9 @@ KEEP_RECENT = 6
 
 
 class Session:
-    """A single conversation session, persisted to SQLite."""
+    """A single conversation session, persisted to ConfigDB."""
 
-    def __init__(self, session_id: str, title: str = "", sqlite: sqlite3.Connection | None = None):
+    def __init__(self, session_id: str, title: str = ""):
         self.session_id = session_id
         self.created_at = time.time()
         self.last_active = time.time()
@@ -27,7 +29,6 @@ class Session:
         self.summary: str = ""
         self.metadata: dict[str, Any] = {"title": title}
         self._title = title or ""
-        self._sqlite = sqlite
         logger.debug(f"Session created: {session_id}")
 
     @property
@@ -39,12 +40,14 @@ class Session:
         old = self._title
         self._title = value
         self.metadata["title"] = value
-        if self._sqlite:
-            self._sqlite.execute(
-                "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
-                (value, time.time(), self.session_id),
-            )
-            self._sqlite.commit()
+        try:
+            with scoped_session() as session:
+                session.query(SessionModel).filter_by(id=self.session_id).update({
+                    "title": value,
+                    "updated_at": time.time(),
+                })
+        except Exception:
+            pass
         logger.info(f"Session {self.session_id}: rename '{old}' -> '{value}'")
 
     def add_message(self, role: str, content: str, tool_calls: list = None) -> None:
@@ -56,17 +59,25 @@ class Session:
         logger.debug(f"Session {self.session_id}: +{role} msg ({len(content)} chars)")
         self._maybe_compress()
 
-        # Persist to SQLite
-        if self._sqlite:
-            self._sqlite.execute(
-                "INSERT OR IGNORE INTO sessions (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (self.session_id, self._title, self.created_at, self.last_active),
-            )
-            self._sqlite.execute(
-                "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)",
-                (self.session_id, role, content, time.time()),
-            )
-            self._sqlite.commit()
+        # Persist to ConfigDB
+        try:
+            with scoped_session() as session:
+                existing = session.query(SessionModel).filter_by(id=self.session_id).first()
+                if not existing:
+                    session.add(SessionModel(
+                        id=self.session_id,
+                        title=self._title,
+                        created_at=self.created_at,
+                        updated_at=self.last_active,
+                    ))
+                session.add(Message(
+                    session_id=self.session_id,
+                    role=role,
+                    content=content,
+                    created_at=time.time(),
+                ))
+        except Exception:
+            pass
 
     def add_tool_result(self, tool_call_id: str, content: str) -> None:
         self.last_active = time.time()
@@ -105,53 +116,49 @@ class Session:
 
 
 class SessionManager:
-    """Manages all active sessions, backed by SQLite."""
+    """Manages all active sessions, backed by ConfigDB."""
 
-    def __init__(self, sqlite_conn: sqlite3.Connection | None = None):
-        self._sqlite = sqlite_conn
+    def __init__(self):
         self._sessions: dict[str, Session] = {}
         self._timeout: int = 3600  # 1 hour
 
-        # Load existing sessions from SQLite
-        if self._sqlite:
-            try:
-                rows = self._sqlite.execute(
-                    "SELECT id, title, created_at, updated_at FROM sessions ORDER BY updated_at DESC"
-                ).fetchall()
-                logger.info(f"Loading {len(rows)} sessions from SQLite...")
-                for sid, title, created, updated in rows:
-                    sess = Session(sid, title or "", self._sqlite)
-                    sess.created_at = created
-                    sess.last_active = updated
+        # Load existing sessions from ConfigDB
+        try:
+            with scoped_session() as session:
+                rows = session.query(SessionModel).order_by(SessionModel.updated_at.desc()).all()
+                logger.info(f"Loading {len(rows)} sessions from ConfigDB...")
+                for m in rows:
+                    sess = Session(m.id, m.title or "")
+                    sess.created_at = m.created_at
+                    sess.last_active = m.updated_at
                     # Load messages
-                    msgs = self._sqlite.execute(
-                        "SELECT role, content FROM messages WHERE session_id = ? ORDER BY id",
-                        (sid,),
-                    ).fetchall()
-                    for role, content in msgs:
-                        sess.messages.append({"role": role, "content": content})
+                    msgs = session.query(Message).filter_by(session_id=m.id).order_by(Message.id).all()
+                    for msg in msgs:
+                        sess.messages.append({"role": msg.role, "content": msg.content})
                     # Auto-title from first user message
-                    for m in sess.messages:
-                        if m["role"] == "user" and not title:
-                            sess.title = m["content"][:30] + ("…" if len(m["content"]) > 30 else "")
+                    for msg in sess.messages:
+                        if msg["role"] == "user" and not m.title:
+                            sess.title = msg["content"][:30] + ("…" if len(msg["content"]) > 30 else "")
                             break
-                    self._sessions[sid] = sess
+                    self._sessions[m.id] = sess
                 logger.info(f"Loaded {len(self._sessions)} sessions ({sum(len(s.messages) for s in self._sessions.values())} messages)")
-            except Exception as e:
-                logger.error(f"Failed to load sessions: {e}")
+        except Exception as e:
+            logger.error(f"Failed to load sessions: {e}")
 
     def get_or_create(self, session_id: str) -> Session:
         if session_id not in self._sessions:
-            self._sessions[session_id] = Session(session_id, sqlite=self._sqlite)
+            self._sessions[session_id] = Session(session_id)
         return self._sessions[session_id]
 
     def delete(self, session_id: str) -> None:
         if session_id in self._sessions:
             del self._sessions[session_id]
-        if self._sqlite:
-            self._sqlite.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
-            self._sqlite.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
-            self._sqlite.commit()
+        try:
+            with scoped_session() as session:
+                session.query(Message).filter_by(session_id=session_id).delete()
+                session.query(SessionModel).filter_by(id=session_id).delete()
+        except Exception:
+            pass
 
     def rename(self, session_id: str, title: str) -> None:
         sess = self._sessions.get(session_id)
@@ -159,13 +166,15 @@ class SessionManager:
             sess.title = title
 
     def clear_all(self) -> int:
-        """Delete ALL sessions from memory and SQLite. Returns count of deleted sessions."""
+        """Delete ALL sessions from memory and ConfigDB. Returns count of deleted sessions."""
         count = len(self._sessions)
         self._sessions.clear()
-        if self._sqlite:
-            self._sqlite.execute("DELETE FROM messages")
-            self._sqlite.execute("DELETE FROM sessions")
-            self._sqlite.commit()
+        try:
+            with scoped_session() as session:
+                session.query(Message).delete()
+                session.query(SessionModel).delete()
+        except Exception:
+            pass
         logger.info(f"Cleared all {count} sessions")
         return count
 

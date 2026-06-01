@@ -54,8 +54,8 @@ class MySQLConnector(DatabaseConnector):
     def test_connection(self) -> bool:
         try:
             self._ensure_connected()
-            self._conn.execute("SELECT 1")
-            self._conn.fetchone()
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1")
             return True
         except Exception:
             return False

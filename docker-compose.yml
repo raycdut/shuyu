@@ -1,20 +1,66 @@
 version: "3.8"
 
 services:
+  mysql:
+    image: mysql:8.0
+    container_name: shuyu-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpass123}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-shuyu_config}
+      MYSQL_USER: ${MYSQL_USER:-shuyu}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-ShuyuPass123}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpass123}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - shuyu-net
+
   backend:
     build: ./backend
+    container_name: shuyu-backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
       - ./backend/data:/app/data
+    env_file:
+      - .env
     environment:
+      - CONFIGDB_URL=${CONFIGDB_URL:-}
       - LLM_API_KEY=${LLM_API_KEY:-}
-    restart: unless-stopped
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4o}
+      - LLM_API_BASE=${LLM_API_BASE:-}
+      - AUTH_SECRET_KEY=${AUTH_SECRET_KEY:-}
+      - AUTH_EXPIRE_MINUTES=${AUTH_EXPIRE_MINUTES:-1440}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - shuyu-net
 
   frontend:
     build: ./frontend
+    container_name: shuyu-frontend
+    restart: unless-stopped
     ports:
       - "3000:80"
     depends_on:
       - backend
-    restart: unless-stopped
+    networks:
+      - shuyu-net
+
+volumes:
+  mysql_data:
+
+networks:
+  shuyu-net:
+    driver: bridge

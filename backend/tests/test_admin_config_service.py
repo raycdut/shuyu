@@ -1,6 +1,5 @@
 import pytest
 import json
-import sqlite3
 from app.admin_config.service import (
     get_system_config,
     update_system_config,
@@ -14,43 +13,15 @@ from app.admin_config.service import (
 
 @pytest.fixture(autouse=True)
 def setup_db():
-    import app.state as state
-    state._sqlite = sqlite3.connect(":memory:")
-    state._sqlite.execute("PRAGMA journal_mode=WAL")
-    state._sqlite.executescript("""
-        CREATE TABLE IF NOT EXISTS system_config (
-            id          INTEGER PRIMARY KEY CHECK (id = 1),
-            config      TEXT NOT NULL DEFAULT '{}',
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_by  TEXT
-        );
-        CREATE TABLE IF NOT EXISTS user_configs (
-            user_id     TEXT PRIMARY KEY,
-            config      TEXT NOT NULL DEFAULT '{}',
-            updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-        CREATE TABLE IF NOT EXISTS config_changelog (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user', 'user_mgmt', 'database')),
-            user_id     TEXT,
-            changed_by  TEXT NOT NULL,
-            summary     TEXT NOT NULL,
-            diff        TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-    """)
     from app.auth.service import init_auth_config
     init_auth_config()
-    from app.config import Config
-    state.config = Config()
+    import app.state as state
     state.config.llm.api_key = "test-key"
     state.config.llm.api_base = "https://test.api.com"
     state.config.llm.timeout = 60
     state.config.llm.model = "gpt-4o"
     state.config.llm.provider = "openai"
     yield
-    state._sqlite.close()
-    state._sqlite = None
 
 
 class TestSystemConfig:

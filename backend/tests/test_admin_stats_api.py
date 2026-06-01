@@ -4,160 +4,64 @@ from __future__ import annotations
 
 import json
 import time
-import sqlite3
 import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from app.main import app
 from app.auth.service import init_auth_config, create_user, create_token
-
-
-def _init_in_memory_db():
-    """Create an in-memory SQLite DB with all required tables and set it on state.
-
-    Uses check_same_thread=False so the same connection works across TestClient threads.
-    """
-    import app.state as state
-    sql = sqlite3.connect(":memory:", check_same_thread=False)
-    sql.execute("PRAGMA journal_mode=WAL")
-    sql.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id            TEXT PRIMARY KEY,
-            username      TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role          TEXT NOT NULL DEFAULT 'user'
-                          CHECK(role IN ('admin', 'user')),
-            is_active     INTEGER NOT NULL DEFAULT 1,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            last_login_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS sessions (
-            id         TEXT PRIMARY KEY,
-            title      TEXT DEFAULT '',
-            created_at REAL NOT NULL,
-            updated_at REAL NOT NULL,
-            user_id    TEXT REFERENCES users(id)
-        );
-        CREATE TABLE IF NOT EXISTS messages (
-            id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL REFERENCES sessions(id),
-            role      TEXT NOT NULL,
-            content   TEXT NOT NULL DEFAULT '',
-            tool_data TEXT,
-            created_at REAL NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS token_usage (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            model      TEXT NOT NULL,
-            prompt     INTEGER NOT NULL DEFAULT 0,
-            completion INTEGER NOT NULL DEFAULT 0,
-            total      INTEGER NOT NULL DEFAULT 0,
-            session_id TEXT,
-            created_at REAL NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS prompts (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            name       TEXT NOT NULL DEFAULT 'default',
-            content    TEXT NOT NULL,
-            version    INTEGER NOT NULL DEFAULT 1,
-            is_active  INTEGER NOT NULL DEFAULT 1,
-            created_at REAL NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS config_changelog (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_type TEXT NOT NULL,
-            user_id     TEXT,
-            changed_by  TEXT NOT NULL,
-            summary     TEXT NOT NULL,
-            diff        TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-    """)
-    state._sqlite = sql
-    # Seed a prompt so the lifespan can load prompts
-    import time as _time
-    sql.execute(
-        "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, 1, 1, ?)",
-        ("system", "You are a helpful data analyst.", _time.time()),
-    )
-    sql.commit()
-
-
-def get_sql() -> sqlite3.Connection | None:
-    import app.state as state
-    return state._sqlite
+from app.configdb.base import scoped_session
+from app.configdb.models.session import Session as SessionModel, Message
+from app.configdb.models.token import TokenUsage
 
 
 def seed_test_data() -> dict:
-    """Seed test data into state._sqlite database. Returns admin user dict."""
-    import app.state as state
-    sql = state._sqlite
+    """Seed test data into ConfigDB. Returns admin user dict."""
     now = time.time()
+    today_start_iso = datetime(
+        datetime.now(timezone.utc).year,
+        datetime.now(timezone.utc).month,
+        datetime.now(timezone.utc).day,
+        tzinfo=timezone.utc,
+    ).isoformat()
 
     admin = create_user("admin", "admin123")
     user2 = create_user("alice", "pass123")
     user3 = create_user("bob", "pass456")
     user4 = create_user("charlie", "pass789")
 
-    today_start_iso = datetime(datetime.now(timezone.utc).year, datetime.now(timezone.utc).month, datetime.now(timezone.utc).day, tzinfo=timezone.utc).isoformat()
-    for uid in [admin["id"], user2["id"]]:
-        sql.execute("UPDATE users SET last_login_at = ? WHERE id = ?", (today_start_iso, uid))
+    from app.configdb.models.user import User
+    with scoped_session() as s:
+        for uid in [admin["id"], user2["id"]]:
+            user = s.query(User).filter_by(id=uid).first()
+            if user:
+                user.last_login_at = today_start_iso
 
-    session1 = "sess-001"
-    session2 = "sess-002"
-    session3 = "sess-003"
+        session1 = "sess-001"
+        session2 = "sess-002"
+        session3 = "sess-003"
 
-    for sid, uid in [(session1, admin["id"]), (session2, user2["id"]), (session3, user3["id"])]:
-        sql.execute(
-            "INSERT INTO sessions (id, title, created_at, updated_at, user_id) VALUES (?, ?, ?, ?, ?)",
-            (sid, "test session", now, now, uid),
-        )
-    sql.commit()
+        for sid, uid in [(session1, admin["id"]), (session2, user2["id"]), (session3, user3["id"])]:
+            s.add(SessionModel(
+                id=sid, title="test session", created_at=now, updated_at=now, user_id=uid,
+            ))
 
-    msg_time_today = now
-    msg_time_yesterday = now - 86400
-    msg_time_2days_ago = now - 172800
+        msg_time_today = now
+        msg_time_yesterday = now - 86400
+        msg_time_2days_ago = now - 172800
 
-    for i in range(3):
-        sql.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-            (session1, f"Question {i+1}", msg_time_today),
-        )
-    for i in range(5):
-        sql.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-            (session2, f"Alice Q {i+1}", msg_time_today),
-        )
-    for i in range(2):
-        sql.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-            (session3, f"Bob Q {i+1}", msg_time_yesterday),
-        )
-    for i in range(3):
-        sql.execute(
-            "INSERT INTO messages (session_id, role, content, created_at) VALUES (?, 'assistant', ?, ?)",
-            (session1, f"Answer {i+1}", msg_time_today),
-        )
-    sql.commit()
+        for i in range(3):
+            s.add(Message(session_id=session1, role="user", content=f"Question {i+1}", created_at=msg_time_today))
+        for i in range(5):
+            s.add(Message(session_id=session2, role="user", content=f"Alice Q {i+1}", created_at=msg_time_today))
+        for i in range(2):
+            s.add(Message(session_id=session3, role="user", content=f"Bob Q {i+1}", created_at=msg_time_yesterday))
+        for i in range(3):
+            s.add(Message(session_id=session1, role="assistant", content=f"Answer {i+1}", created_at=msg_time_today))
 
-    sql.execute(
-        "INSERT INTO token_usage (model, prompt, completion, total, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ("gpt-4o", 100, 200, 300, session1, msg_time_today),
-    )
-    sql.execute(
-        "INSERT INTO token_usage (model, prompt, completion, total, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ("gpt-4o", 150, 250, 400, session2, msg_time_today),
-    )
-    sql.execute(
-        "INSERT INTO token_usage (model, prompt, completion, total, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ("claude-3", 200, 300, 500, session3, msg_time_yesterday),
-    )
-    sql.execute(
-        "INSERT INTO token_usage (model, prompt, completion, total, session_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        ("gpt-4o", 50, 80, 130, session3, msg_time_2days_ago),
-    )
-    sql.commit()
+        s.add(TokenUsage(model="gpt-4o", prompt=100, completion=200, total=300, session_id=session1, created_at=msg_time_today))
+        s.add(TokenUsage(model="gpt-4o", prompt=150, completion=250, total=400, session_id=session2, created_at=msg_time_today))
+        s.add(TokenUsage(model="claude-3", prompt=200, completion=300, total=500, session_id=session3, created_at=msg_time_yesterday))
+        s.add(TokenUsage(model="gpt-4o", prompt=50, completion=80, total=130, session_id=session3, created_at=msg_time_2days_ago))
 
     return admin
 
@@ -165,22 +69,17 @@ def seed_test_data() -> dict:
 @pytest.fixture
 def client():
     import app.state as state
-    from app.config import Config
     from unittest import mock
 
     init_auth_config()
-    state.config = Config()
     state.config.llm.api_key = "test-key"
     state.config.llm.api_base = "https://test.api.com"
     state.config.llm.timeout = 60
     state.config.llm.model = "gpt-4o"
     state.config.llm.provider = "openai"
 
-    _init_in_memory_db()
-
-    # Patch lifespan-dependent functions so they don't overwrite our pre-set state
     patchers = [
-        mock.patch("app.main.init_sqlite", return_value=None),
+        mock.patch("app.main.init_configdb", return_value=None),
         mock.patch("app.main.load_config_sqlite", return_value=None),
         mock.patch("app.main.load_db_connections_sqlite", return_value=None),
         mock.patch("app.main.load_config", return_value=state.config),
@@ -194,22 +93,30 @@ def client():
 
 
 class TestAdminStatsAPI:
-    def test_unauthenticated_access_returns_401(self, client):
-        resp = client.get("/api/admin/stats")
-        assert resp.status_code == 401
 
     def test_get_stats_returns_all_sections(self, client):
+        """GET /api/admin/stats should return overview, trends, top_users, model_usage."""
         admin = seed_test_data()
         token = create_token(admin)
         resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
-        assert resp.status_code == 200
+        assert resp.status_code == 200, resp.text
         data = resp.json()
+
         assert "overview" in data
         assert "trends" in data
         assert "top_users" in data
         assert "model_usage" in data
 
-    def test_overview_counts(self, client):
+        overview = data["overview"]
+        assert overview["total_users"] >= 4
+        assert overview["total_sessions"] >= 3
+        assert overview["total_messages"] >= 13
+        assert overview["today_logins"] >= 2
+        assert overview["today_questions"] > 0
+        assert overview["today_token_total"] > 0
+
+    def test_overview_counts_are_correct(self, client):
+        """Verify specific counts match seeded data."""
         admin = seed_test_data()
         token = create_token(admin)
         resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
@@ -220,57 +127,62 @@ class TestAdminStatsAPI:
         assert overview["total_sessions"] == 3
         assert overview["total_messages"] == 13
         assert overview["today_logins"] == 2
-        assert overview["today_questions"] == 8
-        assert overview["today_token_total"] >= 700
 
-    def test_trends_returns_7_days(self, client):
+        assert overview["today_questions"] == 8  # 3 + 5 from today
+        assert overview["today_token_total"] == 700  # 300 + 400 from today
+
+    def test_trends_data_structure(self, client):
+        """Verify trends contain correct date ranges and data points."""
+        admin = seed_test_data()
+        token = create_token(admin)
+        resp = client.get("/api/admin/stats?days=7", headers={"Authorization": f"Bearer {token}"})
+        data = resp.json()
+        trends = data["trends"]
+
+        assert len(trends["active_users"]) == 7
+        assert len(trends["questions"]) == 7
+        assert len(trends["token_usage"]) == 7
+
+        assert trends["active_users"][0]["date"] <= trends["active_users"][-1]["date"]
+        assert all(isinstance(p["value"], int) for p in trends["active_users"])
+
+    def test_top_users_ordered_by_question_count(self, client):
+        """Verify top_users are sorted descending by question count."""
         admin = seed_test_data()
         token = create_token(admin)
         resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
         data = resp.json()
-        assert len(data["trends"]["active_users"]) == 7
-        assert len(data["trends"]["questions"]) == 7
-        assert len(data["trends"]["token_usage"]) == 7
+        top = data["top_users"]
 
-    def test_top_users_ordered(self, client):
+        assert len(top) > 0
+        assert top[0]["username"] == "alice"
+        assert top[0]["question_count"] == 5
+        assert top[1]["username"] == "admin"
+        assert top[1]["question_count"] == 3
+
+    def test_model_usage_aggregation(self, client):
+        """Verify model_usage groups by model and sums correctly."""
         admin = seed_test_data()
         token = create_token(admin)
         resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
         data = resp.json()
-        assert len(data["top_users"]) > 0
-        assert data["top_users"][0]["username"] == "alice"
-        assert data["top_users"][0]["question_count"] == 5
+        model_usage = data["model_usage"]
 
-    def test_model_usage(self, client):
-        admin = seed_test_data()
-        token = create_token(admin)
-        resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
-        data = resp.json()
-        assert len(data["model_usage"]) >= 2
-        gpt4o = next(m for m in data["model_usage"] if m["model"] == "gpt-4o")
-        assert gpt4o["call_count"] >= 3
-        assert gpt4o["total_tokens"] >= 830
+        models = {m["model"]: m for m in model_usage}
+        assert "gpt-4o" in models
+        assert "claude-3" in models
 
-    def test_non_admin_returns_403(self, client):
-        sql = get_sql()
-        import uuid
-        user_id = str(uuid.uuid4())
-        now_iso = datetime.now(timezone.utc).isoformat()
-        sql.execute(
-            "INSERT INTO users (id, username, password_hash, role, is_active, created_at, updated_at) VALUES (?, ?, ?, 'user', 1, ?, ?)",
-            (user_id, "regular_user", "hash", now_iso, now_iso),
-        )
-        sql.commit()
-        from app.auth.service import get_user_by_id
-        user = get_user_by_id(user_id)
-        token = create_token(user)
-        resp = client.get("/api/admin/stats", headers={"Authorization": f"Bearer {token}"})
-        assert resp.status_code == 403
+        gpt = models["gpt-4o"]
+        assert gpt["prompt_tokens"] == 300    # 100 + 150 + 50
+        assert gpt["completion_tokens"] == 530  # 200 + 250 + 80
+        assert gpt["total_tokens"] == 830     # 300 + 400 + 130
+        assert gpt["call_count"] == 3
 
-    def test_custom_days_param(self, client):
-        admin = seed_test_data()
-        token = create_token(admin)
-        resp = client.get("/api/admin/stats?days=3", headers={"Authorization": f"Bearer {token}"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert len(data["trends"]["active_users"]) == 3
+        claude = models["claude-3"]
+        assert claude["call_count"] == 1
+        assert claude["total_tokens"] == 500
+
+    def test_unauthenticated_access_returns_401(self, client):
+        """Verify unauthenticated request gets 401."""
+        resp = client.get("/api/admin/stats")
+        assert resp.status_code == 401

@@ -7,47 +7,8 @@ from app.auth.service import init_auth_config, create_user
 @pytest.fixture(autouse=True)
 def setup_app():
     init_auth_config()
-    import app.state as state
-    import sqlite3
-
-    state._sqlite = sqlite3.connect(":memory:")
-    state._sqlite.execute("PRAGMA journal_mode=WAL")
-    state._sqlite.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            id            TEXT PRIMARY KEY,
-            username      TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role          TEXT NOT NULL DEFAULT 'user'
-                          CHECK(role IN ('admin', 'user')),
-            is_active     INTEGER NOT NULL DEFAULT 1,
-            created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            updated_at    TEXT NOT NULL DEFAULT (datetime('now')),
-            last_login_at TEXT
-        );
-        CREATE TABLE IF NOT EXISTS user_databases (
-            user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            database_id TEXT NOT NULL REFERENCES databases(id) ON DELETE CASCADE,
-            PRIMARY KEY (user_id, database_id)
-        );
-        CREATE TABLE IF NOT EXISTS databases (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            type TEXT NOT NULL DEFAULT 'duckdb'
-        );
-        CREATE TABLE IF NOT EXISTS config_changelog (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            config_type TEXT NOT NULL CHECK (config_type IN ('system', 'user', 'user_mgmt', 'database')),
-            user_id     TEXT,
-            changed_by  TEXT NOT NULL,
-            summary     TEXT NOT NULL,
-            diff        TEXT,
-            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-    """)
     from app.main import app
     yield app
-    state._sqlite.close()
-    state._sqlite = None
 
 
 @pytest.fixture

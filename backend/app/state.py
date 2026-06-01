@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import contextvars
 import sqlite3
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy.engine import Engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from .agent.tools.registry import ToolRegistry
 from .config import Config
@@ -26,10 +29,14 @@ connector = None  # legacy, always None in new architecture
 # --- Session management ---
 session_manager = None  # type: ignore[assignment]
 
-# --- Config/session persistence (SQLite) ---
+# --- ConfigDB (SQLAlchemy — supports SQLite and MySQL) ---
+_configdb_engine: Engine | None = None
+_configdb_session_factory: sessionmaker | None = None
+
+# --- Config/session persistence (SQLite — deprecated, kept for backward compat) ---
 _sqlite: sqlite3.Connection | None = None
 
-# --- Registered database connections (loaded from SQLite) ---
+# --- Registered database connections (loaded from ConfigDB) ---
 _db_connections: list[dict] = []
 
 # --- Per-request runtime context (do NOT store request-specific objects as globals) ---

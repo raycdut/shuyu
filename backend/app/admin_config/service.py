@@ -1,3 +1,5 @@
+"""Admin config service — system and user configuration management via SQLAlchemy ORM."""
+
 from __future__ import annotations
 
 import json
@@ -6,6 +8,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .. import state
+from ..configdb.base import scoped_session
+from ..configdb.models.config import SystemConfig, UserConfig, ConfigChangelog
 from ..utils.crypto import decrypt_value, encrypt_value
 
 logger = logging.getLogger("shuyu.main")
@@ -27,7 +31,7 @@ DEFAULT_SYSTEM_CONFIG: dict[str, Any] = {
             {
                 "id": "default-deepseek",
                 "name": "DeepSeek",
-                "provider": "openai",  # DeepSeek uses OpenAI compatible API
+                "provider": "openai",
                 "model": "deepseek-chat",
                 "api_key": "",
                 "api_base": "https://api.deepseek.com/v1",
@@ -69,38 +73,31 @@ DEFAULT_USER_CONFIG: dict[str, Any] = {
 }
 
 
-def _get_db():
-    if state._sqlite is None:
-        raise RuntimeError("Database not initialized")
-    return state._sqlite
-
-
 def get_system_config() -> dict[str, Any]:
-    db = _get_db()
-    row = db.execute("SELECT config FROM system_config WHERE id = 1").fetchone()
-    if not row:
-        return dict(DEFAULT_SYSTEM_CONFIG)
     try:
-        config = json.loads(row[0])
-        # Decrypt API keys transparently
-        models = config.get("llm", {}).get("models", [])
-        for m in models:
-            if m.get("api_key"):
-                m["api_key"] = decrypt_value(m["api_key"]) or ""
-        return config
-    except (json.JSONDecodeError, TypeError):
+        with scoped_session() as session:
+            row = session.query(SystemConfig).filter_by(id=1).first()
+            if not row:
+                return dict(DEFAULT_SYSTEM_CONFIG)
+            config = json.loads(row.config) if row.config else {}
+            if not config:
+                return dict(DEFAULT_SYSTEM_CONFIG)
+            models = config.get("llm", {}).get("models", [])
+            for m in models:
+                if m.get("api_key"):
+                    m["api_key"] = decrypt_value(m["api_key"]) or ""
+            return config
+    except (json.JSONDecodeError, TypeError, Exception):
         return dict(DEFAULT_SYSTEM_CONFIG)
 
 
 def _mask_api_key(key: str) -> str:
-    """Mask API key for safe display (show first 4 + last 4 chars if long enough)."""
     if not key or len(key) < 8:
         return ""
     return key[:4] + "••••" + key[-4:]
 
 
 def _unmask_and_merge_api_keys(old_models: list[dict], new_models: list[dict]) -> list[dict]:
-    """Merge API keys from old models if new ones are masked placeholders."""
     old_map = {m["id"]: m.get("api_key", "") for m in old_models if m.get("id")}
     result = []
     for m in new_models:
@@ -113,7 +110,6 @@ def _unmask_and_merge_api_keys(old_models: list[dict], new_models: list[dict]) -
 
 
 def _ensure_default_model(models: list[dict]) -> list[dict]:
-    """Ensure exactly one model has is_system_default=True."""
     defaults = [m for m in models if m.get("is_system_default")]
     if len(defaults) > 1:
         for m in defaults[1:]:
@@ -126,7 +122,6 @@ def _ensure_default_model(models: list[dict]) -> list[dict]:
 
 
 def update_system_config(config: dict[str, Any], updated_by: str | None = None) -> dict[str, Any]:
-    db = _get_db()
     old = get_system_config()
     merged = {**old}
 
@@ -134,17 +129,13 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
         if key in config and isinstance(config[key], dict):
             merged[key] = {**old.get(key, {}), **config[key]}
 
-    # Handle models list specially (full replacement, not dict merge)
     if "llm" in config:
         merged_llm = {**old.get("llm", {})}
         if "models" in config["llm"]:
             old_models = old.get("llm", {}).get("models", [])
             incoming = config["llm"]["models"]
-            # Preserve real API keys if masked values were sent
             incoming = _unmask_and_merge_api_keys(old_models, incoming)
-            # Ensure exactly one model is system default
             incoming = _ensure_default_model(incoming)
-            # Encrypt API keys before storing
             for m in incoming:
                 if m.get("api_key"):
                     m["api_key"] = encrypt_value(m["api_key"]) or ""
@@ -152,15 +143,17 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
         merged["llm"] = merged_llm
 
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "INSERT INTO system_config (id, config, updated_at, updated_by) VALUES (1, ?, ?, ?) "
-        "ON CONFLICT(id) DO UPDATE SET config = ?, updated_at = ?, updated_by = ?",
-        (json.dumps(merged), now, updated_by, json.dumps(merged), now, updated_by),
-    )
-    db.commit()
+    with scoped_session() as session:
+        row = session.query(SystemConfig).filter_by(id=1).first()
+        if row:
+            row.config = json.dumps(merged)
+            row.updated_at = now
+            row.updated_by = updated_by
+        else:
+            session.add(SystemConfig(id=1, config=json.dumps(merged), updated_at=now, updated_by=updated_by))
+
     _log_config_change("system", None, updated_by or "unknown", f"更新系统配置: {list(config.keys())}")
 
-    # Sync the default model's API key into runtime config so call_llm() picks it up immediately
     result = get_system_config()
     models = result.get("llm", {}).get("models", [])
     default_model = next((m for m in models if m.get("is_system_default")), models[0] if models else None)
@@ -179,7 +172,6 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
 
 
 def get_system_config_masked() -> dict[str, Any]:
-    """Return system config with API keys masked for frontend display."""
     config = get_system_config()
     models = config.get("llm", {}).get("models", [])
     for m in models:
@@ -189,18 +181,17 @@ def get_system_config_masked() -> dict[str, Any]:
 
 
 def get_user_config(user_id: str) -> dict[str, Any]:
-    db = _get_db()
-    row = db.execute("SELECT config FROM user_configs WHERE user_id = ?", (user_id,)).fetchone()
-    if not row:
-        return dict(DEFAULT_USER_CONFIG)
     try:
-        return json.loads(row[0])
-    except (json.JSONDecodeError, TypeError):
+        with scoped_session() as session:
+            row = session.query(UserConfig).filter_by(user_id=user_id).first()
+            if not row:
+                return dict(DEFAULT_USER_CONFIG)
+            return json.loads(row.config) if row.config else dict(DEFAULT_USER_CONFIG)
+    except (json.JSONDecodeError, TypeError, Exception):
         return dict(DEFAULT_USER_CONFIG)
 
 
 def update_user_config(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
-    db = _get_db()
     old = get_user_config(user_id)
     merged = {**old}
     for key in ("llm", "safety", "preferences"):
@@ -210,12 +201,13 @@ def update_user_config(user_id: str, config: dict[str, Any]) -> dict[str, Any]:
         temp_range = get_system_config().get("advanced", {}).get("llm_temperature_range", {"min": 0, "max": 0.5, "default": 0.3})
         merged["preferences"]["temperature"] = max(temp_range.get("min", 0), min(merged["preferences"]["temperature"], temp_range.get("max", 0.5)))
     now = datetime.now(timezone.utc).isoformat()
-    db.execute(
-        "INSERT INTO user_configs (user_id, config, updated_at) VALUES (?, ?, ?) "
-        "ON CONFLICT(user_id) DO UPDATE SET config = ?, updated_at = ?",
-        (user_id, json.dumps(merged), now, json.dumps(merged), now),
-    )
-    db.commit()
+    with scoped_session() as session:
+        row = session.query(UserConfig).filter_by(user_id=user_id).first()
+        if row:
+            row.config = json.dumps(merged)
+            row.updated_at = now
+        else:
+            session.add(UserConfig(user_id=user_id, config=json.dumps(merged), updated_at=now))
     _log_config_change("user", user_id, user_id, f"更新个人配置: {list(config.keys())}")
     overrides = {k: config[k] for k in config if k in merged}
     return {"merged": get_merged_config(user_id), "overrides": overrides}
@@ -231,13 +223,10 @@ def get_merged_config(user_id: str | None = None) -> dict[str, Any]:
 
 def _system_to_runtime(system: dict[str, Any]) -> dict[str, Any]:
     models = system.get("llm", {}).get("models", [])
-    # Find system default model, or first enabled one
     default_model = next((m for m in models if m.get("is_system_default")), None)
     if not default_model:
         default_model = next((m for m in models if m.get("enabled")), None)
-    
     if not default_model:
-        # Fallback to something safe
         return {
             "llm": {
                 "id": "fallback",
@@ -253,7 +242,6 @@ def _system_to_runtime(system: dict[str, Any]) -> dict[str, Any]:
                 "max_rows": system.get("safety", {}).get("max_rows", 1000),
             },
         }
-
     return {
         "llm": {
             "id": default_model.get("id"),
@@ -279,7 +267,6 @@ def _merge_configs(system: dict[str, Any], user: dict[str, Any]) -> dict[str, An
     user_safety = user.get("safety", {})
     user_prefs = user.get("preferences", {})
 
-    # If user has a default model selected
     user_default_id = user_llm.get("default_model_id")
     if user_default_id:
         models = system.get("llm", {}).get("models", [])
@@ -295,7 +282,6 @@ def _merge_configs(system: dict[str, Any], user: dict[str, Any]) -> dict[str, An
                 "timeout": target.get("timeout", 120),
             }
 
-    # Allow user to override API Key if needed (legacy or specific use cases)
     if user_llm.get("api_key"):
         runtime["llm"]["api_key"] = user_llm["api_key"]
 
@@ -334,7 +320,6 @@ def get_user_available_options(user_id: str) -> dict[str, Any]:
         }
         for m in models if m.get("enabled")
     ]
-    # Group by provider for backwards compatibility
     from collections import OrderedDict
     provider_groups: dict[str, dict] = OrderedDict()
     for m in enabled_models:
@@ -365,37 +350,40 @@ def get_user_available_options(user_id: str) -> dict[str, Any]:
 
 
 def get_config_changelog(config_type: str | None = None, limit: int = 50) -> list[dict]:
-    db = _get_db()
-    if config_type:
-        rows = db.execute(
-            "SELECT id, config_type, user_id, changed_by, summary, diff, created_at FROM config_changelog WHERE config_type = ? ORDER BY created_at DESC LIMIT ?",
-            (config_type, limit),
-        ).fetchall()
-    else:
-        rows = db.execute(
-            "SELECT id, config_type, user_id, changed_by, summary, diff, created_at FROM config_changelog ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    return [
-        {"id": r[0], "config_type": r[1], "user_id": r[2], "changed_by": r[3], "summary": r[4], "diff": r[5], "created_at": r[6]}
-        for r in rows
-    ]
+    try:
+        with scoped_session() as session:
+            q = session.query(ConfigChangelog)
+            if config_type:
+                q = q.filter_by(config_type=config_type)
+            rows = q.order_by(ConfigChangelog.created_at.desc()).limit(limit).all()
+            return [
+                {"id": r.id, "config_type": r.config_type, "user_id": r.user_id,
+                 "changed_by": r.changed_by, "summary": r.summary, "diff": r.diff,
+                 "created_at": r.created_at.isoformat() if hasattr(r.created_at, 'isoformat') else str(r.created_at)}
+                for r in rows
+            ]
+    except Exception:
+        return []
 
 
 def _log_config_change(config_type: str, user_id: str | None, changed_by: str, summary: str, diff: str | None = None):
-    db = _get_db()
-    db.execute(
-        "INSERT INTO config_changelog (config_type, user_id, changed_by, summary, diff, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-        (config_type, user_id, changed_by, summary, diff, datetime.now(timezone.utc).isoformat()),
-    )
-    db.commit()
+    try:
+        with scoped_session() as session:
+            session.add(ConfigChangelog(
+                config_type=config_type,
+                user_id=user_id,
+                changed_by=changed_by,
+                summary=summary,
+                diff=diff,
+                created_at=datetime.now(timezone.utc).isoformat(),
+            ))
+    except Exception:
+        pass
 
 
 def log_user_management_change(changed_by: str, summary: str, target_user_id: str | None = None, diff: str | None = None):
-    """Record a user management operation (create / update / delete user) into config_changelog."""
     _log_config_change("user_mgmt", target_user_id, changed_by, summary, diff)
 
 
 def log_database_change(changed_by: str, summary: str, diff: str | None = None):
-    """Record a database management operation (connect / update / delete / schema) into config_changelog."""
     _log_config_change("database", None, changed_by, summary, diff)

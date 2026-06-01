@@ -1,14 +1,17 @@
-"""Config routes — get/set config, test LLM connection"""
+"""Config routes — get/set config, test LLM connection, prompt management."""
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from .. import state
+from ..configdb.base import scoped_session
+from ..configdb.models.prompt import Prompt
 from ..persistence.config import save_config_sqlite
 from ..client import call_llm
 from ..models.config import ConfigUpdate, LLMTestResult
@@ -88,14 +91,12 @@ async def test_llm(req: Request, current_user: dict | None = Depends(optional_cu
     user_id = current_user["id"] if current_user else None
     merged = get_merged_config(user_id)
     
-    # Priority: 1. model_id lookup → 2. Request body → 3. User/System Config → 4. Env
     model_id = body.get("model_id")
     resolved_key = None
     resolved_base = None
     resolved_model = None
 
     if model_id:
-        # Look up the model by ID from the unmasked system config
         system = get_system_config()
         for m in system.get("llm", {}).get("models", []):
             if m.get("id") == model_id:
@@ -147,23 +148,21 @@ PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflec
 @router.get("/api/prompts")
 async def list_prompts(category: str | None = None):
     """List all prompt versions, optionally filtered by category."""
-    if state._sqlite is None:
+    try:
+        with scoped_session() as session:
+            q = session.query(Prompt)
+            if category:
+                q = q.filter_by(name=category)
+            rows = q.order_by(Prompt.created_at.desc()).all()
+            return {
+                "prompts": [
+                    {"id": r.id, "name": r.name, "version": r.version,
+                     "is_active": bool(r.is_active), "created_at": r.created_at}
+                    for r in rows
+                ]
+            }
+    except Exception:
         return {"prompts": []}
-    if category:
-        rows = state._sqlite.execute(
-            "SELECT id, name, version, is_active, created_at FROM prompts WHERE name = ? ORDER BY created_at DESC",
-            (category,),
-        ).fetchall()
-    else:
-        rows = state._sqlite.execute(
-            "SELECT id, name, version, is_active, created_at FROM prompts ORDER BY created_at DESC"
-        ).fetchall()
-    return {
-        "prompts": [
-            {"id": r[0], "name": r[1], "version": r[2], "is_active": bool(r[3]), "created_at": r[4]}
-            for r in rows
-        ]
-    }
 
 
 @router.get("/api/prompts/active")
@@ -172,42 +171,45 @@ async def get_active_prompts():
 
     Falls back to hardcoded defaults for categories without DB records.
     """
-    if state._sqlite is None:
-        return {cat: None for cat in PROMPT_CATEGORIES}
-    from ..persistence import _get_default_prompt_content
+    from ..configdb import _get_default_prompt_content
 
     result = {}
-    for cat in PROMPT_CATEGORIES:
-        row = state._sqlite.execute(
-            "SELECT id, content, version FROM prompts WHERE name = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
-            (cat,),
-        ).fetchone()
-        if row:
-            result[cat] = {"id": row[0], "content": row[1], "version": row[2]}
-        else:
-            default_content = _get_default_prompt_content(cat)
-            result[cat] = {"id": None, "content": default_content, "version": None}
+    try:
+        with scoped_session() as session:
+            for cat in PROMPT_CATEGORIES:
+                row = session.query(Prompt).filter_by(name=cat, is_active=1).order_by(
+                    Prompt.created_at.desc()
+                ).first()
+                if row:
+                    result[cat] = {"id": row.id, "content": row.content, "version": row.version}
+                else:
+                    default_content = _get_default_prompt_content(cat)
+                    result[cat] = {"id": None, "content": default_content, "version": None}
+    except Exception:
+        for cat in PROMPT_CATEGORIES:
+            result[cat] = {"id": None, "content": _get_default_prompt_content(cat), "version": None}
     return result
 
 
 @router.get("/api/prompts/{prompt_id}")
 async def get_prompt(prompt_id: int):
     """Get a specific prompt version."""
-    if state._sqlite is None:
-        return {"error": "no db"}
-    row = state._sqlite.execute(
-        "SELECT id, name, content, version, is_active, created_at FROM prompts WHERE id = ?",
-        (prompt_id,),
-    ).fetchone()
-    if not row:
+    try:
+        with scoped_session() as session:
+            row = session.query(Prompt).filter_by(id=prompt_id).first()
+            if not row:
+                return {"error": "not found"}
+            return {"id": row.id, "name": row.name, "content": row.content,
+                    "version": row.version, "is_active": bool(row.is_active),
+                    "created_at": row.created_at}
+    except Exception:
         return {"error": "not found"}
-    return {"id": row[0], "name": row[1], "content": row[2], "version": row[3], "is_active": bool(row[4]), "created_at": row[5]}
 
 
 @router.get("/api/prompts/{category}/default")
 async def get_default_prompt(category: str):
     """Get the hardcoded default prompt content for a category."""
-    from ..persistence import _get_default_prompt_content
+    from ..configdb import _get_default_prompt_content
 
     content = _get_default_prompt_content(category)
     if content is None:
@@ -227,37 +229,44 @@ async def upsert_prompt(req: Request):
     body = await req.json()
     content = body.get("content", "")
     category = body.get("category") or body.get("name", "system")
-    import time
 
-    if state._sqlite is None:
-        return {"ok": False, "error": "no db"}
+    try:
+        with scoped_session() as session:
+            row = session.query(Prompt.version).filter_by(name=category).order_by(
+                Prompt.version.desc()
+            ).first()
+            new_version = (row[0] if row else 0) + 1
 
-    row = state._sqlite.execute(
-        "SELECT MAX(version) FROM prompts WHERE name = ?", (category,)
-    ).fetchone()
-    new_version = (row[0] or 0) + 1
-
-    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (category,))
-    state._sqlite.execute(
-        "INSERT INTO prompts (name, content, version, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
-        (category, content, new_version, time.time()),
-    )
-    state._sqlite.commit()
-    return {"ok": True, "version": new_version}
+            session.query(Prompt).filter_by(name=category).update(
+                {"is_active": 0}, synchronize_session=False
+            )
+            session.add(Prompt(
+                name=category,
+                content=content,
+                version=new_version,
+                is_active=1,
+                created_at=time.time(),
+            ))
+        return {"ok": True, "version": new_version}
+    except Exception:
+        return {"ok": False, "error": "failed to save prompt"}
 
 
 @router.patch("/api/prompts/{prompt_id}/activate")
 async def activate_prompt_version(prompt_id: int):
     """Activate a specific prompt version, deactivating others in the same category."""
-    if state._sqlite is None:
-        return {"ok": False, "error": "no db"}
-    row = state._sqlite.execute(
-        "SELECT name FROM prompts WHERE id = ?", (prompt_id,)
-    ).fetchone()
-    if not row:
-        return {"ok": False, "error": "not found"}
-    category = row[0]
-    state._sqlite.execute("UPDATE prompts SET is_active = 0 WHERE name = ?", (category,))
-    state._sqlite.execute("UPDATE prompts SET is_active = 1 WHERE id = ?", (prompt_id,))
-    state._sqlite.commit()
-    return {"ok": True}
+    try:
+        with scoped_session() as session:
+            row = session.query(Prompt).filter_by(id=prompt_id).first()
+            if not row:
+                return {"ok": False, "error": "not found"}
+            category = row.name
+            session.query(Prompt).filter_by(name=category).update(
+                {"is_active": 0}, synchronize_session=False
+            )
+            session.query(Prompt).filter_by(id=prompt_id).update(
+                {"is_active": 1}, synchronize_session=False
+            )
+        return {"ok": True}
+    except Exception:
+        return {"ok": False, "error": "failed to activate prompt"}
