@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { ConfigChangeLogEntry } from '../../../types'
+import { PageHeader, LoadingState } from '../../../components/AdminSettings/Common'
+import { DataTable } from '../../../components/DataTable'
+import type { Column } from '../../../components/DataTable'
 
 export function ConfigLogTab() {
   const { t } = useTranslation()
@@ -12,52 +15,32 @@ export function ConfigLogTab() {
     api.getConfigChangelog().then(setLogs).finally(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="py-12 text-center text-ink-lighter font-kai">{t('common.loading')}</div>
+  const columns: Column<ConfigChangeLogEntry>[] = [
+    {
+      key: 'created_at',
+      header: t('configLog.colTime'),
+      className: 'w-48',
+      render: (v) => <span className="text-xs text-ink-lighter font-mono">{new Date(v).toLocaleString()}</span>,
+    },
+    {
+      key: 'changed_by',
+      header: t('configLog.colOperator'),
+      className: 'w-32',
+      render: (v) => <span className="text-xs font-semibold text-ink bg-tea/10 px-2 py-0.5 rounded-sm">{v}</span>,
+    },
+    {
+      key: 'summary',
+      header: t('configLog.colSummary'),
+      render: (v) => <span className="text-sm text-ink leading-relaxed">{v}</span>,
+    },
+  ]
+
+  if (loading) return <LoadingState />
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('configLog.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('configLog.subtitle')}</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-sm ink-border shadow-sm overflow-hidden w-full">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-smoke/50 text-left text-xs text-ink-lighter font-kai uppercase tracking-wider">
-              <th className="px-6 py-4 font-bold w-48">{t('configLog.colTime')}</th>
-              <th className="px-6 py-4 font-bold w-32">{t('configLog.colOperator')}</th>
-              <th className="px-6 py-4 font-bold">{t('configLog.colSummary')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-tea/20">
-            {logs.map(log => (
-              <tr key={log.id} className="hover:bg-smoke/10 transition-colors">
-                <td className="px-6 py-4 text-xs text-ink-lighter font-mono">
-                  {new Date(log.created_at).toLocaleString()}
-                </td>
-                <td className="px-6 py-4">
-                  <span className="text-xs font-semibold text-ink bg-tea/10 px-2 py-0.5 rounded-sm">
-                    {log.changed_by}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-sm text-ink leading-relaxed">
-                  {log.summary}
-                </td>
-              </tr>
-            ))}
-            {logs.length === 0 && (
-              <tr>
-                <td colSpan={3} className="px-6 py-12 text-center text-ink-lighter font-kai text-sm italic">
-                  {t('configLog.noRecords')}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <PageHeader title={t('configLog.title')} subtitle={t('configLog.subtitle')} />
+      <DataTable columns={columns} data={logs} emptyMessage={t('configLog.noRecords')} rowKey={l => l.id} />
     </div>
   )
 }

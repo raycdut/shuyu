@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DBConnectRequest, DatabaseInfo } from '../types'
 import { api } from '../api'
+import { Modal } from './Modal'
 
 interface DBConnectModalProps {
   open: boolean
@@ -114,22 +115,33 @@ export default function DBConnectModal({ open, onClose, onConnected, editDb }: D
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20" onClick={onClose}>
-      <div
-        className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[80vh] overflow-y-auto mx-4"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* 标题 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-base font-medium text-gray-800">{isEditing ? t('dbConnect.editTitle') : t('dbConnect.addTitle')}</h2>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+    <Modal
+      open
+      onClose={onClose}
+      title={isEditing ? t('dbConnect.editTitle') : t('dbConnect.addTitle')}
+      footer={
+        <div className="flex justify-end gap-3 w-full">
+          <button onClick={onClose} className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors">
+            {t('common.cancel')}
+          </button>
+          <button
+            onClick={handleTest}
+            disabled={testing}
+            className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors disabled:opacity-40"
+          >
+            {testing ? t('common.testing') : t('common.test')}
+          </button>
+          <button
+            onClick={handleConnect}
+            disabled={connecting}
+            className="h-9 px-4 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition-colors"
+          >
+            {connecting ? t('common.saving') : isEditing ? t('dbConnect.saveModify') : t('dbConnect.saveAndConnect')}
           </button>
         </div>
-
-        <div className="p-6 space-y-4">
+      }
+    >
+      <div className="space-y-4">
           {/* 数据库类型 */}
           <div>
             <label className="block text-xs text-gray-500 mb-1">{t('dbConnect.dbType')}</label>
@@ -241,29 +253,7 @@ export default function DBConnectModal({ open, onClose, onConnected, editDb }: D
               {error}
             </div>
           )}
-
-          {/* 按钮组 */}
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={onClose} className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors">
-              {t('common.cancel')}
-            </button>
-            <button
-              onClick={handleTest}
-              disabled={testing}
-              className="h-9 px-4 text-sm text-gray-600 hover:bg-gray-50 border border-gray-200 rounded-md transition-colors disabled:opacity-40"
-            >
-              {testing ? t('common.testing') : t('common.test')}
-            </button>
-            <button
-              onClick={handleConnect}
-              disabled={connecting}
-              className="h-9 px-4 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition-colors"
-            >
-              {connecting ? t('common.saving') : isEditing ? t('dbConnect.saveModify') : t('dbConnect.saveAndConnect')}
-            </button>
-          </div>
         </div>
-      </div>
-    </div>
+      </Modal>
   )
 }

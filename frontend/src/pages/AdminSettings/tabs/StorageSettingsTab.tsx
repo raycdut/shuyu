@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SettingSection } from '../../../components/AdminSettings/Common'
+import { SettingSection, PageHeader } from '../../../components/AdminSettings/Common'
 import { useAdminSettings } from '../AdminSettingsContext'
 
 export function StorageSettingsTab() {
@@ -11,13 +11,13 @@ export function StorageSettingsTab() {
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('storageSettings.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('storageSettings.subtitle')}</p>
-        </div>
-        <button onClick={() => save({ storage: { log_interval: logInterval, log_retention_days: retention } })} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>
-      </div>
+      <PageHeader
+        title={t('storageSettings.title')}
+        subtitle={t('storageSettings.subtitle')}
+        actions={
+          <button onClick={() => save({ storage: { log_interval: logInterval, log_retention_days: retention } })} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>
+        }
+      />
 
       <div className="max-w-2xl bg-white/40 p-8 rounded-sm border border-tea/30">
         <div className="space-y-8">

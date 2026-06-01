@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { AdminStatsResponse } from '../../../types'
+import { PageHeader, LoadingState } from '../../../components/AdminSettings/Common'
 
 /** Format large numbers with K/M suffix for compact display. */
 function formatNumber(n: number): string {
@@ -70,13 +71,8 @@ export function DashboardTab() {
   if (loading) {
     return (
       <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-          <div>
-            <h3 className="text-xl font-song font-bold text-ink">{t('adminDashboard.title')}</h3>
-            <p className="text-xs text-ink-lighter font-kai mt-1">{t('adminDashboard.subtitle')}</p>
-          </div>
-        </div>
-        <div className="py-12 text-center text-ink-lighter font-kai">{t('common.loading')}</div>
+        <PageHeader title={t('adminDashboard.title')} subtitle={t('adminDashboard.subtitle')} />
+        <LoadingState />
       </div>
     )
   }
@@ -84,15 +80,10 @@ export function DashboardTab() {
   if (error) {
     return (
       <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-        <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-          <div>
-            <h3 className="text-xl font-song font-bold text-ink">{t('adminDashboard.title')}</h3>
-            <p className="text-xs text-ink-lighter font-kai mt-1">{t('adminDashboard.subtitle')}</p>
-          </div>
-        </div>
+        <PageHeader title={t('adminDashboard.title')} subtitle={t('adminDashboard.subtitle')} />
         <div className="py-12 text-center">
           <p className="text-cinnabar font-kai mb-4">{error}</p>
-          <button onClick={loadStats} className="px-4 py-2 bg-celadon text-white text-sm rounded-sm hover:bg-celadon-dark transition-colors font-kai">
+          <button onClick={loadStats} className="btn-celadon px-4 py-2 text-sm">
             {t('common.refresh')}
           </button>
         </div>
@@ -106,19 +97,19 @@ export function DashboardTab() {
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('adminDashboard.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('adminDashboard.subtitle')}</p>
-        </div>
-        <button onClick={loadStats} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-ink-light hover:text-celadon border border-tea/50 rounded-sm hover:border-celadon/30 transition-colors font-kai">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-          </svg>
-          {t('common.refresh')}
-        </button>
-      </div>
+      <PageHeader
+        title={t('adminDashboard.title')}
+        subtitle={t('adminDashboard.subtitle')}
+        actions={
+          <button onClick={loadStats} className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-ink-light hover:text-celadon border border-tea/50 rounded-sm hover:border-celadon/30 transition-colors font-kai">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {t('common.refresh')}
+          </button>
+        }
+      />
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

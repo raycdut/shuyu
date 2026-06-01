@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SettingSection } from '../../../components/AdminSettings/Common'
+import { SettingSection, PageHeader } from '../../../components/AdminSettings/Common'
 import { useAdminSettings } from '../AdminSettingsContext'
 
 export function AdvancedSettingsTab() {
@@ -11,27 +11,15 @@ export function AdvancedSettingsTab() {
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('advancedSettings.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('advancedSettings.subtitle')}</p>
-        </div>
-        <button 
-          onClick={() => save({ 
-            advanced: { 
-              session_expire_minutes: expire, 
-              max_sessions_per_user: maxSessions, 
-              allow_user_llm_config: config.advanced.allow_user_llm_config, 
-              allow_user_safety_override: config.advanced.allow_user_safety_override,
-              llm_temperature_range: config.advanced.llm_temperature_range
-            } 
-          })} 
-          disabled={saving} 
-          className="btn-celadon px-6 py-2 shadow-sm"
-        >
-          {saving ? t('common.saving') : t('common.saveAllChanges')}
-        </button>
-      </div>
+      <PageHeader
+        title={t('advancedSettings.title')}
+        subtitle={t('advancedSettings.subtitle')}
+        actions={
+          <button onClick={() => save({ advanced: { session_expire_minutes: expire, max_sessions_per_user: maxSessions, allow_user_llm_config: config.advanced.allow_user_llm_config, allow_user_safety_override: config.advanced.allow_user_safety_override, llm_temperature_range: config.advanced.llm_temperature_range } })} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">
+            {saving ? t('common.saving') : t('common.saveAllChanges')}
+          </button>
+        }
+      />
 
       <div className="bg-white/40 p-6 rounded-sm border border-tea/30 max-w-lg">
         <h4 className="text-xs font-bold text-ink-lighter uppercase tracking-widest mb-4 border-l-2 border-celadon pl-3">{t('advancedSettings.sessionAndPerformance')}</h4>

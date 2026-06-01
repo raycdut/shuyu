@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { UserInfo } from '../../../types'
+import { PageHeader, LoadingState } from '../../../components/AdminSettings/Common'
+import { DataTable } from '../../../components/DataTable'
+import type { Column } from '../../../components/DataTable'
 
 function formatRelativeTime(dateStr: string): string {
   const date = new Date(dateStr)
@@ -46,82 +49,79 @@ export function UserManagementTab() {
     setUsers(users.filter(user => user.id !== u.id))
   }
 
-  if (loading) return <div className="py-12 text-center text-ink-lighter font-kai">{t('common.loading')}</div>
+  const columns: Column<UserInfo>[] = [
+    {
+      key: 'username',
+      header: t('userManagement.colUserInfo'),
+      render: (_, u) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-celadon/10 flex items-center justify-center text-celadon-dark font-bold text-xs">
+            {u.username[0].toUpperCase()}
+          </div>
+          <span className="font-medium text-ink">{u.username}</span>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: t('userManagement.colRole'),
+      render: (_, u) => (
+        <select
+          value={u.role}
+          onChange={e => handleRoleChange(u, e.target.value)}
+          className="bg-paper-light border border-tea/50 rounded px-2 py-1 text-xs focus:border-celadon outline-none transition-colors"
+        >
+          <option value="user">{t('userManagement.roleUser')}</option>
+          <option value="admin">{t('userManagement.roleAdmin')}</option>
+        </select>
+      ),
+    },
+    {
+      key: 'is_active',
+      header: t('userManagement.colStatus'),
+      render: (v) => (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+          v ? 'bg-celadon/10 text-celadon-dark' : 'bg-cinnabar/10 text-cinnabar'
+        }`}>
+          {v ? t('userManagement.statusActive') : t('userManagement.statusDisabled')}
+        </span>
+      ),
+    },
+    {
+      key: 'last_login_at',
+      header: t('userManagement.colLastLogin'),
+      className: 'text-xs font-kai',
+      render: (v) => v ? formatRelativeTime(v) : <span className="text-ink-lighter italic">{t('userManagement.neverLoggedIn')}</span>,
+    },
+    {
+      key: 'created_at',
+      header: t('userManagement.colRegistered'),
+      className: 'text-xs text-ink-lighter font-kai',
+      render: (v) => v ? new Date(v).toLocaleDateString() : '-',
+    },
+    {
+      key: 'id',
+      header: t('userManagement.colActions'),
+      className: 'text-right',
+      render: (_, u) => (
+        <div className="flex justify-end gap-3">
+          <button onClick={() => handleToggleActive(u)} className="text-xs text-celadon-dark hover:underline font-kai">
+            {u.is_active ? t('common.disable') : t('common.enable')}
+          </button>
+          <button onClick={() => handleDelete(u)} className="text-xs text-cinnabar hover:underline font-kai">
+            {t('common.delete')}
+          </button>
+        </div>
+      ),
+    },
+  ]
+
+  if (loading) return <LoadingState />
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('userManagement.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('userManagement.subtitle')}</p>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-sm ink-border shadow-sm overflow-hidden w-full">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-smoke/50 text-left text-xs text-ink-lighter font-kai uppercase tracking-wider">
-              <th className="px-6 py-4 font-bold">{t('userManagement.colUserInfo')}</th>
-              <th className="px-6 py-4 font-bold">{t('userManagement.colRole')}</th>
-              <th className="px-6 py-4 font-bold">{t('userManagement.colStatus')}</th>
-              <th className="px-6 py-4 font-bold">{t('userManagement.colLastLogin')}</th>
-              <th className="px-6 py-4 font-bold">{t('userManagement.colRegistered')}</th>
-              <th className="px-6 py-4 font-bold text-right">{t('userManagement.colActions')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-tea/20">
-            {users.map(u => (
-              <tr key={u.id} className="hover:bg-smoke/30 transition-colors">
-                <td className="px-6 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-celadon/10 flex items-center justify-center text-celadon-dark font-bold text-xs">
-                      {u.username[0].toUpperCase()}
-                    </div>
-                    <span className="font-medium text-ink">{u.username}</span>
-                  </div>
-                </td>
-                <td className="px-6 py-4">
-                  <select
-                    value={u.role}
-                    onChange={e => handleRoleChange(u, e.target.value)}
-                    className="bg-paper-light border border-tea/50 rounded px-2 py-1 text-xs focus:border-celadon outline-none transition-colors"
-                  >
-                    <option value="user">{t('userManagement.roleUser')}</option>
-                    <option value="admin">{t('userManagement.roleAdmin')}</option>
-                  </select>
-                </td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    u.is_active ? 'bg-celadon/10 text-celadon-dark' : 'bg-cinnabar/10 text-cinnabar'
-                  }`}>
-                    {u.is_active ? t('userManagement.statusActive') : t('userManagement.statusDisabled')}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-xs font-kai">
-                  {u.last_login_at ? (
-                    formatRelativeTime(u.last_login_at)
-                  ) : (
-                    <span className="text-ink-lighter italic">{t('userManagement.neverLoggedIn')}</span>
-                  )}
-                </td>
-                <td className="px-6 py-4 text-xs text-ink-lighter font-kai">
-                  {u.created_at ? new Date(u.created_at).toLocaleDateString() : '-'}
-                </td>
-                <td className="px-6 py-4 text-right">
-                  <div className="flex justify-end gap-3">
-                    <button onClick={() => handleToggleActive(u)} className="text-xs text-celadon-dark hover:underline font-kai">
-                      {u.is_active ? t('common.disable') : t('common.enable')}
-                    </button>
-                    <button onClick={() => handleDelete(u)} className="text-xs text-cinnabar hover:underline font-kai">
-                      {t('common.delete')}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PageHeader title={t('userManagement.title')} subtitle={t('userManagement.subtitle')} />
+      <DataTable columns={columns} data={users} rowKey={u => u.id} />
     </div>
   )
 }

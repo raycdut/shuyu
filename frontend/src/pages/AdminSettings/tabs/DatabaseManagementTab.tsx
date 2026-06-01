@@ -3,13 +3,21 @@ import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import { useConfigStore } from '../../../store/configStore'
 import type { DatabaseInfo, ImportedTable, SchemaStatus } from '../../../types'
+import { PageHeader, LoadingState, EmptyState } from '../../../components/AdminSettings/Common'
 import DescriptionEditor from '../../../components/DescriptionEditor'
 import DBConnectModal from '../../../components/DBConnectModal'
 
 type PageView = 'list' | 'detail'
 
 const DB_ICONS: Record<string, string> = {
-  duckdb: '🦆', postgres: '🐘', sqlite: '📄', mysql: '🐬', clickhouse: '🏠', snowflake: '❄️',
+  duckdb: '\u{1F986}', postgres: '\u{1F418}', sqlite: '\u{1F4C4}', mysql: '\u{1F42C}', clickhouse: '\u{1F3E0}', snowflake: '\u2744\uFE0F',
+}
+
+const STATUS_BADGE: Record<string, { labelKey: string; className: string }> = {
+  pending: { labelKey: 'dbSchema.statusNotImported', className: 'bg-smoke text-ink-lighter' },
+  importing: { labelKey: 'dbSchema.statusImportingShort', className: 'bg-celadon/10 text-celadon-dark' },
+  imported: { labelKey: 'dbSchema.statusImportedShort', className: 'bg-celadon/10 text-celadon-dark' },
+  error: { labelKey: 'dbSchema.statusFailedShort', className: 'bg-cinnabar/10 text-cinnabar' },
 }
 
 function SchemaDetailView({
@@ -30,13 +38,6 @@ function SchemaDetailView({
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null)
   const [tableSearch, setTableSearch] = useState('')
   const [showTableDropdown, setShowTableDropdown] = useState(false)
-
-  const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-    pending: { label: t('dbSchema.statusNotImported'), className: 'bg-gray-100 text-gray-500' },
-    importing: { label: t('dbSchema.statusImportingShort'), className: 'bg-blue-50 text-blue-600' },
-    imported: { label: t('dbSchema.statusImportedShort'), className: 'bg-green-50 text-green-600' },
-    error: { label: t('dbSchema.statusFailedShort'), className: 'bg-red-50 text-red-600' },
-  }
 
   const loadSchema = useCallback(async () => {
     setLoading(true)
@@ -63,7 +64,6 @@ function SchemaDetailView({
     loadStatus()
   }, [loadSchema, loadStatus])
 
-  // Auto-select first table on initial load only
   useEffect(() => {
     if (schema.length > 0 && !selectedTableId) {
       setSelectedTableId(schema[0].id)
@@ -126,29 +126,27 @@ function SchemaDetailView({
 
   return (
     <div>
-      {/* Breadcrumb */}
       <div className="flex items-center gap-2 mb-5 text-sm">
-        <button onClick={onBack} className="text-gray-400 hover:text-gray-600 transition-colors">
-          ← {t('dbSchema.backToList')}
+        <button onClick={onBack} className="text-ink-lighter hover:text-ink transition-colors font-kai">
+          &larr; {t('dbSchema.backToList')}
         </button>
         {db && (
           <>
-            <span className="text-gray-300">/</span>
-            <span className="font-medium text-gray-700">{db.name}</span>
+            <span className="text-tea/50">/</span>
+            <span className="font-medium text-ink font-kai">{db.name}</span>
           </>
         )}
       </div>
 
-      {/* Toolbar */}
       <div className="flex items-center justify-between mb-5">
         <div className="flex items-center gap-3">
-          <h3 className="text-base font-medium text-gray-800">
-            {db && `${DB_ICONS[db.type] || '🗄'} ${db.name}`}
-            {db && <span className="ml-2 text-sm font-normal text-gray-400">{db.type}</span>}
+          <h3 className="text-base font-song font-bold text-ink">
+            {db && `${DB_ICONS[db.type] || '\u{1F5C4}\uFE0F'} ${db.name}`}
+            {db && <span className="ml-2 text-sm font-normal text-ink-lighter">{db.type}</span>}
           </h3>
           {schemaStatus && schemaStatus.tables_count > 0 && (
-            <span className={`ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[schemaStatus.schema_status]?.className}`}>
-              {STATUS_BADGE[schemaStatus.schema_status]?.label}
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${STATUS_BADGE[schemaStatus.schema_status]?.className}`}>
+              {t(STATUS_BADGE[schemaStatus.schema_status]?.labelKey || '')}
             </span>
           )}
         </div>
@@ -156,51 +154,46 @@ function SchemaDetailView({
           <button
             onClick={handleImport}
             disabled={importing}
-            className="h-8 px-3 text-xs font-medium text-gray-600 bg-white border border-gray-200 rounded-md hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            className="px-3 py-1.5 text-xs text-ink-light bg-white border border-tea/40 rounded-sm hover:bg-smoke/30 disabled:opacity-40 transition-colors font-kai"
           >
             {importing ? t('dbSchema.importing') : t('dbSchema.importSchema')}
           </button>
           <button
             onClick={handleGenerateDescriptions}
             disabled={describing || !schemaStatus || schemaStatus.tables_count === 0}
-            className="h-8 px-3 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-40 transition-colors"
+            className="btn-celadon px-3 py-1.5 text-xs disabled:opacity-40"
           >
             {describing ? t('dbSchema.generating') : `AI ${t('dbSchema.generatingDesc')}`}
           </button>
           <button
             onClick={() => { loadSchema(); loadStatus() }}
-            className="h-8 px-3 text-xs text-gray-500 bg-white border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+            className="px-3 py-1.5 text-xs text-ink-light bg-white border border-tea/40 rounded-sm hover:bg-smoke/30 transition-colors font-kai"
           >
             {t('dbSchema.refresh')}
           </button>
         </div>
       </div>
 
-      {/* Stats bar */}
       {schemaStatus && schemaStatus.tables_count > 0 && (
-        <div className="flex items-center gap-4 mb-4 px-3 py-2 bg-gray-50 rounded-md text-xs text-gray-500">
-          <span>{t('dbSchema.table')} <strong className="text-gray-700">{schemaStatus.tables_count}</strong></span>
-          <span>{t('dbSchema.field')} <strong className="text-gray-700">{schemaStatus.columns_count}</strong></span>
-          <span>{t('dbSchema.described')} <strong className="text-green-600">{describedTables}</strong>{t('dbSchema.table')} / <strong className="text-green-600">{describedColumns}</strong>{t('dbSchema.field')}</span>
+        <div className="flex items-center gap-4 mb-4 px-3 py-2 bg-smoke/30 rounded-sm text-xs text-ink-lighter font-kai">
+          <span>{t('dbSchema.table')} <strong className="text-ink">{schemaStatus.tables_count}</strong></span>
+          <span>{t('dbSchema.field')} <strong className="text-ink">{schemaStatus.columns_count}</strong></span>
+          <span>{t('dbSchema.described')} <strong className="text-celadon-dark">{describedTables}</strong>{t('dbSchema.table')} / <strong className="text-celadon-dark">{describedColumns}</strong>{t('dbSchema.field')}</span>
           <span>{t('dbSchema.completeness')} {totalColumns > 0 ? Math.round(describedColumns / totalColumns * 100) : 0}%</span>
         </div>
       )}
 
-      {/* Loading / Empty */}
       {loading ? (
-        <div className="h-64 flex items-center justify-center text-sm text-gray-400">{t('common.loading')}</div>
+        <LoadingState />
       ) : schema.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-gray-400">
-          <p className="text-sm mb-3">{t('dbSchema.notImportedYet')}</p>
-          <button onClick={handleImport} disabled={importing} className="h-8 px-4 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
-            {t('dbSchema.startImport')}
-          </button>
-        </div>
+        <EmptyState
+          message={t('dbSchema.notImportedYet')}
+          action={<button onClick={handleImport} disabled={importing} className="btn-celadon px-4 py-1.5 text-sm">{t('dbSchema.startImport')}</button>}
+        />
       ) : (
         <>
-          {/* Table selector with filter */}
           <div className="mb-5">
-            <label className="block text-xs text-gray-500 mb-1.5">{t('dbSchema.selectTable')}</label>
+            <label className="block text-xs text-ink-lighter mb-1.5 font-kai">{t('dbSchema.selectTable')}</label>
             <div className="relative">
               <input
                 value={tableSearch}
@@ -211,15 +204,15 @@ function SchemaDetailView({
                 onFocus={() => setShowTableDropdown(true)}
                 onBlur={() => setTimeout(() => setShowTableDropdown(false), 200)}
                 placeholder={t('dbSchema.searchTable')}
-                className="w-full h-10 pl-3 pr-10 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+                className="ink-input w-full h-10 pl-3 pr-10 text-sm"
               />
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-lighter pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <polyline points="6 9 12 15 18 9" />
               </svg>
             </div>
 
             {showTableDropdown && filteredTables.length > 0 && (
-              <div className="mt-1 border border-gray-200 rounded-lg bg-white shadow-lg max-h-64 overflow-y-auto">
+              <div className="mt-1 border border-tea/30 rounded-sm bg-white shadow-lg max-h-64 overflow-y-auto">
                 {filteredTables.map(tbl => {
                   const complete = isTableComplete(tbl)
                   const described = tbl.columns.filter(c => c.description).length
@@ -233,13 +226,13 @@ function SchemaDetailView({
                         setShowTableDropdown(false)
                         setTableSearch('')
                       }}
-                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-blue-50 transition-colors ${
-                        isSelected ? 'bg-blue-50 font-medium' : ''
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer text-sm hover:bg-celadon/5 transition-colors font-kai ${
+                        isSelected ? 'bg-celadon/5 font-semibold' : ''
                       }`}
                     >
-                      <span>{complete ? '🟢' : '🔴'}</span>
-                      <span className="font-mono text-gray-800">{tbl.table_name}</span>
-                      <span className="text-xs text-gray-400 ml-auto flex-shrink-0">
+                      <span>{complete ? '\u{1F7E2}' : '\u{1F534}'}</span>
+                      <span className="font-mono text-ink">{tbl.table_name}</span>
+                      <span className="text-xs text-ink-lighter ml-auto flex-shrink-0">
                         {t('dbSchema.fieldsDescribed', { count: described, total })}
                       </span>
                     </div>
@@ -249,31 +242,28 @@ function SchemaDetailView({
             )}
           </div>
 
-          {/* Selected table detail */}
           {selectedTable && (
-            <div className="bg-white border border-gray-200 rounded-lg">
-              {/* Table header */}
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <div className="bg-white border border-tea/30 rounded-sm">
+              <div className="px-4 py-3 border-b border-tea/10 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-mono font-medium text-gray-800">{selectedTable.table_name}</span>
+                  <span className="text-sm font-mono font-medium text-ink">{selectedTable.table_name}</span>
                   {selectedTable.table_type === 'VIEW' && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 text-purple-600">VIEW</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-celadon/10 text-celadon-dark font-mono">VIEW</span>
                   )}
                   {selectedTable.columns.filter(c => c.description).length > 0 && (
-                    <span className="text-xs text-green-600">
+                    <span className="text-xs text-celadon-dark font-kai">
                       {t('dbSchema.fieldsDescribed', { count: selectedTable.columns.filter(c => c.description).length, total: selectedTable.columns.length })}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* Table descriptions */}
-              <div className="px-4 py-3 border-b border-gray-50">
+              <div className="px-4 py-3 border-b border-tea/5">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[10px] text-gray-400 font-mono">{t('dbSchema.descLangZh')}</span>
-                      {selectedTable.description && <span className="text-green-500">✓</span>}
+                      <span className="text-[10px] text-ink-lighter font-mono">{t('dbSchema.descLangZh')}</span>
+                      {selectedTable.description && <span className="text-celadon">{'\u2713'}</span>}
                     </div>
                     <DescriptionEditor
                       value={selectedTable.description}
@@ -282,13 +272,13 @@ function SchemaDetailView({
                         setSchema(prev => prev.map(t => t.id === selectedTable.id ? { ...t, description: desc } : t))
                       }}
                       placeholder={t('dbSchema.addDescZh')}
-                      className="text-sm text-gray-600"
+                      className="text-sm text-ink"
                     />
                   </div>
                   <div>
                     <div className="flex items-center gap-1.5 mb-1">
-                      <span className="text-[10px] text-gray-400 font-mono">EN</span>
-                      {selectedTable.description_en && <span className="text-green-500">✓</span>}
+                      <span className="text-[10px] text-ink-lighter font-mono">EN</span>
+                      {selectedTable.description_en && <span className="text-celadon">{'\u2713'}</span>}
                     </div>
                     <DescriptionEditor
                       value={selectedTable.description_en}
@@ -297,34 +287,33 @@ function SchemaDetailView({
                         setSchema(prev => prev.map(t => t.id === selectedTable.id ? { ...t, description_en: descEn } : t))
                       }}
                       placeholder={t('dbSchema.addDescEn')}
-                      className="text-sm text-gray-600"
+                      className="text-sm text-ink"
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Columns */}
-              <div className="divide-y divide-gray-50">
+              <div className="divide-y divide-tea/5">
                 {selectedTable.columns.length === 0 ? (
-                  <div className="px-4 py-4 text-sm text-gray-400 text-center">{t('dbSchema.noFields')}</div>
+                  <div className="px-4 py-4 text-sm text-ink-lighter text-center font-kai">{t('dbSchema.noFields')}</div>
                 ) : (
                   selectedTable.columns.map(col => {
                     const cnDone = !!col.description
                     const enDone = !!col.description_en
                     const colComplete = cnDone && enDone
                     return (
-                      <div key={col.id} className="px-4 py-3 hover:bg-gray-50/50">
+                      <div key={col.id} className="px-4 py-3 hover:bg-smoke/30">
                         <div className="flex items-center gap-2 mb-2">
-                          <span className={`w-2 h-2 rounded-full ${colComplete ? 'bg-green-500' : 'bg-red-400'}`} />
-                          <span className="text-sm font-mono text-gray-800">{col.column_name}</span>
-                          <span className="text-xs text-gray-400 font-mono">{col.data_type}</span>
+                          <span className={`w-2 h-2 rounded-full ${colComplete ? 'bg-celadon' : 'bg-cinnabar/60'}`} />
+                          <span className="text-sm font-mono text-ink">{col.column_name}</span>
+                          <span className="text-xs text-ink-lighter font-mono">{col.data_type}</span>
                           {col.is_primary_key && (
-                            <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-50 text-amber-600 font-medium">PK</span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-sm bg-amber/10 text-amber-dark font-medium font-mono">PK</span>
                           )}
                         </div>
                         <div className="grid grid-cols-2 gap-4 pl-4">
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-gray-300 font-mono mt-1.5 flex-shrink-0">{t('dbSchema.descLangZh')}</span>
+                            <span className="text-[10px] text-tea/50 font-mono mt-1.5 flex-shrink-0">{t('dbSchema.descLangZh')}</span>
                             <DescriptionEditor
                               value={col.description}
                               onSave={async (desc) => {
@@ -334,11 +323,11 @@ function SchemaDetailView({
                                 ))
                               }}
                               placeholder={t('dbSchema.addDescZh')}
-                              className="text-sm text-gray-500"
+                              className="text-sm text-ink"
                             />
                           </div>
                           <div className="flex items-start gap-1.5">
-                            <span className="text-[10px] text-gray-300 font-mono mt-1.5 flex-shrink-0">EN</span>
+                            <span className="text-[10px] text-tea/50 font-mono mt-1.5 flex-shrink-0">EN</span>
                             <DescriptionEditor
                               value={col.description_en}
                               onSave={async (descEn) => {
@@ -348,7 +337,7 @@ function SchemaDetailView({
                                 ))
                               }}
                               placeholder={t('dbSchema.addDescEn')}
-                              className="text-sm text-gray-500"
+                              className="text-sm text-ink"
                             />
                           </div>
                         </div>
@@ -365,8 +354,6 @@ function SchemaDetailView({
   )
 }
 
-// ===== Main Component =====
-
 export function DatabaseManagementTab() {
   const { t } = useTranslation()
   const databases = useConfigStore(s => s.databases)
@@ -377,13 +364,6 @@ export function DatabaseManagementTab() {
   const [loadingStats, setLoadingStats] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editingDb, setEditingDb] = useState<DatabaseInfo | null>(null)
-
-  const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-    pending: { label: t('dbSchema.statusNotImported'), className: 'bg-gray-100 text-gray-500' },
-    importing: { label: t('dbSchema.statusImportingShort'), className: 'bg-blue-50 text-blue-600' },
-    imported: { label: t('dbSchema.statusImportedShort'), className: 'bg-green-50 text-green-600' },
-    error: { label: t('dbSchema.statusFailedShort'), className: 'bg-red-50 text-red-600' },
-  }
 
   const loadDatabasesList = useCallback(async () => {
     try {
@@ -438,49 +418,44 @@ export function DatabaseManagementTab() {
   }
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h3 className="text-base font-medium text-gray-800">{t('dbManager.title')}</h3>
-          <p className="text-xs text-gray-400 mt-0.5">{t('dbManager.subtitle')}</p>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="h-8 px-4 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
-        >
-          + {t('dbManager.addDatabaseBtn')}
-        </button>
-      </div>
-
-      {/* Table */}
-      {databases.length === 0 ? (
-        <div className="h-64 flex flex-col items-center justify-center text-gray-400 border border-dashed border-gray-200 rounded-lg">
-          <svg className="w-10 h-10 mb-2 text-gray-200" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <ellipse cx="12" cy="5" rx="9" ry="3" />
-            <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-            <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
-          </svg>
-          <p className="text-sm mb-3">{t('dbManager.noDatabases')}</p>
-          <button onClick={() => setShowAddModal(true)} className="h-8 px-4 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700">
-            {t('dbManager.addDatabaseBtn')}
+    <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <PageHeader
+        title={t('dbManager.title')}
+        subtitle={t('dbManager.subtitle')}
+        actions={
+          <button onClick={() => setShowAddModal(true)} className="btn-celadon px-4 py-2 text-xs shadow-sm">
+            + {t('dbManager.addDatabaseBtn')}
           </button>
-        </div>
+        }
+      />
+
+      {databases.length === 0 ? (
+        <EmptyState
+          message={t('dbManager.noDatabases')}
+          icon={
+            <svg className="w-10 h-10 text-tea/50" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
+            </svg>
+          }
+          action={<button onClick={() => setShowAddModal(true)} className="btn-celadon px-4 py-1.5 text-sm">{t('dbManager.addDatabaseBtn')}</button>}
+        />
       ) : (
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+        <div className="bg-white rounded-sm ink-border shadow-sm overflow-hidden">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnDb')}</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnConnection')}</th>
-                <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnTableFilter')}</th>
-                <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnStatus')}</th>
-                <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnTableCount')}</th>
-                <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnSchemaDesc')}</th>
-                <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">{t('dbManager.columnActions')}</th>
+              <tr className="bg-smoke/50 border-b border-tea/20">
+                <th className="text-left px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnDb')}</th>
+                <th className="text-left px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnConnection')}</th>
+                <th className="text-left px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnTableFilter')}</th>
+                <th className="text-center px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnStatus')}</th>
+                <th className="text-center px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnTableCount')}</th>
+                <th className="text-center px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnSchemaDesc')}</th>
+                <th className="text-right px-4 py-2.5 text-xs font-bold text-ink-lighter font-kai uppercase tracking-wider">{t('dbManager.columnActions')}</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-tea/20">
               {databases.map(db => {
                 const s = stats[db.id]
                 const tablesCount = s?.tables_count ?? 0
@@ -488,99 +463,92 @@ export function DatabaseManagementTab() {
                 const ratio = tablesCount > 0 ? Math.round(describedTables / tablesCount * 100) : 0
 
                 return (
-                  <tr key={db.id} className="hover:bg-gray-50/50 transition-colors">
-                    {/* Name & Type */}
+                  <tr key={db.id} className="hover:bg-smoke/30 transition-colors">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-base">{DB_ICONS[db.type] || '🗄'}</span>
+                        <span className="text-base">{DB_ICONS[db.type] || '\u{1F5C4}\uFE0F'}</span>
                         <div>
-                          <div className="text-sm font-medium text-gray-800">{db.name}</div>
-                          <div className="text-xs text-gray-400">{db.type}</div>
+                          <div className="text-sm font-medium text-ink">{db.name}</div>
+                          <div className="text-xs text-ink-lighter">{db.type}</div>
                         </div>
                       </div>
                     </td>
 
-                    {/* Connection */}
                     <td className="px-4 py-3">
-                      <div className="text-xs text-gray-500 font-mono max-w-[180px] truncate" title={db.path || db.connection_string || `${db.host || ''}:${db.port || ''}`}>
+                      <div className="text-xs text-ink-lighter font-mono max-w-[180px] truncate" title={db.path || db.connection_string || `${db.host || ''}:${db.port || ''}`}>
                         {db.path || db.connection_string || `${db.host || ''}:${db.port || ''}` || '-'}
                       </div>
                     </td>
 
-                    {/* Table Filters */}
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {(db.include_tables || []).length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-green-50 text-green-600 border border-green-200">
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-celadon/10 text-celadon-dark border border-celadon/20">
                             <span>{t('dbManager.filterInclude')}</span>
                             <span className="font-mono">{db.include_tables!.join(', ')}</span>
                           </span>
                         )}
                         {(db.exclude_tables || []).length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-500 border border-red-200">
+                          <span className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-sm bg-cinnabar/10 text-cinnabar border border-cinnabar/20">
                             <span>{t('dbManager.filterExclude')}</span>
                             <span className="font-mono">{db.exclude_tables!.join(', ')}</span>
                           </span>
                         )}
                         {(!db.include_tables || db.include_tables.length === 0) &&
                          (!db.exclude_tables || db.exclude_tables.length === 0) && (
-                          <span className="text-[10px] text-gray-300">{t('dbManager.allTables')}</span>
+                          <span className="text-[10px] text-tea/50">{t('dbManager.allTables')}</span>
                         )}
                       </div>
                     </td>
 
-                    {/* Status */}
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_BADGE[db.schema_status || 'pending']?.className}`}>
-                        {STATUS_BADGE[db.schema_status || 'pending']?.label}
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-sm text-xs font-medium ${STATUS_BADGE[db.schema_status || 'pending']?.className}`}>
+                        {t(STATUS_BADGE[db.schema_status || 'pending']?.labelKey || '')}
                       </span>
                     </td>
 
-                    {/* Tables count */}
-                    <td className="px-4 py-3 text-center text-sm text-gray-700">
+                    <td className="px-4 py-3 text-center text-sm text-ink font-kai">
                       {loadingStats ? '-' : tablesCount}
                     </td>
 
-                    {/* Schema description ratio */}
                     <td className="px-4 py-3">
                       {loadingStats ? (
-                        <div className="text-center text-xs text-gray-400">-</div>
+                        <div className="text-center text-xs text-ink-lighter">-</div>
                       ) : tablesCount > 0 ? (
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-smoke rounded-full overflow-hidden">
                             <div
-                              className="h-full bg-blue-500 rounded-full transition-all"
+                              className="h-full bg-celadon rounded-full transition-all"
                               style={{ width: `${ratio}%` }}
                             />
                           </div>
-                          <span className="text-xs text-gray-500 w-14 text-right flex-shrink-0">
+                          <span className="text-xs text-ink-lighter w-14 text-right flex-shrink-0 font-kai">
                             {describedTables}/{tablesCount}
                           </span>
                         </div>
                       ) : (
-                        <div className="text-center text-xs text-gray-300">-</div>
+                        <div className="text-center text-xs text-tea/50">-</div>
                       )}
                     </td>
 
-                    {/* Actions */}
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => setEditingDb(db)}
-                          className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                          className="px-2 py-1 text-xs text-ink-lighter hover:text-ink hover:bg-smoke/50 rounded-sm transition-colors font-kai"
                           title={t('dbManager.editConnection')}
                         >
                           {t('dbManager.edit')}
                         </button>
                         <button
                           onClick={() => handleViewDetail(db.id)}
-                          className="px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                          className="px-2 py-1 text-xs text-celadon-dark hover:bg-celadon/5 rounded-sm transition-colors font-kai"
                         >
                           {t('dbManager.manageSchema')}
                         </button>
                         <button
                           onClick={() => handleDelete(db.id)}
-                          className="px-2 py-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                          className="px-2 py-1 text-xs text-cinnabar hover:text-cinnabar hover:bg-cinnabar/5 rounded-sm transition-colors font-kai"
                         >
                           {t('common.delete')}
                         </button>

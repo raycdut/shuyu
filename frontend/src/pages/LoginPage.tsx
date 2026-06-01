@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { useTranslation } from 'react-i18next'
+import AuthLayout from '../components/AuthLayout'
 
 const STORAGE_KEY_USERNAME = 'remembered_username'
 const STORAGE_KEY_PASSWORD = 'remembered_password'
@@ -83,75 +84,62 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-paper-light">
-      <div className="w-full max-w-sm mx-4">
-        <div className="text-center mb-10">
-          <h1 className="text-2xl font-song font-semibold text-ink tracking-wider mb-2">
-            {t('app.name')}
-          </h1>
-          <p className="text-sm text-ink-lighter font-kai">{t('auth.subtitle')}</p>
+    <AuthLayout
+      subtitle={t('auth.subtitle')}
+      footer={<>{t('auth.noAccount')} <Link to="/register" className="text-celadon hover:underline">{t('auth.goToRegister')}</Link></>}
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div>
+          <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.username')}</label>
+          <input
+            type="text"
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="ink-input text-sm w-full"
+            placeholder={t('auth.usernamePlaceholder')}
+            required
+            minLength={2}
+          />
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.username')}</label>
+        <div>
+          <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.password')}</label>
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="ink-input text-sm w-full"
+            placeholder={t('auth.passwordPlaceholder')}
+            required
+            minLength={6}
+          />
+        </div>
+
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
             <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="ink-input text-sm w-full"
-              placeholder={t('auth.usernamePlaceholder')}
-              required
-              minLength={2}
+              type="checkbox"
+              checked={rememberMe}
+              onChange={e => setRememberMe(e.target.checked)}
+              className="w-4 h-4 rounded border-ink-lighter text-celadon focus:ring-celadon"
             />
-          </div>
+            <span className="text-xs text-ink-lighter font-kai">{t('auth.rememberMe')}</span>
+          </label>
+        </div>
 
-          <div>
-            <label className="block text-xs text-ink-lighter mb-1 font-kai">{t('auth.password')}</label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="ink-input text-sm w-full"
-              placeholder={t('auth.passwordPlaceholder')}
-              required
-              minLength={6}
-            />
-          </div>
+        {error && (
+          <div className="text-cinnabar text-xs text-center">{error}</div>
+        )}
 
-          <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)}
-                className="w-4 h-4 rounded border-ink-lighter text-celadon focus:ring-celadon"
-              />
-              <span className="text-xs text-ink-lighter font-kai">{t('auth.rememberMe')}</span>
-            </label>
-          </div>
-
-          {error && (
-            <div className="text-cinnabar text-xs text-center">{error}</div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="btn-celadon w-full"
-          >
-            {isLoading ? t('auth.loggingIn') : t('auth.login')}
-          </button>
-        </form>
-
-        <p className="mt-6 text-center text-sm text-ink-lighter font-kai">
-          {t('auth.noAccount')}{' '}
-          <Link to="/register" className="text-celadon hover:underline">
-            {t('auth.goToRegister')}
-          </Link>
-        </p>
-      </div>
-    </div>
+        <button
+          type="submit"
+          disabled={isLoading}
+          className="btn-celadon w-full"
+        >
+          {isLoading ? t('auth.loggingIn') : t('auth.login')}
+        </button>
+      </form>
+    </AuthLayout>
   )
 }

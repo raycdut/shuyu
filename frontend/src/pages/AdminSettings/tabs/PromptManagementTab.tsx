@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../../../api'
 import type { PromptListItem, ActivePromptsResponse } from '../../../types'
+import { Modal } from '../../../components/Modal'
 
 const AGENT_TABS = [
   {
@@ -248,26 +249,13 @@ export function PromptManagementTab() {
       </div>
 
       {editor && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closeEditor}>
-          <div className="bg-white rounded-sm shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-6 py-4 border-b border-tea/20">
-              <div>
-                <h3 className="text-sm font-kai font-semibold text-ink">编辑 {editor.displayName}</h3>
-                <p className="text-xs text-ink-lighter mt-0.5">
-                  {editor.category}
-                  {editor.currentVersion != null && (
-                    <span className="ml-2">· 当前版本 v{editor.currentVersion}</span>
-                  )}
-                </p>
-              </div>
-              <button onClick={closeEditor} className="text-ink-lighter hover:text-ink transition-colors">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-6">
+        <Modal
+          open
+          onClose={closeEditor}
+          title={`编辑 ${editor.displayName}`}
+          subtitle={`${editor.category}${editor.currentVersion != null ? ` · 当前版本 v${editor.currentVersion}` : ''}`}
+          size="lg"
+        >
               <textarea
                 value={editingContent}
                 onChange={e => setEditingContent(e.target.value)}
@@ -324,10 +312,8 @@ export function PromptManagementTab() {
                   </div>
                 )}
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
+          </Modal>
+        )}
+      </div>
+    )
+  }

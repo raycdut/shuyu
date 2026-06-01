@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { SettingSection, ToggleRow } from '../../../components/AdminSettings/Common'
+import { SettingSection, ToggleRow, PageHeader } from '../../../components/AdminSettings/Common'
 import { useAdminSettings } from '../AdminSettingsContext'
 
 export function SafetySettingsTab() {
@@ -21,13 +21,11 @@ export function SafetySettingsTab() {
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('safetySettings.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('safetySettings.subtitle')}</p>
-        </div>
-        <button onClick={handleSave} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>
-      </div>
+      <PageHeader
+        title={t('safetySettings.title')}
+        subtitle={t('safetySettings.subtitle')}
+        actions={<button onClick={handleSave} disabled={saving} className="btn-celadon px-6 py-2 shadow-sm">{saving ? t('common.saving') : t('common.saveAllChanges')}</button>}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
         <div className="space-y-6">

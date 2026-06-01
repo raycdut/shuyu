@@ -3,6 +3,7 @@ import type { LLMConfig, SafetyConfig } from '../types'
 import { api } from '../api'
 import React from 'react'
 import { useTranslation } from 'react-i18next'
+import { SettingSection } from './AdminSettings/Common'
 
 interface ConfigPanelProps {
   open: boolean
@@ -100,7 +101,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
     <aside className="w-64 flex-shrink-0 bg-paper-light/50 overflow-y-auto">
       <div className="px-4 py-3">
         {/* ===== LLM 配置 ===== */}
-        <Section title={t('configPanel.llmProvider')}>
+        <SettingSection title={t('configPanel.llmProvider')} compact>
           <select
             value={localLLM.provider}
             onChange={e => {
@@ -121,9 +122,9 @@ const ConfigPanel = React.memo(function ConfigPanel({
           >
             {PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
-        </Section>
+        </SettingSection>
 
-        <Section title="API Key">
+        <SettingSection title="API Key" compact>
           <div className="relative">
             <input
               type={showKey ? 'text' : 'password'}
@@ -150,18 +151,18 @@ const ConfigPanel = React.memo(function ConfigPanel({
               )}
             </button>
           </div>
-        </Section>
+        </SettingSection>
 
-        <Section title="API Base">
+        <SettingSection title="API Base" compact>
           <input
             className="ink-input text-sm"
             value={localLLM.api_base}
             onChange={e => setLocalLLM({ ...localLLM, api_base: e.target.value })}
             placeholder="https://api.openai.com/v1"
           />
-        </Section>
+        </SettingSection>
 
-        <Section title={t('configPanel.model')}>
+        <SettingSection title={t('configPanel.model')} compact>
           <select
             value={localLLM.model}
             onChange={e => setLocalLLM({ ...localLLM, model: e.target.value })}
@@ -169,9 +170,9 @@ const ConfigPanel = React.memo(function ConfigPanel({
           >
             {currentModels.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-        </Section>
+        </SettingSection>
 
-        <Section title={t('configPanel.timeout')}>
+        <SettingSection title={t('configPanel.timeout')} compact>
           <input
             type="number"
             value={localLLM.timeout}
@@ -180,7 +181,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
             min={5}
             max={300}
           />
-        </Section>
+        </SettingSection>
 
         {/* 测试连接 */}
         <div className="flex gap-2 items-center mb-5">
@@ -202,21 +203,21 @@ const ConfigPanel = React.memo(function ConfigPanel({
         {/* ===== 数据安全 ===== */}
         <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">{t('configPanel.dataSafety')}</h3>
 
-        <ToggleRow
+        <CheckRow
           label={t('configPanel.readonlyMode')}
           desc={t('configPanel.readonlyDesc')}
           checked={localSafety.read_only}
           onChange={v => setLocalSafety({ ...localSafety, read_only: v })}
         />
 
-        <ToggleRow
+        <CheckRow
           label={t('configPanel.requireConfirmation')}
           desc={t('configPanel.requireConfirmationDesc')}
           checked={localSafety.require_approval}
           onChange={v => setLocalSafety({ ...localSafety, require_approval: v })}
         />
 
-        <Section title={t('configPanel.maxRowsPerPage')}>
+        <SettingSection title={t('configPanel.maxRowsPerPage')} compact>
           <input
             type="number"
             className="ink-input text-sm"
@@ -225,16 +226,16 @@ const ConfigPanel = React.memo(function ConfigPanel({
             min={10}
             max={10000}
           />
-        </Section>
+        </SettingSection>
 
-        <Section title={t('configPanel.blockedTables')}>
+        <SettingSection title={t('configPanel.blockedTables')} compact>
           <input
             className="ink-input text-sm"
             value={blockedText}
             onChange={e => setBlockedText(e.target.value)}
             placeholder="employee_salary, pii"
           />
-        </Section>
+        </SettingSection>
 
         {/* ===== 分隔线 ===== */}
         <div className="ink-divider my-4" />
@@ -242,15 +243,15 @@ const ConfigPanel = React.memo(function ConfigPanel({
         {/* ===== 高级设置 ===== */}
         <h3 className="text-xs text-ink-lighter font-kai tracking-wider mb-3">{t('configPanel.advancedSettings')}</h3>
 
-        <Section title={t('configPanel.dialogLanguage')}>
+        <SettingSection title={t('configPanel.dialogLanguage')} compact>
           <select className="ink-input text-sm" defaultValue="zh-CN">
             <option value="zh-CN">{t('configPanel.langChinese')}</option>
             <option value="en">English</option>
             <option value="ja">{t('configPanel.langJapanese')}</option>
           </select>
-        </Section>
+        </SettingSection>
 
-        <Section title={t('configPanel.temperature', { value: temperature.toFixed(1) })}>
+        <SettingSection title={t('configPanel.temperature', { value: temperature.toFixed(1) })} compact>
           <input
             type="range"
             min="0"
@@ -264,9 +265,9 @@ const ConfigPanel = React.memo(function ConfigPanel({
             <span>{t('configPanel.precise')}</span>
             <span>{t('configPanel.creative')}</span>
           </div>
-        </Section>
+        </SettingSection>
 
-        <Section title={t('configPanel.sessionExpire')}>
+        <SettingSection title={t('configPanel.sessionExpire')} compact>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -277,7 +278,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
             />
             <span className="text-xs text-ink-lighter">{t('configPanel.minutes')}</span>
           </div>
-        </Section>
+        </SettingSection>
 
         {/* 保存按钮 */}
         <button
@@ -292,18 +293,7 @@ const ConfigPanel = React.memo(function ConfigPanel({
   )
 })
 
-// --- 子组件 ---
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-3">
-      <label className="block text-xs text-ink-lighter mb-1 font-kai">{title}</label>
-      {children}
-    </div>
-  )
-}
-
-const ToggleRow = React.memo(function ToggleRow({
+const CheckRow = React.memo(function CheckRow({
   label,
   desc,
   checked,

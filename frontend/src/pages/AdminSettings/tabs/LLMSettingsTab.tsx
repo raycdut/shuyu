@@ -2,7 +2,8 @@ import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { api } from '../../../api'
 import type { LLMModelInstance } from '../../../types'
-import { ToggleRow, SettingSection } from '../../../components/AdminSettings/Common'
+import { ToggleRow, SettingSection, PageHeader } from '../../../components/AdminSettings/Common'
+import { Modal } from '../../../components/Modal'
 import { useAdminSettings } from '../AdminSettingsContext'
 
 function ModelDialog({
@@ -58,16 +59,21 @@ function ModelDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white rounded-lg shadow-xl border border-tea/30 w-full max-w-lg mx-4 p-6 animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <h4 className="text-base font-song font-bold text-ink">{model ? t('llmSettings.editModelTitle') : t('llmSettings.addModelTitle')}</h4>
-          <button onClick={onClose} className="p-1 text-ink-lighter hover:text-ink transition-colors rounded-sm hover:bg-smoke">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-            </svg>
+    <Modal
+      open
+      onClose={onClose}
+      title={model ? t('llmSettings.editModelTitle') : t('llmSettings.addModelTitle')}
+      footer={
+        <>
+          <button onClick={onClose} className="px-4 py-2 text-sm text-ink-light hover:text-ink transition-colors font-kai">
+            {t('common.cancel')}
           </button>
-        </div>
+          <button onClick={handleSave} className="btn-celadon px-5 py-2 text-sm shadow-sm font-kai">
+            {model ? t('common.saveChanges') : t('llmSettings.addModelTitle')}
+          </button>
+        </>
+      }
+    >
 
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -120,19 +126,9 @@ function ModelDialog({
             />
           </div>
         </div>
-
-        <div className="flex items-center justify-end mt-6 pt-4 border-t border-tea/20 gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-ink-light hover:text-ink transition-colors font-kai">
-            {t('common.cancel')}
-          </button>
-          <button onClick={handleSave} className="btn-celadon px-5 py-2 text-sm shadow-sm font-kai">
-            {model ? t('common.saveChanges') : t('llmSettings.addModelTitle')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+      </Modal>
+    )
+  }
 
 export function LLMSettingsTab() {
   const { t } = useTranslation()
@@ -234,23 +230,23 @@ export function LLMSettingsTab() {
 
   return (
     <div className="w-full animate-in fade-in slide-in-from-bottom-2 duration-300">
-      <div className="flex items-center justify-between mb-8 border-b border-tea pb-4">
-        <div>
-          <h3 className="text-xl font-song font-bold text-ink">{t('llmSettings.title')}</h3>
-          <p className="text-xs text-ink-lighter font-kai mt-1">{t('llmSettings.subtitle')}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button onClick={handleOpenAdd} className="btn-celadon-outline px-4 py-2 text-sm shadow-sm flex items-center gap-1.5">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {t('llmSettings.addModel')}
-          </button>
-          <button onClick={handleSaveAll} disabled={saving} className="btn-celadon px-4 py-2 text-sm shadow-sm">
-            {saving ? t('common.saving') : t('common.saveChanges')}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title={t('llmSettings.title')}
+        subtitle={t('llmSettings.subtitle')}
+        actions={
+          <div className="flex items-center gap-3">
+            <button onClick={handleOpenAdd} className="btn-celadon-outline px-4 py-2 text-sm shadow-sm flex items-center gap-1.5">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              {t('llmSettings.addModel')}
+            </button>
+            <button onClick={handleSaveAll} disabled={saving} className="btn-celadon px-4 py-2 text-sm shadow-sm">
+              {saving ? t('common.saving') : t('common.saveChanges')}
+            </button>
+          </div>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 mb-8">
         {models.length === 0 && (
