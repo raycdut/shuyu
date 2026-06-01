@@ -37,6 +37,12 @@ Built for **small businesses, startup teams, and anyone who has data but no BI t
 
 No training. No dashboard building. No SQL required.
 
+<p align="center">
+  <img src="docs/assets/shuyu-screenshot.png" alt="Shuyu Chat Interface — ask questions in plain Chinese/English, get answers from your database" width="100%" style="max-width: 800px;">
+  <br>
+  <em>Ask questions in plain language — the agent writes SQL, queries your database, and returns answers.</em>
+</p>
+
 ---
 
 ## Features
