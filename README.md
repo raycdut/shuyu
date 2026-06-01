@@ -105,7 +105,7 @@ Each database type is a thin connector (~100 lines of Python) implementing the `
 ## Architecture
 
 <p align="center">
-  <img src="docs/assets/shuyu-architecture.svg" alt="Shuyu Architecture Diagram" width="100%">
+  <img src="https://raw.githubusercontent.com/raycdut/shuyu/main/docs/assets/shuyu-architecture.svg" alt="Shuyu Architecture Diagram" width="100%" style="max-width: 100%;">
 </p>
 
 The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
