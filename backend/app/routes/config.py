@@ -140,7 +140,8 @@ async def test_llm(req: Request, current_user: dict | None = Depends(optional_cu
 
 # ===== Prompt management =====
 
-PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe"]
+PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe",
+                     "exec_freeform", "report_gen", "report_supplement", "report_regen"]
 
 
 @router.get("/api/prompts")

@@ -26,7 +26,8 @@ sys.path.insert(0, str(BACKEND_DIR))
 
 from app.persistence import PROMPT_DEFAULTS  # noqa: E402
 
-PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe"]
+PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe",
+                     "exec_freeform", "report_gen", "report_supplement", "report_regen"]
 
 
 def _get_db() -> sqlite3.Connection:
