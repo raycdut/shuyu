@@ -18,6 +18,9 @@ const AGENT_TABS = [
       { key: 'plan', name: '规划提示词' },
       { key: 'plan_reflect', name: '规划审核提示词' },
       { key: 'report_reflect', name: '报告审核提示词' },
+      { key: 'report_gen', name: '报告生成提示词' },
+      { key: 'report_supplement', name: '报告补充提示词' },
+      { key: 'report_regen', name: '报告再生提示词' },
     ],
   },
   {
@@ -32,9 +35,6 @@ const AGENT_TABS = [
     label: '其他',
     items: [
       { key: 'exec_freeform', name: '自由执行提示词' },
-      { key: 'report_gen', name: '报告生成提示词' },
-      { key: 'report_supplement', name: '报告补充提示词' },
-      { key: 'report_regen', name: '报告再生提示词' },
     ],
   },
 ]
