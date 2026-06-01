@@ -2,6 +2,7 @@
   <img src="https://img.shields.io/github/license/raycdut/shuyu?color=%237ba893" alt="License">
   <img src="https://img.shields.io/github/actions/workflow/status/raycdut/shuyu/ci.yml?branch=main&label=CI&color=%237ba893" alt="CI">
   <img src="https://img.shields.io/badge/python-3.11-%232c2c2c" alt="Python">
+  <img src="https://img.shields.io/badge/tests-492%20passed-%237ba893" alt="Tests">
   <img src="https://img.shields.io/badge/react-18-%237ba893" alt="React">
   <img src="https://img.shields.io/badge/license-MIT-%232c2c2c" alt="MIT">
 </p>
@@ -46,7 +47,7 @@ No training. No dashboard building. No SQL required.
 | 🔄 **Multi-turn conversations** | Follow-up questions preserve context. *"What about last month?"* |
 | 🧠 **Custom ReAct agent** | Self-built ReAct loop — no LangChain, no LangGraph. See every step |
 | 🎯 **Dual-mode analysis** | Fast mode (ReAct) for precise questions, Deep mode (Plan→Reflect→Execute→Report) for complex analysis |
-| 🔌 **Multi-database** | DuckDB ✅, MySQL ✅ — PostgreSQL, Snowflake, and more coming |
+| 🔌 **Multi-database** | DuckDB ✅, MySQL ✅, PostgreSQL ✅ — Snowflake and more coming |
 | 🔐 **Privacy-first** | Read-only mode, data approval gate, max row limits. Run fully offline with Ollama |
 | 🎨 **Song dynasty UI** | Traditional Chinese aesthetic — ink, celadon, rice paper colors |
 | 📁 **Database tree** | SSMS-like tree view in the sidebar — browse tables and columns |
@@ -70,9 +71,9 @@ Then open **http://localhost:3000**, register an account, configure your LLM (De
 | Database | Status |
 |----------|--------|
 | **DuckDB** (local `.duckdb`/`.db` files) | ✅ Working |
-| **MySQL / MariaDB** | ✅ Working (feature branch) |
-| **SQLite** | ⏳ Coming soon |
-| **PostgreSQL** | ⏳ Coming soon |
+| **MySQL / MariaDB** | ✅ Working |
+| **SQLite** | ✅ Working (config & persistence) |
+| **PostgreSQL** | ✅ Working |
 | **Snowflake** | 🚧 Planned |
 | **BigQuery** | 🚧 Planned |
 | **Redshift** | 🚧 Planned |
@@ -132,7 +133,7 @@ shuyu/
 │   │   │   ├── simple_agent.py    # ReAct loop
 │   │   │   ├── advanced_agent.py  # Plan→Reflect→Execute→Report
 │   │   │   └── tools/             # SQL tool, tool registry
-│   │   ├── db/                # Database connectors (DuckDB, MySQL, base)
+│   │   ├── db/                # Database connectors (DuckDB, MySQL, PostgreSQL, base)
 │   │   ├── auth/              # JWT + bcrypt auth
 │   │   ├── admin_config/      # Admin settings API
 │   │   ├── routes/            # Chat, config, database, schema routes
@@ -149,7 +150,7 @@ shuyu/
 │   ├── package.json
 │   └── Dockerfile (nginx)
 ├── docker-compose.yml         # One-command deploy
-└── docs/                      # Design specs (19 design documents)
+└── docs/                      # Design specs (26+ design documents)
 ```
 
 ---
@@ -173,7 +174,7 @@ Shuyu's ReAct agent loop is built from scratch (~300 lines). This means:
 
 - ✅ Full control over every step — no framework surprises
 - ✅ Easy to debug — single-threaded, linear execution
-- ✅ 109+ tests — comprehensive coverage
+- ✅ 492+ tests — comprehensive coverage
 - ✅ Lightweight — no dependency bloat
 - ✅ **Better for interviews** — you can explain every line
 
@@ -187,7 +188,7 @@ Shuyu's ReAct agent loop is built from scratch (~300 lines). This means:
 | Self-hosted | ✅ `docker compose up` | ❌ Cloud only | ✅ Docker |
 | Agent | Custom ReAct | Unknown | LangChain-based |
 | UI | Song dynasty aesthetic | Standard enterprise | Modern dashboard |
-| Database connectors | DuckDB + MySQL | Delta Lake | PostgreSQL |
+| Database connectors | DuckDB + MySQL + PostgreSQL | Delta Lake | PostgreSQL |
 | Privacy | ✅ Read-only + approval gate | Enterprise controls | Data masking |
 
 ---
@@ -242,19 +243,23 @@ docker compose up -d
 
 - 自建 ReAct Agent Loop，不依赖 LangChain/LangGraph
 - 双模式分析：快速模式（ReAct）+ 深度模式（Plan→Reflect→Execute→Report→Reflect）
-- 多数据库连接器抽象：DuckDB ✅ / MySQL ✅ / PostgreSQL ⏳
+- 多数据库连接器抽象：DuckDB ✅ / MySQL ✅ / PostgreSQL ✅
 - 前后端分离：React + Tailwind + FastAPI
-- 宋氏美学 UI：水墨色、青瓷绿、宣纸白配色
+- 宋氏美学 UI：水墨色、青瓷绿、宣纸白配色，楷体/宋体字体栈
 - 完整用户体系：注册 / 登录 / JWT 鉴权 / 管理员设置
-- 19 篇架构设计文档
-- 109 个测试用例，CI 全自动验证
+- 管理员运营看板：Token 用量、活跃用户、模型分布
+- Prompt 管理：6 分类版本化管理，支持编辑/恢复默认
+- 数据库 Schema 管理：导入结构、AI 生成字段描述、中英文双语编辑
+- 数据可视化：柱状图/折线图/饼图智能检测，可手动切换
+- MySQL、PostgreSQL 密码加密存储
+- 26+ 篇架构设计文档
+- 492 个测试用例，CI 全自动验证
 
 ## 贡献
 
 欢迎提交 Issue 和 PR。当前优先需要的贡献：
 
-- PostgreSQL 连接器
-- 更多数据库类型支持
+- 更多数据库类型支持（Snowflake、BigQuery、ClickHouse 等）
 - Docker Compose 自动配置指南
 
 ## 联系

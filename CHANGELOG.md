@@ -42,6 +42,81 @@
 
 ---
 
+## 2026-05-31 — 历史变更汇总
+
+### 用户认证与配置管理系统 (Phase 1-5)
+- 新增 Auth 模块：注册/登录/JWT 鉴权/bcrypt 密码加密，支持 admin 角色
+- 新增配置管理 API：系统配置/用户配置/合并逻辑/变更日志
+- 前端配置页面：7 个 Tab（LLM/安全/存储/高级/运维看板/用户管理/Prompt 管理）
+- UI 布局优化：侧边栏导航、卡片布局、渐入动画、自适应宽度
+- **验证**: 后端 47 测试通过，TypeScript 零错误
+
+### MySQL 数据库连接器
+- 新增 `backend/app/db/mysql.py` — 基于 PyMySQL 的 MySQL 连接器
+- `routes/database.py` + `routes/chat.py` 添加 mysql 类型支持
+- 支持表过滤、主键识别、参数化查询
+- **文件**: `backend/requirements.txt` 新增 `pymysql`
+
+### LLM Temperature 上限限制
+- 默认 max temperature: 1.0 → 0.5（保证数据分析客观性）
+- 后端 clamp 强制、前端 slider 动态上限
+- **验证**: 120 前端 + 234 后端测试通过
+
+### 前端 API 路径修复
+- 移除 Prompt 相关 API 的重复 `/api` 前缀（6 处）
+- 修复 `request()` 函数已预加 `/api` 导致的 `/api/api/prompts/...` 错误
+
+### 后端测试新增
+- `tests/test_models.py` — 17 个 model 测试（ChatRequest/Response，Session，Config，DB，Schema 等）
+- `tests/test_auth_middleware.py` — 14 个中间件测试
+- **验证**: 78 项新增测试全部通过
+
+### 系统级安全与工程质量修复
+- **SQL注入修复**（3处 f-string → 参数化查询）
+- **XSS修复**（`to_html()` 添加 `html.escape`）
+- **SQLite线程安全**（`check_same_thread=False`）
+- **密码/API Key 加密存储**（新增 `utils/crypto.py`，Fernet AES）
+- **`except Exception: pass` 修复**（4处 → 日志输出）
+- **CORS 安全加固**（method/header 白名单化）
+- **密码策略增强**（最小 8 位 + 字母 + 数字）
+- **外键 CASCADE**（`PRAGMA foreign_keys=ON`，delete_user 级联删除）
+- **验证**: 后端 337 测试通过
+
+### 补充 Agent 和 Chat 路由测试
+- `tests/test_describe_schema_agent.py`（21 个测试）
+- `tests/test_routes_chat.py`（8 个集成测试）
+- 修复 `_parse_llm_response` 不支持 JSON 数组的 bug
+- **验证**: 后端 366 测试通过，全量 492 测试通过
+
+### 数据库 Prompt 统一为 XML 格式
+- 重置 6 个类别的 Prompt（system v5→v6, 其余 v1→v2）
+- 修复 Prompt 管理页面「展开全部」按钮 CSS 截断（`max-h-32` → `max-h-none`）
+
+### 修复 Plan Prompt 占位符问题
+- 删除 PLAN_PROMPT 中的 `{schema_prompt}` 占位符（导致 DuckDB 误用 PostgreSQL 语法）
+- 修复 `_is_success_result` 对空结果集的误判
+
+### 字体优化
+- Google Fonts 新增加载 Noto Sans SC
+- 字体栈扩展：`font-sans` 新增系统字体，`font-kai` 优先级调整
+- 修复 macOS Times New Roman 导致方块字的问题
+- 移除 `antialiased`，新增 `leading-relaxed` 提升中文可读性
+
+### Store 拆分
+- 单体 Store → 3 个独立 Store（`sessionStore`/`configStore`/`uiStore`）
+- 减少不必要的组件重渲染
+- 向后兼容：`import { useStore } from '../store'` 仍可用
+
+### 前端优化
+- 消息 ID 生成：`Date.now()` → `crypto.randomUUID().slice(0, 8)` 避免 ID 冲突
+- Sidebar 组件原子化拆分（`SessionItem.tsx` + `DbTableNode.tsx`）
+- 全量 Store Selector 模式推行（6 个文件，零解构订阅残留）
+- Recharts 数据可视化集成（ChartRenderer：柱状图/折线图/饼图智能检测）
+- Index Page 首页设计（品牌展示 + 功能卡片 + 状态概览）
+- 系统名称统一为"数语"（5 个组件更新）
+
+---
+
 ## 2026-06-01 — 前端组件复用重构
 
 ### 新增通用组件
