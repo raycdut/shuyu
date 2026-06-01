@@ -45,6 +45,12 @@ Built for **small businesses, startup teams, and anyone who has data but no BI t
 
 No training. No dashboard building. No SQL required.
 
+<p align="center">
+  <img src="docs/assets/shuyu-screenshot.png" alt="Shuyu Chat Interface — ask questions in plain Chinese/English, get answers from your database" width="100%" style="max-width: 800px;">
+  <br>
+  <em>Ask questions in plain language — the agent writes SQL, queries your database, and returns answers.</em>
+</p>
+
 ---
 
 ## Features
@@ -132,19 +138,9 @@ Each database type is a thin connector (~100 lines of Python) implementing the `
 
 ## Architecture
 
-```
-Browser (React) ──→ Nginx ──→ FastAPI ──→ ReAct Agent Loop
-                    :3000       :8000          │
-                                        ┌──────┼──────┐
-                                        ▼      ▼      ▼
-                                    SQL     RAG    Session
-                                    Tool  (Chroma) Manager
-                                        │            │
-                                        ▼            ▼
-                                   analytics.db  ConfigDB
-                                   (your data)   ├── SQLite (dev)
-                                                 └── MySQL  (prod)
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/raycdut/shuyu/main/docs/assets/shuyu-architecture.svg" alt="Shuyu Architecture Diagram" width="100%" style="max-width: 100%;">
+</p>
 
 The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
 
