@@ -22,7 +22,9 @@ from ..persistence.schema import (
     update_database_schema_status,
     update_description,
 )
+from ..db.base import DatabaseConnector
 from ..db.duckdb import DuckDBConnector
+from ..db.mysql import MySQLConnector
 from ..models.database import (
     DBConnectRequest,
     DBTestResult,
@@ -35,6 +37,31 @@ from ..models.database import (
 logger = logging.getLogger("shuyu.main")
 
 router = APIRouter()
+
+
+def _create_connector(entry: dict) -> DatabaseConnector:
+    """Create the appropriate database connector based on entry type."""
+    db_type = entry.get("type", "duckdb")
+    if db_type == "duckdb":
+        db_path = entry.get("path", "")
+        if db_path.startswith("~"):
+            db_path = Path(db_path).expanduser().resolve()
+        return DuckDBConnector(
+            db_path=str(db_path),
+            include_tables=entry.get("include_tables"),
+            exclude_tables=entry.get("exclude_tables"),
+        )
+    elif db_type == "mysql":
+        return MySQLConnector(
+            host=entry.get("host", "127.0.0.1"),
+            port=entry.get("port") or 3306,
+            user=entry.get("user", "root"),
+            password=entry.get("password", ""),
+            database=entry.get("database", ""),
+            include_tables=entry.get("include_tables"),
+            exclude_tables=entry.get("exclude_tables"),
+        )
+    raise HTTPException(400, f"Unsupported database type: {db_type}")
 
 
 @router.get("/api/database")
@@ -59,62 +86,23 @@ async def get_database_tables(db_id: str):
         if not os.path.exists(str(db_path)):
             raise HTTPException(404, f"DuckDB file not found: {db_path}")
 
-        try:
-            import duckdb
-            conn = duckdb.connect(str(db_path))
-            rows = conn.execute("""
-                SELECT table_name, table_type FROM information_schema.tables
-                WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-                ORDER BY table_type DESC, table_name
-            """).fetchall()
-
-            include_patterns = entry.get("include_tables") or None
-            exclude_patterns = entry.get("exclude_tables") or None
-
-            filtered = []
-            for table_name, table_type in rows:
-                if exclude_patterns:
-                    skip = False
-                    for p in exclude_patterns:
-                        if p.endswith("*") and table_name.startswith(p[:-1]):
-                            skip = True
-                            break
-                        if fnmatch.fnmatch(table_name, p):
-                            skip = True
-                            break
-                    if skip:
-                        continue
-                if include_patterns:
-                    match = False
-                    for p in include_patterns:
-                        if p.endswith("*") and table_name.startswith(p[:-1]):
-                            match = True
-                            break
-                        if fnmatch.fnmatch(table_name, p):
-                            match = True
-                            break
-                    if not match:
-                        continue
-                filtered.append((table_name, table_type))
-
-            tables = []
-            for table_name, table_type in filtered:
-                cols = conn.execute("""
-                    SELECT column_name, data_type FROM information_schema.columns
-                    WHERE table_name = ?
-                    ORDER BY ordinal_position
-                """, (table_name,)).fetchall()
-                tables.append({
-                    "name": table_name,
-                    "type": table_type,
-                    "columns": [{"name": c[0], "type": c[1]} for c in cols],
-                })
-            conn.close()
-            return {"tables": tables}
-        except Exception as e:
-            raise HTTPException(500, f"Cannot read database: {e}")
-
-    raise HTTPException(400, f"Table listing not supported for type: {entry['type']}")
+    try:
+        connector = _create_connector(entry)
+        connector.connect()
+        tables = connector.get_schema()
+        connector.disconnect()
+        result = []
+        for t in tables:
+            result.append({
+                "name": t.name,
+                "type": "TABLE",
+                "columns": [{"name": c.name, "type": c.data_type} for c in (t.columns or [])],
+            })
+        return {"tables": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Cannot read database: {e}")
 
 
 @router.post("/api/database/connect")
@@ -136,6 +124,7 @@ async def connect_database(req: DBConnectRequest, _admin: dict = Depends(require
         "host": req.host,
         "port": req.port,
         "user": req.user,
+        "password": req.password,
         "database": req.database,
         "include_tables": req.include_tables,
         "exclude_tables": req.exclude_tables,
@@ -163,12 +152,23 @@ async def test_database_connection(req: DBConnectRequest):
                 include_tables=req.include_tables,
                 exclude_tables=req.exclude_tables,
             )
-            test_conn.connect()
-            tables = test_conn.get_schema()
-            test_conn.disconnect()
-            return DBTestResult(ok=True, message=f"✅ 连接成功，发现 {len(tables)} 张表")
+        elif req.type == "mysql":
+            test_conn = MySQLConnector(
+                host=req.host or "127.0.0.1",
+                port=req.port or 3306,
+                user=req.user or "root",
+                password=req.password or "",
+                database=req.database or "",
+                include_tables=req.include_tables,
+                exclude_tables=req.exclude_tables,
+            )
         else:
             return DBTestResult(ok=False, message=f"暂不支持 {req.type} 类型的测试")
+
+        test_conn.connect()
+        tables = test_conn.get_schema()
+        test_conn.disconnect()
+        return DBTestResult(ok=True, message=f"✅ 连接成功，发现 {len(tables)} 张表")
     except Exception as e:
         return DBTestResult(ok=False, message=f"❌ 连接失败：{e}")
 
@@ -235,9 +235,6 @@ async def import_schema(db_id: str, req: SchemaImportRequest, _admin: dict = Dep
 
     update_database_schema_status(db_id, "importing")
     try:
-        include = req.include_tables or entry.get("include_tables")
-        exclude = req.exclude_tables or entry.get("exclude_tables")
-
         if entry["type"] == "duckdb":
             db_path = entry.get("path", "")
             if db_path.startswith("~"):
@@ -246,51 +243,33 @@ async def import_schema(db_id: str, req: SchemaImportRequest, _admin: dict = Dep
                 update_database_schema_status(db_id, "error")
                 raise HTTPException(404, f"DuckDB file not found: {db_path}")
 
-            import duckdb
-            conn = duckdb.connect(str(db_path))
-            rows = conn.execute("""
-                SELECT table_name, table_type FROM information_schema.tables
-                WHERE table_schema NOT IN ('information_schema', 'pg_catalog')
-                ORDER BY table_name
-            """).fetchall()
+        connector = _create_connector(entry)
+        connector.connect()
+        tables = connector.get_schema()
+        connector.disconnect()
 
-            tables_data = []
-            for table_name, table_type in rows:
-                if _should_exclude(table_name, include, exclude):
-                    continue
-                cols = conn.execute("""
-                    SELECT column_name, data_type, is_nullable,
-                           COALESCE(column_default, '') as column_default
-                    FROM information_schema.columns
-                    WHERE table_name = ?
-                      AND table_schema NOT IN ('information_schema', 'pg_catalog')
-                    ORDER BY ordinal_position
-                """, (table_name,)).fetchall()
-
-                columns = []
-                for i, col in enumerate(cols):
-                    columns.append({
-                        "column_name": col[0],
-                        "data_type": col[1],
-                        "is_nullable": col[2] == "YES",
-                        "is_primary_key": False,
-                        "default_value": col[3] or None,
-                        "ordinal_position": i + 1,
-                        "description": "",
-                    })
-
-                tables_data.append({
-                    "table_name": table_name,
-                    "table_type": table_type,
-                    "columns": columns,
-                    "row_count": None,
+        tables_data = []
+        for t in tables:
+            if _should_exclude(t.name, entry.get("include_tables"), entry.get("exclude_tables")):
+                continue
+            columns = []
+            for i, c in enumerate(t.columns or []):
+                columns.append({
+                    "column_name": c.name,
+                    "data_type": c.data_type,
+                    "is_nullable": c.is_nullable,
+                    "is_primary_key": c.is_primary_key,
+                    "default_value": None,
+                    "ordinal_position": i + 1,
                     "description": "",
                 })
-
-            conn.close()
-        else:
-            update_database_schema_status(db_id, "error")
-            raise HTTPException(400, f"Schema import not supported for type: {entry['type']}")
+            tables_data.append({
+                "table_name": t.name,
+                "table_type": "TABLE",
+                "columns": columns,
+                "row_count": None,
+                "description": "",
+            })
 
         save_imported_schema(db_id, tables_data)
         update_database_schema_status(db_id, "imported")

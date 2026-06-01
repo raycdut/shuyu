@@ -14,19 +14,20 @@ logger = logging.getLogger("shuyu.crypto")
 
 _FERNET_INSTANCE = None
 
+# Stable fallback key — used when AUTH_SECRET_KEY is not set.
+# This ensures encrypted data survives server restarts.
+_FALLBACK_KEY = b"shuyu-crypto-fallback-key-v1"
+
 
 def _get_key() -> bytes:
-    """Derive a Fernet-compatible 32-byte key from AUTH_SECRET_KEY or env."""
-    from ..auth.service import SECRET_KEY
-
-    if SECRET_KEY:
-        raw = SECRET_KEY.encode("utf-8")
+    """Derive a Fernet-compatible 32-byte key from AUTH_SECRET_KEY or fallback."""
+    raw = os.environ.get("AUTH_SECRET_KEY", "")
+    if raw:
+        raw_bytes = raw.encode("utf-8")
     else:
-        raw = os.environ.get("AUTH_SECRET_KEY", "").encode("utf-8")
-    if not raw:
         logger.warning("AUTH_SECRET_KEY is empty, using fallback key")
-        raw = b"shuyu-fallback-key-do-not-use-in-production"
-    return base64.urlsafe_b64encode(hashlib.sha256(raw).digest())
+        raw_bytes = _FALLBACK_KEY
+    return base64.urlsafe_b64encode(hashlib.sha256(raw_bytes).digest())
 
 
 def _get_fernet():
@@ -60,8 +61,10 @@ def decrypt_value(ciphertext: str | None) -> str | None:
         plain = f.decrypt(ciphertext.encode("utf-8"))
         return plain.decode("utf-8")
     except Exception:
-        # If decryption fails, return as-is (legacy plaintext data)
-        return ciphertext
+        # If decryption fails, probably encryption key changed.
+        # Return empty string so the frontend shows a blank field,
+        # prompting the user to re-enter the password.
+        return ""
 
 
 def reset_cache():

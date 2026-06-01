@@ -17,12 +17,39 @@ from fastapi import APIRouter, HTTPException
 from .. import state
 from ..agent.tools.registry import Tool
 from ..agent.tools.sql_tool import handle_sql_query
+from ..db.base import DatabaseConnector
 from ..db.duckdb import DuckDBConnector
+from ..db.mysql import MySQLConnector
 from ..db.schema import build_schema_light, build_schema_prompt
 from ..client import call_llm
 from ..models.chat import ChatRequest, ChatResponse
 
 logger = logging.getLogger("shuyu.main")
+
+
+def _create_connector(db_entry: dict) -> DatabaseConnector:
+    """Create the appropriate database connector based on entry type."""
+    db_type = db_entry.get("type", "duckdb")
+    if db_type == "duckdb":
+        db_path = db_entry.get("path", "")
+        if db_path.startswith("~"):
+            db_path = Path(db_path).expanduser().resolve()
+        return DuckDBConnector(
+            db_path=str(db_path),
+            include_tables=db_entry.get("include_tables"),
+            exclude_tables=db_entry.get("exclude_tables"),
+        )
+    elif db_type == "mysql":
+        return MySQLConnector(
+            host=db_entry.get("host", "127.0.0.1"),
+            port=db_entry.get("port") or 3306,
+            user=db_entry.get("user", "root"),
+            password=db_entry.get("password", ""),
+            database=db_entry.get("database", ""),
+            include_tables=db_entry.get("include_tables"),
+            exclude_tables=db_entry.get("exclude_tables"),
+        )
+    raise HTTPException(400, f"Unsupported database type: {db_type}")
 
 router = APIRouter()
 
@@ -117,14 +144,7 @@ async def chat(req: ChatRequest):
             schema_text = session.metadata["_schema"]
             full_schema_text = session.metadata.get("_schema_full")
             try:
-                db_path = db_entry.get("path", "")
-                if db_path.startswith("~"):
-                    db_path = Path(db_path).expanduser().resolve()
-                active_connector = DuckDBConnector(
-                    db_path=str(db_path),
-                    include_tables=db_entry.get("include_tables"),
-                    exclude_tables=db_entry.get("exclude_tables"),
-                )
+                active_connector = _create_connector(db_entry)
                 active_connector.connect()
                 state.request_active_connector.set(active_connector)
                 state.request_active_db_id.set(req.db_id)
@@ -140,14 +160,7 @@ async def chat(req: ChatRequest):
         else:
             # First time or DB changed — connect fresh
             try:
-                db_path = db_entry.get("path", "")
-                if db_path.startswith("~"):
-                    db_path = Path(db_path).expanduser().resolve()
-                active_connector = DuckDBConnector(
-                    db_path=str(db_path),
-                    include_tables=db_entry.get("include_tables"),
-                    exclude_tables=db_entry.get("exclude_tables"),
-                )
+                active_connector = _create_connector(db_entry)
                 active_connector.connect()
                 state.request_active_connector.set(active_connector)
                 state.request_active_db_id.set(req.db_id)
@@ -289,28 +302,14 @@ async def chat_stream(req: ChatRequest):
                     if same_db and "_schema" in session.metadata:
                         schema_text = session.metadata["_schema"]
                         full_schema_text = session.metadata.get("_schema_full")
-                        db_path = db_entry.get("path", "")
-                        if db_path.startswith("~"):
-                            db_path = Path(db_path).expanduser().resolve()
-                        active_connector = DuckDBConnector(
-                            db_path=str(db_path),
-                            include_tables=db_entry.get("include_tables"),
-                            exclude_tables=db_entry.get("exclude_tables"),
-                        )
+                        active_connector = _create_connector(db_entry)
                         active_connector.connect()
                         state.request_active_connector.set(active_connector)
                         state.request_active_db_id.set(req.db_id)
                         if full_schema_text:
                             state.request_schema_prompt.set(full_schema_text)
                     else:
-                        db_path = db_entry.get("path", "")
-                        if db_path.startswith("~"):
-                            db_path = Path(db_path).expanduser().resolve()
-                        active_connector = DuckDBConnector(
-                            db_path=str(db_path),
-                            include_tables=db_entry.get("include_tables"),
-                            exclude_tables=db_entry.get("exclude_tables"),
-                        )
+                        active_connector = _create_connector(db_entry)
                         active_connector.connect()
                         state.request_active_connector.set(active_connector)
                         state.request_active_db_id.set(req.db_id)
