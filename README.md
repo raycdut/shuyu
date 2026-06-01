@@ -260,7 +260,6 @@ docker compose up -d
 ## 联系
 
 - GitHub: [raycdut/shuyu](https://github.com/raycdut/shuyu)
-- 作者：陈冬 (Ray Chen) — Senior Data Engineer
 
 ---
 
