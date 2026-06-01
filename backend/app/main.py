@@ -6,6 +6,7 @@ App assembly: lifespan → load config/persistence → register tools → mount 
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from .agent.advanced_agent import AdvancedAgent
 from .agent.simple_agent import SimpleAgent
 from .agent.tools.registry import Tool, ToolRegistry
 from .config import load_config
-from .persistence import init_sqlite
+from .configdb import init_configdb, _get_default_prompt_content
 from .persistence.config import load_config_sqlite
 from .persistence.database import load_db_connections_sqlite
 from .client import call_llm
@@ -58,10 +59,8 @@ def _setup_logging():
     from .config import PROJECT_ROOT
 
     root = _logging.getLogger()
-    # Remove uvicorn handlers
     for h in list(root.handlers):
         root.removeHandler(h)
-    # Add our handlers
     root.setLevel(_logging.INFO)
     fmt = _logging.Formatter("%(asctime)s [%(name)s] %(levelname)s %(message)s")
 
@@ -100,11 +99,12 @@ async def lifespan(app: FastAPI):
     # 1.1 Init auth config (JWT secret etc.)
     init_auth_config()
 
-    # 2. Init SQLite persistence
-    init_sqlite()
+    # 2. Init ConfigDB (SQLite or MySQL via SQLAlchemy)
+    configdb_url = os.environ.get("CONFIGDB_URL", "").strip() or None
+    init_configdb(configdb_url)
     load_config_sqlite()
     load_db_connections_sqlite()
-    logger.info(f"SQLite ready: {len(state._db_connections)} DB connections loaded")
+    logger.info(f"ConfigDB ready: {len(state._db_connections)} DB connections loaded")
 
     # Sync API key from admin system_config (encrypted path) into runtime config
     # so call_llm() can use it without requiring a separate POST /api/config call.
@@ -122,8 +122,8 @@ async def lifespan(app: FastAPI):
                 if default.get("provider"):
                     state.config.llm.provider = default["provider"]
                 logger.info(f"API key synced from system_config: {default.get('model', 'unknown')}")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Failed to sync API key from system_config: {e}")
 
     # 3. Register tools
     state.tool_registry = ToolRegistry()
@@ -145,37 +145,39 @@ async def lifespan(app: FastAPI):
     ))
 
     # 4. Load all prompt categories (from DB with hardcoded fallbacks)
-    from .persistence import _get_default_prompt_content
+    from .configdb import _get_default_prompt_content
+    from .configdb.base import scoped_session
+    from .configdb.models.prompt import Prompt
 
     PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe",
                          "exec_freeform", "report_gen", "report_supplement", "report_regen"]
     loaded_prompts: dict[str, str] = {}
     for cat in PROMPT_CATEGORIES:
         content = None
-        if state._sqlite:
-            row = state._sqlite.execute(
-                "SELECT content FROM prompts WHERE name = ? AND is_active = 1 ORDER BY created_at DESC LIMIT 1",
-                (cat,),
-            ).fetchone()
-            if row:
-                content = row[0]
+        try:
+            with scoped_session() as session:
+                row = session.query(Prompt).filter_by(name=cat, is_active=1).order_by(
+                    Prompt.created_at.desc()
+                ).first()
+                if row:
+                    content = row.content
+        except Exception as e:
+            logger.warning(f"Failed to load prompt '{cat}' from DB: {e}")
         if not content:
             content = _get_default_prompt_content(cat) or ""
         loaded_prompts[cat] = content
 
-    # Store prompts in state for other modules (sql_tool, describe_schema_agent, etc.)
     state.sql_gen_prompt = loaded_prompts["sql_gen"]
     state.plan_prompt = loaded_prompts["plan"]
     state.plan_reflect_prompt = loaded_prompts["plan_reflect"]
     state.report_reflect_prompt = loaded_prompts["report_reflect"]
     state.schema_describe_prompt = loaded_prompts["schema_describe"]
 
-    # Build system prompt with read-only override
     system_prompt = loaded_prompts["system"]
     if state.config.safety.read_only:
         system_prompt = system_prompt.replace("</rules>", "    <rule>你只能查询数据，不能修改</rule>\n  </rules>")
 
-    logger.info("All prompt categories loaded from DB" if state._sqlite else "All prompt categories loaded (fallback)")
+    logger.info("All prompt categories loaded from ConfigDB")
     logger.info("Creating ReAct agent loop...")
     state.agent_loop = SimpleAgent(
         tool_registry=state.tool_registry,
@@ -196,14 +198,11 @@ async def lifespan(app: FastAPI):
     )
 
     # 6. Session manager
-    state.session_manager = SessionManager(sqlite_conn=state._sqlite)
+    state.session_manager = SessionManager()
     logger.info(f"Shuyu ready — {len(state.session_manager._sessions)} sessions loaded")
 
     yield
-
-    # Cleanup
-    if state.connector:
-        state.connector.disconnect()
+    # (cleanup is handled by ConfigDB engine dispose in init_configdb)
 
 
 # ---------------------------------------------------------------------------

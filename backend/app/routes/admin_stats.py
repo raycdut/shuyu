@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
+from sqlalchemy import func
 
 from .. import state
 from ..auth.middleware import require_admin
+from ..configdb.base import scoped_session
+from ..configdb.models.user import User
+from ..configdb.models.session import Session, Message
+from ..configdb.models.token import TokenUsage
 
 router = APIRouter()
 
@@ -76,6 +81,17 @@ def _iso_today_start() -> str:
     return datetime(now.year, now.month, now.day, tzinfo=timezone.utc).isoformat()
 
 
+def _date_list(days: int) -> list[str]:
+    """Generate a list of date strings for the trend period (oldest first)."""
+    result: list[str] = []
+    now = datetime.now(timezone.utc)
+    start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    for i in range(days - 1, -1, -1):
+        d = start - timedelta(days=i)
+        result.append(d.strftime("%Y-%m-%d"))
+    return result
+
+
 @router.get("/api/admin/stats", response_model=AdminStatsResponse)
 async def get_admin_stats(
     days: int = Query(7, ge=1, le=90, description="Number of days for trend data"),
@@ -85,8 +101,141 @@ async def get_admin_stats(
 
     Includes overview counts, daily trends, top active users, and model usage.
     """
-    sql = state._sqlite
-    if sql is None:
+    try:
+        with scoped_session() as session:
+            today_start_ts = _today_start()
+            today_start_iso = _iso_today_start()
+
+            # --- Overview ---
+            total_users = session.query(User).count()
+            total_sessions = session.query(Session).count()
+            total_messages = session.query(Message).count()
+
+            today_logins = session.query(User).filter(
+                User.last_login_at.isnot(None),
+                User.last_login_at >= today_start_iso,
+            ).count()
+
+            today_questions = session.query(Message).filter(
+                Message.role == "user",
+                Message.created_at >= today_start_ts,
+            ).count()
+
+            token_row = session.query(
+                func.coalesce(func.sum(TokenUsage.prompt), 0).label("prompt"),
+                func.coalesce(func.sum(TokenUsage.completion), 0).label("completion"),
+                func.coalesce(func.sum(TokenUsage.total), 0).label("total"),
+            ).filter(TokenUsage.created_at >= today_start_ts).first()
+            today_token_prompt = token_row.prompt if token_row else 0
+            today_token_completion = token_row.completion if token_row else 0
+            today_token_total = token_row.total if token_row else 0
+
+            # --- Trends ---
+            dates = _date_list(days)
+            active_users: list[TrendPoint] = []
+            questions: list[TrendPoint] = []
+            token_usage_list: list[TrendPoint] = []
+
+            for date_str in dates:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                day_start_ts = date_obj.timestamp()
+                day_end_ts = (date_obj + timedelta(days=1)).timestamp()
+                day_start_iso = date_obj.isoformat()
+                day_end_iso = (date_obj + timedelta(days=1)).isoformat()
+
+                au = session.query(User).filter(
+                    User.last_login_at.isnot(None),
+                    User.last_login_at >= day_start_iso,
+                    User.last_login_at < day_end_iso,
+                ).count()
+
+                q = session.query(Message).filter(
+                    Message.role == "user",
+                    Message.created_at >= day_start_ts,
+                    Message.created_at < day_end_ts,
+                ).count()
+
+                t_row = session.query(
+                    func.coalesce(func.sum(TokenUsage.total), 0)
+                ).filter(
+                    TokenUsage.created_at >= day_start_ts,
+                    TokenUsage.created_at < day_end_ts,
+                ).first()
+                tokens = t_row[0] if t_row else 0
+
+                active_users.append(TrendPoint(date=date_str, value=au))
+                questions.append(TrendPoint(date=date_str, value=q))
+                token_usage_list.append(TrendPoint(date=date_str, value=tokens))
+
+            # --- Top users ---
+            user_question_map: dict[str, dict] = {}
+            top_rows = session.query(
+                Message.created_at, User.username
+            ).join(
+                Session, Message.session_id == Session.id
+            ).join(
+                User, Session.user_id == User.id
+            ).filter(
+                Message.role == "user"
+            ).order_by(Message.created_at.desc()).all()
+
+            for created_at, username in top_rows:
+                if username not in user_question_map:
+                    user_question_map[username] = {"count": 0, "last_active": created_at}
+                user_question_map[username]["count"] += 1
+                if created_at > user_question_map[username]["last_active"]:
+                    user_question_map[username]["last_active"] = created_at
+
+            sorted_users = sorted(user_question_map.items(), key=lambda x: -x[1]["count"])[:10]
+            top_users_list = [
+                TopUser(
+                    username=username,
+                    question_count=info["count"],
+                    last_active=_format_ts(info["last_active"]),
+                )
+                for username, info in sorted_users
+            ]
+
+            # --- Model usage ---
+            model_rows = session.query(
+                TokenUsage.model,
+                func.coalesce(func.sum(TokenUsage.prompt), 0),
+                func.coalesce(func.sum(TokenUsage.completion), 0),
+                func.coalesce(func.sum(TokenUsage.total), 0),
+                func.count(TokenUsage.id),
+            ).group_by(TokenUsage.model).order_by(func.count(TokenUsage.id).desc()).all()
+
+            model_usage_list = [
+                ModelUsage(
+                    model=row[0],
+                    prompt_tokens=row[1],
+                    completion_tokens=row[2],
+                    total_tokens=row[3],
+                    call_count=row[4],
+                )
+                for row in model_rows
+            ]
+
+            return AdminStatsResponse(
+                overview=OverviewStats(
+                    total_users=total_users,
+                    total_sessions=total_sessions,
+                    total_messages=total_messages,
+                    today_logins=today_logins,
+                    today_questions=today_questions,
+                    today_token_prompt=today_token_prompt,
+                    today_token_completion=today_token_completion,
+                    today_token_total=today_token_total,
+                ),
+                trends=TrendsData(
+                    active_users=active_users,
+                    questions=questions,
+                    token_usage=token_usage_list,
+                ),
+                top_users=top_users_list,
+                model_usage=model_usage_list,
+            )
+    except Exception:
         return AdminStatsResponse(
             overview=OverviewStats(
                 total_users=0, total_sessions=0, total_messages=0,
@@ -97,146 +246,6 @@ async def get_admin_stats(
             top_users=[],
             model_usage=[],
         )
-
-    today_start_ts = _today_start()
-    today_start_iso = _iso_today_start()
-
-    # --- Overview ---
-    total_users = sql.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    total_sessions = sql.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
-    total_messages = sql.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
-
-    today_logins = sql.execute(
-        "SELECT COUNT(*) FROM users WHERE last_login_at IS NOT NULL AND last_login_at >= ?",
-        (today_start_iso,),
-    ).fetchone()[0]
-
-    today_questions = sql.execute(
-        "SELECT COUNT(*) FROM messages WHERE role = 'user' AND created_at >= ?",
-        (today_start_ts,),
-    ).fetchone()[0]
-
-    row = sql.execute(
-        "SELECT COALESCE(SUM(prompt), 0), COALESCE(SUM(completion), 0), COALESCE(SUM(total), 0) "
-        "FROM token_usage WHERE created_at >= ?",
-        (today_start_ts,),
-    ).fetchone()
-    today_token_prompt, today_token_completion, today_token_total = (
-        row[0] if row else 0, row[1] if row else 0, row[2] if row else 0,
-    )
-
-    # --- Trends ---
-    days_ago_ts = _days_ago_timestamp(days)
-
-    def _date_list() -> list[str]:
-        """Generate a list of date strings for the trend period (oldest first)."""
-        result: list[str] = []
-        from datetime import timedelta
-        now = datetime.now(timezone.utc)
-        start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-        for i in range(days - 1, -1, -1):
-            d = start - timedelta(days=i)
-            result.append(d.strftime("%Y-%m-%d"))
-        return result
-
-    dates = _date_list()
-
-    active_users: list[TrendPoint] = []
-    questions: list[TrendPoint] = []
-    token_usage: list[TrendPoint] = []
-
-    from datetime import timedelta
-
-    for date_str in dates:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        day_start_ts = date_obj.timestamp()
-        day_end_ts = (date_obj + timedelta(days=1)).timestamp()
-        day_start_iso = date_obj.isoformat()
-        day_end_iso = (date_obj + timedelta(days=1)).isoformat()
-
-        au = sql.execute(
-            "SELECT COUNT(*) FROM users WHERE last_login_at IS NOT NULL AND last_login_at >= ? AND last_login_at < ?",
-            (day_start_iso, day_end_iso),
-        ).fetchone()[0]
-
-        q = sql.execute(
-            "SELECT COUNT(*) FROM messages WHERE role = 'user' AND created_at >= ? AND created_at < ?",
-            (day_start_ts, day_end_ts),
-        ).fetchone()[0]
-
-        row = sql.execute(
-            "SELECT COALESCE(SUM(total), 0) FROM token_usage WHERE created_at >= ? AND created_at < ?",
-            (day_start_ts, day_end_ts),
-        ).fetchone()
-        tokens = row[0] if row else 0
-
-        active_users.append(TrendPoint(date=date_str, value=au))
-        questions.append(TrendPoint(date=date_str, value=q))
-        token_usage.append(TrendPoint(date=date_str, value=tokens))
-
-    # --- Top users ---
-    top_rows = sql.execute(
-        "SELECT m.created_at, u.username "
-        "FROM messages m JOIN users u ON m.session_id IN (SELECT id FROM sessions WHERE user_id = u.id) "
-        "WHERE m.role = 'user' "
-        "ORDER BY m.created_at DESC"
-    ).fetchall()
-
-    user_question_map: dict[str, dict] = {}
-    for created_at, username in top_rows:
-        if username not in user_question_map:
-            user_question_map[username] = {"count": 0, "last_active": created_at}
-        user_question_map[username]["count"] += 1
-        if created_at > user_question_map[username]["last_active"]:
-            user_question_map[username]["last_active"] = created_at
-
-    sorted_users = sorted(user_question_map.items(), key=lambda x: -x[1]["count"])[:10]
-    top_users_list = [
-        TopUser(
-            username=username,
-            question_count=info["count"],
-            last_active=_format_ts(info["last_active"]),
-        )
-        for username, info in sorted_users
-    ]
-
-    # --- Model usage ---
-    model_rows = sql.execute(
-        "SELECT model, COALESCE(SUM(prompt), 0), COALESCE(SUM(completion), 0), "
-        "COALESCE(SUM(total), 0), COUNT(*) as call_count "
-        "FROM token_usage GROUP BY model ORDER BY call_count DESC"
-    ).fetchall()
-
-    model_usage_list = [
-        ModelUsage(
-            model=row[0],
-            prompt_tokens=row[1],
-            completion_tokens=row[2],
-            total_tokens=row[3],
-            call_count=row[4],
-        )
-        for row in model_rows
-    ]
-
-    return AdminStatsResponse(
-        overview=OverviewStats(
-            total_users=total_users,
-            total_sessions=total_sessions,
-            total_messages=total_messages,
-            today_logins=today_logins,
-            today_questions=today_questions,
-            today_token_prompt=today_token_prompt,
-            today_token_completion=today_token_completion,
-            today_token_total=today_token_total,
-        ),
-        trends=TrendsData(
-            active_users=active_users,
-            questions=questions,
-            token_usage=token_usage,
-        ),
-        top_users=top_users_list,
-        model_usage=model_usage_list,
-    )
 
 
 def _format_ts(ts: float | str) -> str:
