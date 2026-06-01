@@ -235,7 +235,8 @@ class TestGenerateDescriptions:
         state.config = Config()
         state.config.llm = LLMConfig(api_key="sk-test", api_base="https://test.api.com", model="gpt-4o")
         state._db_connections = [{"id": "db-1", "name": "TestDB"}]
-        state.schema_describe_prompt = None
+        from app.persistence import SCHEMA_DESCRIBE_PROMPT
+        state.schema_describe_prompt = SCHEMA_DESCRIBE_PROMPT
 
         yield
 

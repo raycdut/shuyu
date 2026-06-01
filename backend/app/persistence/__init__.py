@@ -145,6 +145,38 @@ SCHEMA_DESCRIBE_PROMPT = """<instructions>
   </rules>
 </instructions>"""
 
+FREEFORM_EXEC_PROMPT = """<instructions>
+  <task>执行分析计划</task>
+  <plan>{plan_text}</plan>
+  <rules>
+    <rule>按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现</rule>
+    <rule>不要重复查询已经获取过的数据</rule>
+  </rules>
+</instructions>"""
+
+REPORT_GEN_PROMPT = """<instructions>
+  <role>数据分析报告撰写专家</role>
+  <language>zh-CN</language>
+  <task>根据已有查询结果，生成一份完整的分析报告</task>
+  <requirements>
+    <item>直接回答用户的原始问题</item>
+    <item>使用具体的数据和数值（不要模糊描述）</item>
+    <item>结构清晰，使用表格展示数据</item>
+    <item>包含关键发现和结论</item>
+  </requirements>
+</instructions>"""
+
+REPORT_SUPPLEMENT_PROMPT = """<instructions>
+  <task>根据审核意见补充查询来完善报告</task>
+  <issues>{issues_text}</issues>
+  <suggestions>{suggestions_text}</suggestions>
+  <action>请调用 query_database 工具执行需要的补充查询。如果不需要查询，直接输出补充后的报告。</action>
+</instructions>"""
+
+REPORT_REGEN_PROMPT = """<instructions>
+  <task>根据所有查询结果（包括补充查询），重新生成一份完整的分析报告</task>
+</instructions>"""
+
 
 def init_sqlite() -> None:
     """Initialize SQLite database with schema and seed data."""
@@ -237,6 +269,10 @@ def init_sqlite() -> None:
         "plan_reflect": PLAN_REFLECT_PROMPT,
         "report_reflect": REPORT_REFLECT_PROMPT,
         "schema_describe": SCHEMA_DESCRIBE_PROMPT,
+        "exec_freeform": FREEFORM_EXEC_PROMPT,
+        "report_gen": REPORT_GEN_PROMPT,
+        "report_supplement": REPORT_SUPPLEMENT_PROMPT,
+        "report_regen": REPORT_REGEN_PROMPT,
     }
     for name, content in prompt_seeds.items():
         exists = state._sqlite.execute(
@@ -468,6 +504,10 @@ PROMPT_DEFAULTS: dict[str, str] = {
     "plan_reflect": PLAN_REFLECT_PROMPT,
     "report_reflect": REPORT_REFLECT_PROMPT,
     "schema_describe": SCHEMA_DESCRIBE_PROMPT,
+    "exec_freeform": FREEFORM_EXEC_PROMPT,
+    "report_gen": REPORT_GEN_PROMPT,
+    "report_supplement": REPORT_SUPPLEMENT_PROMPT,
+    "report_regen": REPORT_REGEN_PROMPT,
 }
 
 

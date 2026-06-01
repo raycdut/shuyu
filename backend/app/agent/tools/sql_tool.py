@@ -26,25 +26,9 @@ async def handle_sql_query(
     from ... import state as _state
 
     sql_gen_template = _state.sql_gen_prompt
-    if sql_gen_template:
-        system_prompt = sql_gen_template.format(schema_prompt=schema_prompt)
-    else:
-        system_prompt = (
-            "<instructions>"
-            "<role>SQL 专家</role>"
-            "<language>zh-CN</language>"
-            "<task>根据用户的问题和数据库结构，生成正确的 SQL 查询</task>"
-            f"<schema>{schema_prompt}</schema>"
-            "<rules>"
-            "<rule>只生成 SELECT 查询</rule>"
-            "<rule>只使用数据库中存在的表和字段</rule>"
-            "<rule>使用中文别名（AS）让结果可读</rule>"
-            "<rule>如果问题不明确，选择最合理的解释</rule>"
-            "<rule>如果无法生成 SQL，回复 \"UNABLE: 原因\"</rule>"
-            "</rules>"
-            "<output>直接输出 SQL，不要解释</output>"
-            "</instructions>"
-        )
+    if not sql_gen_template:
+        return "UNABLE: SQL 生成模板未配置，请先通过系统配置设置 SQL 生成提示词。"
+    system_prompt = sql_gen_template.format(schema_prompt=schema_prompt)
 
     safe_question = question[:500]
     messages = [

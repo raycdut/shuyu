@@ -70,7 +70,7 @@ def sample_schema():
 
 
 def test_prompt_integration_default_prompt(memory_db, sample_schema):
-    """Verify default (hardcoded) sql_gen prompt still works correctly."""
+    """Verify default (seeded) sql_gen prompt still works correctly."""
 
     async def mock_llm(msgs):
         # Verify the system prompt contains expected instructions
@@ -82,9 +82,10 @@ def test_prompt_integration_default_prompt(memory_db, sample_schema):
         return "SELECT name FROM users WHERE city = '北京'"
 
     import app.state as state
-    # Ensure no custom sql_gen_prompt is set (use hardcoded default)
+    from app.persistence import SQL_GEN_PROMPT
+    # Set the default seeded sql_gen_prompt
     original = state.sql_gen_prompt
-    state.sql_gen_prompt = None
+    state.sql_gen_prompt = SQL_GEN_PROMPT
     try:
         result = handle_sql_query(
             question="北京的用户有哪些？",
@@ -151,12 +152,13 @@ def test_prompt_integration_dynamic_prompt_update(memory_db, sample_schema):
         return "SELECT name FROM users WHERE age > 25"
 
     import app.state as state
+    from app.persistence import SQL_GEN_PROMPT
     import asyncio
 
     original = state.sql_gen_prompt
 
-    # Test with No custom prompt (hardcoded fallback)
-    state.sql_gen_prompt = None
+    # Test with default seeded prompt
+    state.sql_gen_prompt = SQL_GEN_PROMPT
     result1 = asyncio.run(
         handle_sql_query(
             question="30岁以上用户？",

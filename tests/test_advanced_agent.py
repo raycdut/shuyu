@@ -13,6 +13,10 @@ from app.agent.tools.registry import Tool, ToolRegistry
 DEFAULT_PLAN_PROMPT = "你是一个规划师，请制定分析计划。输出 JSON。"
 DEFAULT_REFLECT_PROMPT = "你是一个审核专家，请检查计划。输出 JSON。"
 DEFAULT_REPORT_REFLECT_PROMPT = "你是一个报告审核专家。输出 JSON。"
+DEFAULT_FREEFORM_EXEC_PROMPT = "<instructions><task>执行分析计划</task><plan>{plan_text}</plan></instructions>"
+DEFAULT_REPORT_GEN_PROMPT = "<instructions><task>根据已有查询结果生成报告</task></instructions>"
+DEFAULT_REPORT_SUPPLEMENT_PROMPT = "<instructions><task>补充查询</task></instructions>"
+DEFAULT_REPORT_REGEN_PROMPT = "<instructions><task>重新生成报告</task></instructions>"
 
 
 def _make_agent(tool_registry, mock_llm, system_prompt="助手", **kwargs):
@@ -23,6 +27,10 @@ def _make_agent(tool_registry, mock_llm, system_prompt="助手", **kwargs):
         plan_prompt=kwargs.pop("plan_prompt", DEFAULT_PLAN_PROMPT),
         plan_reflect_prompt=kwargs.pop("plan_reflect_prompt", DEFAULT_REFLECT_PROMPT),
         report_reflect_prompt=kwargs.pop("report_reflect_prompt", DEFAULT_REPORT_REFLECT_PROMPT),
+        freeform_exec_prompt=kwargs.pop("freeform_exec_prompt", DEFAULT_FREEFORM_EXEC_PROMPT),
+        report_gen_prompt=kwargs.pop("report_gen_prompt", DEFAULT_REPORT_GEN_PROMPT),
+        report_supplement_prompt=kwargs.pop("report_supplement_prompt", DEFAULT_REPORT_SUPPLEMENT_PROMPT),
+        report_regen_prompt=kwargs.pop("report_regen_prompt", DEFAULT_REPORT_REGEN_PROMPT),
         **kwargs,
     )
 

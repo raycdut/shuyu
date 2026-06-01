@@ -35,7 +35,7 @@ def client():
 class TestPromptPersistence:
     def test_seed_prompts(self):
         from app.persistence import PROMPT_DEFAULTS, _get_default_prompt_content
-        assert len(PROMPT_DEFAULTS) == 6
+        assert len(PROMPT_DEFAULTS) == 10
         assert "system" in PROMPT_DEFAULTS
         assert "sql_gen" in PROMPT_DEFAULTS
         assert "plan" in PROMPT_DEFAULTS

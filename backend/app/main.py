@@ -147,7 +147,8 @@ async def lifespan(app: FastAPI):
     # 4. Load all prompt categories (from DB with hardcoded fallbacks)
     from .persistence import _get_default_prompt_content
 
-    PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe"]
+    PROMPT_CATEGORIES = ["system", "sql_gen", "plan", "plan_reflect", "report_reflect", "schema_describe",
+                         "exec_freeform", "report_gen", "report_supplement", "report_regen"]
     loaded_prompts: dict[str, str] = {}
     for cat in PROMPT_CATEGORIES:
         content = None
@@ -188,6 +189,10 @@ async def lifespan(app: FastAPI):
         plan_prompt=loaded_prompts["plan"],
         plan_reflect_prompt=loaded_prompts["plan_reflect"],
         report_reflect_prompt=loaded_prompts["report_reflect"],
+        freeform_exec_prompt=loaded_prompts["exec_freeform"],
+        report_gen_prompt=loaded_prompts["report_gen"],
+        report_supplement_prompt=loaded_prompts["report_supplement"],
+        report_regen_prompt=loaded_prompts["report_regen"],
     )
 
     # 6. Session manager

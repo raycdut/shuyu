@@ -31,6 +31,10 @@ class AdvancedAgent:
         plan_prompt: str,
         plan_reflect_prompt: str,
         report_reflect_prompt: str,
+        freeform_exec_prompt: str,
+        report_gen_prompt: str,
+        report_supplement_prompt: str,
+        report_regen_prompt: str,
         max_iterations: int = 15,
     ):
         self.tool_registry = tool_registry
@@ -39,6 +43,10 @@ class AdvancedAgent:
         self._plan_prompt = plan_prompt
         self._plan_reflect_prompt = plan_reflect_prompt
         self._report_reflect_prompt = report_reflect_prompt
+        self._freeform_exec_prompt = freeform_exec_prompt
+        self._report_gen_prompt = report_gen_prompt
+        self._report_supplement_prompt = report_supplement_prompt
+        self._report_regen_prompt = report_regen_prompt
         self.max_iterations = max_iterations
         self._tool_history: list[tuple[str, dict]] = []
         self._sql_queries: list[str] = []
@@ -445,16 +453,7 @@ class AdvancedAgent:
         progress_callback: Callable | None,
     ) -> bool:
         """Fallback: original free-form ReAct loop when steps can't be parsed."""
-        exec_prompt = (
-            "<instructions>"
-            "<task>执行分析计划</task>"
-            f"<plan>{plan_text}</plan>"
-            "<rules>"
-            "<rule>按计划步骤依次执行，每步调用 query_database 工具查询，完成后输出阶段性发现</rule>"
-            "<rule>不要重复查询已经获取过的数据</rule>"
-            "</rules>"
-            "</instructions>"
-        )
+        exec_prompt = self._freeform_exec_prompt.format(plan_text=plan_text)
         tools_def = self.tool_registry.to_openai_tools()
 
         for iteration in range(1, self.max_iterations + 1):
@@ -527,19 +526,7 @@ class AdvancedAgent:
             messages=[
                 {
                     "role": "system",
-                    "content": (
-                        "<instructions>"
-                        "<role>数据分析报告撰写专家</role>"
-                        "<language>zh-CN</language>"
-                        "<task>根据已有查询结果，生成一份完整的分析报告</task>"
-                        "<requirements>"
-                        "<item>直接回答用户的原始问题</item>"
-                        "<item>使用具体的数据和数值（不要模糊描述）</item>"
-                        "<item>结构清晰，使用表格展示数据</item>"
-                        "<item>包含关键发现和结论</item>"
-                        "</requirements>"
-                        "</instructions>"
-                    ),
+                    "content": self._report_gen_prompt,
                 },
                 *conversation,
             ],
@@ -635,13 +622,9 @@ class AdvancedAgent:
                     messages=[
                         {
                             "role": "system",
-                            "content": (
-                                "<instructions>"
-                                "<task>根据审核意见补充查询来完善报告</task>"
-                                f"<issues>{issues_text}</issues>"
-                                f"<suggestions>{suggestions_text}</suggestions>"
-                                "<action>请调用 query_database 工具执行需要的补充查询。如果不需要查询，直接输出补充后的报告。</action>"
-                                "</instructions>"
+                            "content": self._report_supplement_prompt.format(
+                                issues_text=issues_text,
+                                suggestions_text=suggestions_text,
                             ),
                         },
                         *conversation,
@@ -677,7 +660,7 @@ class AdvancedAgent:
                     messages=[
                         {
                             "role": "system",
-                            "content": "<instructions><task>根据所有查询结果（包括补充查询），重新生成一份完整的分析报告</task></instructions>",
+                            "content": self._report_regen_prompt,
                         },
                         *conversation,
                     ],

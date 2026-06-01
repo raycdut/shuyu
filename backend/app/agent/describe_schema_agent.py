@@ -19,36 +19,9 @@ from .. import state
 from ..client import call_llm
 from ..persistence.schema import load_full_schema, save_descriptions
 
-logger = logging.getLogger("shuyu.agent")
 
-DEFAULT_SCHEMA_DESCRIBE_PROMPT = """<instructions>
-  <role>数据分析专家</role>
-  <language>zh-CN</language>
-  <task>为数据库表和字段生成或优化中英文双语语义描述</task>
-  <principles>
-    <principle>如果字段/表已有现有描述（existing description），你应当优化和完善它，而不是从零重写</principle>
-    <principle>保留原意，修正不准确之处，补充遗漏的关键信息</principle>
-    <principle>不要随意改动没有问题的内容</principle>
-    <principle>描述要有实际业务含义，不要只是直译英文名</principle>
-  </principles>
-  <output>
-    返回 JSON 对象，包含一个 "tables" 数组，每个元素包含：
-    - table_name: 表名
-    - table_description: 表的中文业务描述（20-50字）
-    - table_description_en: 表的英文业务描述（20-50 words）
-    - columns: 列描述数组
-      - column_name: 列名
-      - column_description: 列的中文业务描述（10-30字）
-      - column_description_en: 列的英文业务描述（10-30 words）
-  </output>
-  <rules>
-    <rule>如果字段名包含 id 且可能是外键（如 customer_id），要说明关联含义</rule>
-    <rule>主键字段在描述中标注</rule>
-    <rule>时间字段说明含义（如创建时间、更新时间）</rule>
-    <rule>金额字段说明类型（如单价、总价）</rule>
-    <rule>布尔/状态字段说明各取值含义</rule>
-  </rules>
-</instructions>"""
+
+logger = logging.getLogger("shuyu.agent")
 
 
 def _build_table_block(table: dict) -> str:
@@ -157,7 +130,7 @@ async def generate_descriptions(
         batch = tables[i : i + BATCH_SIZE]
         logger.info(f"Processing batch {i // BATCH_SIZE + 1} ({len(batch)} tables)")
 
-        system_prompt = state.schema_describe_prompt or DEFAULT_SCHEMA_DESCRIBE_PROMPT
+        system_prompt = state.schema_describe_prompt
         prompt = _build_user_prompt(db_name, batch)
         try:
             response = await call_llm(
