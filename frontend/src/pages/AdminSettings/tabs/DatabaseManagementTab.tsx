@@ -230,7 +230,7 @@ function SchemaDetailView({
                         isSelected ? 'bg-celadon/5 font-semibold' : ''
                       }`}
                     >
-                      <span>{complete ? '\u{1F7E2}' : '\u{1F534}'}</span>
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${complete ? 'bg-celadon' : 'bg-cinnabar/60'}`} />
                       <span className="font-mono text-ink">{tbl.table_name}</span>
                       <span className="text-xs text-ink-lighter ml-auto flex-shrink-0">
                         {t('dbSchema.fieldsDescribed', { count: described, total })}
