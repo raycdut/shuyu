@@ -10,6 +10,23 @@ from app.agent.advanced_agent import AdvancedAgent
 from app.agent.tools.registry import Tool, ToolRegistry
 
 
+DEFAULT_PLAN_PROMPT = "你是一个规划师，请制定分析计划。输出 JSON。"
+DEFAULT_REFLECT_PROMPT = "你是一个审核专家，请检查计划。输出 JSON。"
+DEFAULT_REPORT_REFLECT_PROMPT = "你是一个报告审核专家。输出 JSON。"
+
+
+def _make_agent(tool_registry, mock_llm, system_prompt="助手", **kwargs):
+    return AdvancedAgent(
+        tool_registry=tool_registry,
+        call_llm_func=mock_llm,
+        system_prompt=system_prompt,
+        plan_prompt=kwargs.pop("plan_prompt", DEFAULT_PLAN_PROMPT),
+        plan_reflect_prompt=kwargs.pop("plan_reflect_prompt", DEFAULT_REFLECT_PROMPT),
+        report_reflect_prompt=kwargs.pop("report_reflect_prompt", DEFAULT_REPORT_REFLECT_PROMPT),
+        **kwargs,
+    )
+
+
 @pytest.fixture
 def tool_registry():
     reg = ToolRegistry()
@@ -93,7 +110,7 @@ async def test_call_count_minimum(tool_registry):
             return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     result = await agent.run([{"role": "user", "content": "test"}])
 
     assert len(result["content"]) > 0
@@ -127,7 +144,7 @@ async def test_full_pipeline_produces_result(tool_registry):
         # Execute step - return data directly (no tool calls, >30 chars)
         return _make_choice(content="销售数据：100件商品，总额50000元")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     result = await agent.run([{"role": "user", "content": "test"}])
 
     assert len(result["content"]) > 0
@@ -159,7 +176,7 @@ async def test_progress_callback_receives_events(tool_registry):
             return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     await agent.run([{"role": "user", "content": "test"}], progress_callback=progress)
 
     event_types = [e["type"] for e in events]
@@ -193,7 +210,7 @@ async def test_sql_queries_in_result(tool_registry):
             return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     result = await agent.run([{"role": "user", "content": "test"}])
 
     assert "sql_queries" in result
@@ -229,7 +246,7 @@ async def test_plan_reflection_loops_on_revision(tool_registry):
             return _make_choice(content='{"verdict": "通过", "issues": [], "suggestions": [], "needs_new_plan": false}')
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     result = await agent.run([{"role": "user", "content": "test"}])
 
     assert len(result["content"]) > 0
@@ -284,7 +301,7 @@ async def test_handles_json_decode_error_in_tool_args(tool_registry):
             return resp
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(tool_registry=tool_registry, call_llm_func=mock_llm, system_prompt="助手")
+    agent = _make_agent(tool_registry=tool_registry, mock_llm=mock_llm)
     result = await agent.run([{"role": "user", "content": "test"}])
 
     assert len(result["content"]) > 0
@@ -316,10 +333,9 @@ async def test_max_iterations_limit(tool_registry):
             return _make_choice(content="审核结论：通过")
         return _make_choice(content="数据 OK")
 
-    agent = AdvancedAgent(
+    agent = _make_agent(
         tool_registry=tool_registry,
-        call_llm_func=mock_llm,
-        system_prompt="助手",
+        mock_llm=mock_llm,
         max_iterations=5,
     )
     result = await agent.run([{"role": "user", "content": "test"}])

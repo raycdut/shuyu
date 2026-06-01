@@ -20,75 +20,6 @@ from .tools.registry import ToolRegistry
 
 logger = logging.getLogger("shuyu.agent")
 
-PLAN_PROMPT = """<instructions>
-  <role>数据分析规划师</role>
-  <language>zh-CN</language>
-  <task>根据用户的提问和下方数据库结构，制定分析计划。注意 SQL 语法必须与数据库类型匹配（如 DuckDB 使用 information_schema 而非 pg_catalog）。</task>
-  <rules>
-    <rule>必须输出可执行的计划：即使问题不明确，也要按最合理的理解制定计划，绝不能拒绝执行或输出空计划</rule>
-    <rule>只使用下方 <database> 中列出的表和字段，不要编造不存在的表或字段</rule>
-    <rule>输出完整的、可直接执行的 SQL，确保 SQL 语法与数据库兼容</rule>
-    <rule>如果一条 SQL 能解决问题，只写一步；确实需要多步时才拆分</rule>
-    <rule>如果问题太模糊，按数据库中已有的表和字段做最合理的假设</rule>
-    <rule>不要调用工具，只写计划</rule>
-  </rules>
-  <output>
-    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-    {
-      "target": "一句话说明用户想分析什么",
-      "steps": [
-        {
-          "purpose": "为什么查这个",
-          "sql": "你的完整 SQL，可直接执行，如果没有 SQL 填 null"
-        }
-      ]
-    }
-  </output>
-</instructions>"""
-
-PLAN_REFLECT_PROMPT = """<instructions>
-  <role>数据分析规划审核专家</role>
-  <language>zh-CN</language>
-  <task>检查分析计划是否合理</task>
-  <checklist>
-    <item>分析目标是否准确反映了用户的问题？</item>
-    <item>每个分析步骤的 SQL 思路是否可行？（表名、关联字段、聚合方式是否合理）</item>
-    <item>步骤顺序是否正确？（后面的步骤是否依赖前面的结果？）</item>
-    <item>有没有多余的步骤？（一条 SQL 能解决的问题，不应该拆成多步）</item>
-    <item>有没有遗漏重要的分析维度？</item>
-  </checklist>
-  <output>
-    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-    {
-      "verdict": "合理 或 需要修改",
-      "issues": ["如果有问题，逐条列出，没有填空数组"],
-      "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"]
-    }
-  </output>
-</instructions>"""
-
-REPORT_REFLECT_PROMPT = """<instructions>
-  <role>数据分析报告审核专家</role>
-  <language>zh-CN</language>
-  <task>检查分析报告的质量</task>
-  <checklist>
-    <item>报告是否直接回应了用户的原始问题？</item>
-    <item>报告中的数据是否有具体的数值支持（不应该是模糊描述）？</item>
-    <item>有没有明显的遗漏或错误？</item>
-    <item>是否有有趣的发现值得提及？</item>
-  </checklist>
-  <output>
-    你必须输出符合下面结构的 JSON 对象，不要输出其他任何内容：
-    {
-      "verdict": "通过 或 需要补充 或 计划错误",
-      "issues": ["如果有问题，逐条列出，没有填空数组"],
-      "suggestions": ["如果有问题，给出具体的修改建议，没有填空数组"],
-      "needs_new_plan": true/false (如果是计划错误，导致现有数据无法修复报告，请设为 true)
-    }
-  </output>
-</instructions>"""
-
-
 class AdvancedAgent:
     """Plan → Reflect → Execute → Report → Reflect agent for complex analysis."""
 
@@ -97,17 +28,17 @@ class AdvancedAgent:
         tool_registry: ToolRegistry,
         call_llm_func: Callable,
         system_prompt: str,
-        plan_prompt: str | None = None,
-        plan_reflect_prompt: str | None = None,
-        report_reflect_prompt: str | None = None,
+        plan_prompt: str,
+        plan_reflect_prompt: str,
+        report_reflect_prompt: str,
         max_iterations: int = 15,
     ):
         self.tool_registry = tool_registry
         self.call_llm = call_llm_func
         self.system_prompt = system_prompt
-        self._plan_prompt = plan_prompt or PLAN_PROMPT
-        self._plan_reflect_prompt = plan_reflect_prompt or PLAN_REFLECT_PROMPT
-        self._report_reflect_prompt = report_reflect_prompt or REPORT_REFLECT_PROMPT
+        self._plan_prompt = plan_prompt
+        self._plan_reflect_prompt = plan_reflect_prompt
+        self._report_reflect_prompt = report_reflect_prompt
         self.max_iterations = max_iterations
         self._tool_history: list[tuple[str, dict]] = []
         self._sql_queries: list[str] = []
