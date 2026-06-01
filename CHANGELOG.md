@@ -1,5 +1,47 @@
 # Changelog
 
+## 2026-06-01 — PostgreSQL 支持
+
+### 新增 PostgreSQL 连接器
+
+**动机**: 扩展系统支持的数据库类型，增加 PostgreSQL 支持，用户可以直接连接 Docker/CVM 中的 PostgreSQL 数据库进行数据分析。
+
+**变更清单**:
+
+1. **新增 `backend/app/db/postgresql.py`** — `PostgreSQLConnector(DatabaseConnector)`
+   - 基于 `psycopg2` 实现的连接器，支持 `connect`/`disconnect`/`test_connection`/`get_schema`/`execute`
+   - `get_schema()` 从 `information_schema` 查询表和列信息，支持主键识别
+   - `execute()` 使用 `RealDictCursor` 返回结果，支持自动 COUNT 计数
+   - 支持 `include_tables`/`exclude_tables` 表过滤
+   - 默认端口 5432，默认用户 postgres
+
+2. **更新 `backend/requirements.txt`** — 新增 `psycopg2-binary>=2.9.0`
+
+3. **更新 `backend/app/routes/database.py`**:
+   - `_create_connector()` — 支持 `"postgres"` 类型创建 PostgreSQLConnector
+   - `test_database_connection()` — 支持 `"postgres"` 类型测试连接
+
+4. **更新 `backend/app/routes/chat.py`**:
+   - `_create_connector()` — 支持 `"postgres"` 类型创建 PostgreSQLConnector
+
+5. **新增 `backend/tests/test_db_postgresql.py`**（11 个测试）:
+   - `test_connect_success` / `test_disconnect` / `test_disconnect_when_not_connected`
+   - `test_test_connection_success` / `test_test_connection_failure`
+   - `test_get_schema` / `test_get_schema_should_exclude_tables` / `test_get_schema_include_only`
+   - `test_execute_select` / `test_execute_empty_result`
+   - `test_format_data_type_with_length`
+
+**Docker PostgreSQL 连接信息**:
+- 容器名: `pg-crm`（PostgreSQL 16）
+- Host: `127.0.0.1:5433`（容器内部映射端口）
+- User: `postgres`, Password: `postgres`
+- Database: `crm_db`
+- 表: `accounts`(9列), `contacts`(9列), `interactions`(8列), `opportunities`(9列)
+
+**验证结果**: 后端 279 测试全部通过，前端 126 测试全部通过。
+
+---
+
 ## 2026-06-01 — 前端组件复用重构
 
 ### 新增通用组件

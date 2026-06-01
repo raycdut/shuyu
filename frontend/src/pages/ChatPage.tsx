@@ -1,5 +1,4 @@
 import { useEffect } from 'react'
-import { useTranslation } from 'react-i18next'
 import { useSessionStore } from '../store/sessionStore'
 import { useConfigStore } from '../store/configStore'
 import { useUIStore } from '../store/uiStore'
@@ -14,7 +13,6 @@ import Chat from '../components/Chat'
  * 会话管理和消息流处理分别通过 useSessions 和 useChatStream hooks 实现。
  */
 export default function ChatPage() {
-  const { t } = useTranslation()
   const messages = useSessionStore(s => s.messages)
   const isLoading = useSessionStore(s => s.isLoading)
 

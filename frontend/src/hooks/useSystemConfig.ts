@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api'
 import type { SystemConfig } from '../types'
-import { useTranslation } from 'react-i18next'
 
 let cachedConfig: SystemConfig | null = null
 let loadPromise: Promise<SystemConfig> | null = null
 
 export function useSystemConfig() {
-  const { t } = useTranslation()
   const [config, setConfig] = useState<SystemConfig | null>(cachedConfig)
   const [saving, setSaving] = useState(false)
 

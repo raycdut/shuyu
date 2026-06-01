@@ -25,6 +25,7 @@ from ..persistence.schema import (
 from ..db.base import DatabaseConnector
 from ..db.duckdb import DuckDBConnector
 from ..db.mysql import MySQLConnector
+from ..db.postgresql import PostgreSQLConnector
 from ..models.database import (
     DBConnectRequest,
     DBTestResult,
@@ -56,6 +57,16 @@ def _create_connector(entry: dict) -> DatabaseConnector:
             host=entry.get("host", "127.0.0.1"),
             port=entry.get("port") or 3306,
             user=entry.get("user", "root"),
+            password=entry.get("password", ""),
+            database=entry.get("database", ""),
+            include_tables=entry.get("include_tables"),
+            exclude_tables=entry.get("exclude_tables"),
+        )
+    elif db_type == "postgres":
+        return PostgreSQLConnector(
+            host=entry.get("host", "127.0.0.1"),
+            port=entry.get("port") or 5432,
+            user=entry.get("user", "postgres"),
             password=entry.get("password", ""),
             database=entry.get("database", ""),
             include_tables=entry.get("include_tables"),
@@ -157,6 +168,16 @@ async def test_database_connection(req: DBConnectRequest):
                 host=req.host or "127.0.0.1",
                 port=req.port or 3306,
                 user=req.user or "root",
+                password=req.password or "",
+                database=req.database or "",
+                include_tables=req.include_tables,
+                exclude_tables=req.exclude_tables,
+            )
+        elif req.type == "postgres":
+            test_conn = PostgreSQLConnector(
+                host=req.host or "127.0.0.1",
+                port=req.port or 5432,
+                user=req.user or "postgres",
                 password=req.password or "",
                 database=req.database or "",
                 include_tables=req.include_tables,

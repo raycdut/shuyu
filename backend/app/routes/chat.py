@@ -20,6 +20,7 @@ from ..agent.tools.sql_tool import handle_sql_query
 from ..db.base import DatabaseConnector
 from ..db.duckdb import DuckDBConnector
 from ..db.mysql import MySQLConnector
+from ..db.postgresql import PostgreSQLConnector
 from ..db.schema import build_schema_light, build_schema_prompt
 from ..client import call_llm
 from ..models.chat import ChatRequest, ChatResponse
@@ -44,6 +45,16 @@ def _create_connector(db_entry: dict) -> DatabaseConnector:
             host=db_entry.get("host", "127.0.0.1"),
             port=db_entry.get("port") or 3306,
             user=db_entry.get("user", "root"),
+            password=db_entry.get("password", ""),
+            database=db_entry.get("database", ""),
+            include_tables=db_entry.get("include_tables"),
+            exclude_tables=db_entry.get("exclude_tables"),
+        )
+    elif db_type == "postgres":
+        return PostgreSQLConnector(
+            host=db_entry.get("host", "127.0.0.1"),
+            port=db_entry.get("port") or 5432,
+            user=db_entry.get("user", "postgres"),
             password=db_entry.get("password", ""),
             database=db_entry.get("database", ""),
             include_tables=db_entry.get("include_tables"),
