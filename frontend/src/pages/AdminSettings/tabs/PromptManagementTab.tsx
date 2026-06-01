@@ -27,6 +27,16 @@ const AGENT_TABS = [
       { key: 'schema_describe', name: '描述生成提示词' },
     ],
   },
+  {
+    key: 'other',
+    label: '其他',
+    items: [
+      { key: 'exec_freeform', name: '自由执行提示词' },
+      { key: 'report_gen', name: '报告生成提示词' },
+      { key: 'report_supplement', name: '报告补充提示词' },
+      { key: 'report_regen', name: '报告再生提示词' },
+    ],
+  },
 ]
 
 type EditorState = {
