@@ -2,18 +2,26 @@
   <img src="https://img.shields.io/github/license/raycdut/shuyu?color=%237ba893" alt="License">
   <img src="https://img.shields.io/github/actions/workflow/status/raycdut/shuyu/ci.yml?branch=main&label=CI&color=%237ba893" alt="CI">
   <img src="https://img.shields.io/badge/python-3.11-%232c2c2c" alt="Python">
-  <img src="https://img.shields.io/badge/tests-492%20passed-%237ba893" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-255%20passed-%237ba893" alt="Tests">
   <img src="https://img.shields.io/badge/react-18-%237ba893" alt="React">
   <img src="https://img.shields.io/badge/license-MIT-%232c2c2c" alt="MIT">
 </p>
 
 # Shuyu (数语) — Open-Source Conversational Data Analyst
 
-**Talk to any database in plain language. Built-in ReAct agent, no LangChain. LLM-agnostic. Multi-database.**
+**Talk to any database in plain language. Built-in ReAct agent, no LangChain. LLM-agnostic. Multi-database. Supports MySQL + DuckDB + PostgreSQL.**
 
 ```bash
-docker compose up -d
-# Open http://localhost:3000 → configure LLM + database → start asking
+cp .env.example .env
+# Edit .env: set LLM_API_KEY (DeepSeek / OpenAI)
+make setup
+# Open http://localhost:3000 → register → start asking
+```
+
+Or deploy in production with a single command:
+
+```bash
+./scripts/setup.sh
 ```
 
 ---
@@ -58,11 +66,30 @@ No training. No dashboard building. No SQL required.
 
 ## Quick Start
 
+### Production (with MySQL)
+
 ```bash
-docker compose up -d
+git clone https://github.com/raycdut/shuyu.git
+cd shuyu
+cp .env.example .env
+# Edit .env: fill in LLM_API_KEY (DeepSeek / OpenAI)
+make setup
 ```
 
-Then open **http://localhost:3000**, register an account, configure your LLM (DeepSeek/OpenAI/Ollama) and database connection in the settings panel, and start asking questions.
+This starts 3 containers: **MySQL 8.0** (ConfigDB) + **Backend** + **Frontend** (Nginx).
+
+Open **http://localhost:3000**, register an account, configure your database connection, and start asking questions.
+
+### Development (SQLite, no Docker required)
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+cd frontend
+npm install && npm run dev
+```
 
 ---
 
@@ -72,8 +99,8 @@ Then open **http://localhost:3000**, register an account, configure your LLM (De
 |----------|--------|
 | **DuckDB** (local `.duckdb`/`.db` files) | ✅ Working |
 | **MySQL / MariaDB** | ✅ Working |
-| **SQLite** | ✅ Working (config & persistence) |
 | **PostgreSQL** | ✅ Working |
+| **SQLite** | ✅ As ConfigDB (dev mode) |
 | **Snowflake** | 🚧 Planned |
 | **BigQuery** | 🚧 Planned |
 | **Redshift** | 🚧 Planned |
@@ -93,31 +120,35 @@ Each database type is a thin connector (~100 lines of Python) implementing the `
 | Backend | Python 3.11 + FastAPI |
 | Frontend | React 18 + Tailwind CSS + Vite |
 | Agent | Custom ReAct loop (no LangChain) |
-| Data Storage | DuckDB (analytics) + SQLite (config, sessions) |
+| ConfigDB | SQLite (dev) / MySQL 8.0 (prod) via SQLAlchemy 2.0 ORM |
+| Analytics DB | DuckDB, MySQL, PostgreSQL |
 | Auth | JWT + bcrypt |
-| LLM Providers | OpenAI, DeepSeek, Ollama, any OpenAI-compatible API |
+| LLM Providers | DeepSeek, OpenAI, Ollama, any OpenAI-compatible API |
 | Vector Store | ChromaDB |
 | CI/CD | GitHub Actions (3 jobs: backend + frontend + docker) |
-| Deployment | Docker Compose |
+| Deployment | Docker Compose (MySQL + Backend + Nginx) |
 
 ---
 
 ## Architecture
 
 ```
-Browser (React) ──→ FastAPI ──→ ReAct Agent Loop
-                                   │
-                        ┌──────────┼──────────┐
-                        ▼          ▼          ▼
-                    SQL Tool    RAG Tool    Session
-                    (connector) (ChromaDB)  Manager
-                        │                     │
-                        ▼                     ▼
-                   analytics.db          config.db
-                   (your data)           (SQLite config + history)
+Browser (React) ──→ Nginx ──→ FastAPI ──→ ReAct Agent Loop
+                    :3000       :8000          │
+                                        ┌──────┼──────┐
+                                        ▼      ▼      ▼
+                                    SQL     RAG    Session
+                                    Tool  (Chroma) Manager
+                                        │            │
+                                        ▼            ▼
+                                   analytics.db  ConfigDB
+                                   (your data)   ├── SQLite (dev)
+                                                 └── MySQL  (prod)
 ```
 
 The agent loop is provider-agnostic: swap between DeepSeek, OpenAI, or Ollama without changing any code.
+
+ConfigDB is accessed through **SQLAlchemy 2.0 ORM** with `scoped_session` — set `CONFIGDB_URL` to switch between SQLite and MySQL: `mysql+pymysql://user:pass@host/db`.
 
 > **Note:** The official DeepSeek API ([api.deepseek.com](https://api.deepseek.com)) has been thoroughly tested and is the recommended LLM provider. Other providers (OpenAI, Ollama, OpenAI-compatible APIs) are supported but have not been extensively tested.
 
@@ -131,6 +162,10 @@ shuyu/
 │   ├── app/
 │   │   ├── main.py            # API routes + startup
 │   │   ├── config.py          # Default config (no YAML needed)
+│   │   ├── configdb/          # ConfigDB: 14 ORM models + SQLAlchemy session factory
+│   │   │   ├── base.py        # scoped_session context manager
+│   │   │   ├── models/        # User, Session, Message, Prompt, TokenUsage, ...
+│   │   │   └── __init__.py    # init_configdb() factory
 │   │   ├── agent/
 │   │   │   ├── simple_agent.py    # ReAct loop
 │   │   │   ├── advanced_agent.py  # Plan→Reflect→Execute→Report
@@ -139,7 +174,7 @@ shuyu/
 │   │   ├── auth/              # JWT + bcrypt auth
 │   │   ├── admin_config/      # Admin settings API
 │   │   ├── routes/            # Chat, config, database, schema routes
-│   │   └── models/            # Pydantic schemas
+│   │   └── persistence/       # ConfigDB data access layer (ORM)
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── frontend/                  # React + Tailwind CSS + Vite
@@ -151,22 +186,37 @@ shuyu/
 │   │   └── i18n/              # Multi-language support
 │   ├── package.json
 │   └── Dockerfile (nginx)
-├── docker-compose.yml         # One-command deploy
-└── docs/                      # Design specs (26+ design documents)
+├── docker-compose.yml         # MySQL + Backend + Frontend
+├── .env.example               # Environment variable template
+├── Makefile                   # make up / make setup / make down
+├── scripts/
+│   └── setup.sh               # One-click deploy script
+└── docs/                      # Design specs & deployment guide
 ```
 
 ---
 
 ## Configuration
 
-No YAML files needed. All settings are configured through the web UI and persisted in SQLite:
+### Environment Variables (`.env`)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `LLM_API_KEY` | ✅ | — | DeepSeek / OpenAI API key |
+| `AUTH_SECRET_KEY` | ✅ (prod) | auto-generated | JWT signing secret (set stable value for production) |
+| `CONFIGDB_URL` | ❌ | SQLite (`backend/data/config.db`) | MySQL connection string: `mysql+pymysql://user:pass@host:3306/db` |
+| `MYSQL_ROOT_PASSWORD` | ❌ | `rootpass123` | Docker MySQL root password |
+| `LLM_PROVIDER` | ❌ | `openai` | Default LLM provider |
+| `LLM_MODEL` | ❌ | `gpt-4o` | Default model |
+
+### Web UI Settings (persisted in ConfigDB)
 
 - **LLM** — provider, API key, model, base URL, connection test
-- **Database** — connection info, table include/exclude filters
+- **Database** — connection info (host/port/user/password/database), table include/exclude filters
 - **Safety** — read-only mode, data approval gate, max rows limit
-- **Prompt management** — customize system prompts per agent mode
+- **Prompt management** — 10 categories with versioning, edit and restore defaults
 
-All settings survive restarts.
+All settings survive restarts and are shared across containers.
 
 ---
 
@@ -220,10 +270,23 @@ MIT — free to use, modify, and deploy. See [LICENSE](./LICENSE).
 ```bash
 git clone https://github.com/raycdut/shuyu.git
 cd shuyu
-docker compose up -d
+cp .env.example .env
+# 编辑 .env: 填入 LLM_API_KEY（DeepSeek / OpenAI）
+make setup
 ```
 
-打开 http://localhost:3000 → 注册账号 → 配置 LLM（DeepSeek / OpenAI / Ollama）→ 连接数据库 → 开始提问。
+打开 http://localhost:3000 → 注册账号 → 配置 LLM → 连接数据库 → 开始提问。
+
+### 开发模式（SQLite，无需 Docker）
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+
+cd frontend
+npm install && npm run dev
+```
 
 ## 适用场景
 
@@ -252,19 +315,18 @@ docker compose up -d
 - 宋氏美学 UI：水墨色、青瓷绿、宣纸白配色，楷体/宋体字体栈
 - 完整用户体系：注册 / 登录 / JWT 鉴权 / 管理员设置
 - 管理员运营看板：Token 用量、活跃用户、模型分布
-- Prompt 管理：6 分类版本化管理，支持编辑/恢复默认
+- Prompt 管理：10 分类版本化管理，支持编辑/恢复默认
 - 数据库 Schema 管理：导入结构、AI 生成字段描述、中英文双语编辑
-- 数据可视化：柱状图/折线图/饼图智能检测，可手动切换
 - MySQL、PostgreSQL 密码加密存储
-- 26+ 篇架构设计文档
-- 492 个测试用例，CI 全自动验证
+- ConfigDB：SQLAlchemy 2.0 ORM，14 张表，开发用 SQLite / 生产用 MySQL
+- Docker Compose 一键部署：MySQL + Backend + Nginx
+- 255 个测试用例，CI 全自动验证
 
 ## 贡献
 
 欢迎提交 Issue 和 PR。当前优先需要的贡献：
 
 - 更多数据库类型支持（Snowflake、BigQuery、ClickHouse 等）
-- Docker Compose 自动配置指南
 
 ## 联系
 
