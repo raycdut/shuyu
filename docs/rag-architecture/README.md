@@ -157,15 +157,27 @@ Input:  user_question (str)
 
 Steps:
 1. Embed user question → q_vector
-2. Hybrid search across all three tiers:
-   a. Tier 1: table/column static embeddings
-   b. Tier 2: hypothetical question embeddings (from past conversations)
-   c. Tier 3: historical SQL embeddings (optional)
-3. Merge + rank → top-K results
-4. For each matched table, load full column details from SQLite
-5. Return formatted schema prompt
+2. **Layered retrieval** (not flat merge — scores across tiers are not comparable):
+   a. **First**: Search Tier 2 (hypothetical questions). These are expressed in
+      natural user language, so cosine similarity is most reliable here.
+      → If Tier 2 finds matches above `tier2_min_score` (default 0.7), use them.
+   b. **If not enough**: Search Tier 1a (table-level). Lower scores expected (0.3-0.6).
+   c. **If still not enough**: Search Tier 1b (column-level) for fine-grained matching.
+   d. **Optional**: Search Tier 3 (historical SQL).
+3. Merge results across tiers: Tier 2 results are trusted most, followed by
+   Tier 1a, then Tier 1b. De-duplicate by table_id.
+4. Take top-K results (K = top_k).
+5. For each matched table, load full column details from SQLite.
+6. Build **two-part output**:
+   a. `<relevant_tables>` — Top-K table schemas with full column details
+   b. `<other_tables>` — List of remaining table names (name only, no columns)
+7. Inject both into the agent prompt.
 
-Output: formatted schema prompt (same shape as build_schema_prompt())
+Output: formatted schema prompt with relevant + other tables
+
+**Why this matters**: A query like "上个月华东区销量最高的产品的供应商"
+needs `suppliers` table which might rank below top-5. The `other_tables` list
+keeps the agent aware of all available tables without bloating the prompt.
 ```
 
 #### `router/question_learner.py` — Self-learning from conversations (NEW)
@@ -180,10 +192,23 @@ Step 1: Collect context from the just-completed request:
   - The SQL that was executed
   - Whether the user gave positive feedback (thumbs-up, expressed satisfaction)
 
-Step 2: LLM generates hypothetical questions (lightweight, 1-shot):
+Step 2: **Feedback gate** — only learn from queries when:
+  a. SQL executed without error (required)
+  b. Result returned > 0 rows (prevents learning from empty-result queries)
+  c. Agent did NOT enter loop-detection before this query (sign of confusion)
+  d. Query used at least one table from the Top-5 retrieved (if query used a
+     table that wasn't retrieved, the RAG system was wrong — don't reinforce it)
+  e. (Future) User gave explicit thumbs-up
+
+  If any gate fails → skip. Do NOT generate hypothetical questions.
+  Better to learn nothing than to learn wrong patterns.
+
+Step 3: LLM generates hypothetical questions (lightweight, 1-shot):
   "Based on the user question '{question}' and the SQL query '{sql}'
    executed against tables {tables}, generate 2-3 alternative phrasings
-   that would lead to the SAME SQL query."
+   that would lead to the SAME SQL query.
+   IMPORTANT: Make them diverse — different sentence structures, different
+   keywords, different levels of detail. One line per phrasing. No numbering."
 
   Examples:
     User: "上个月华东区销量排名"
@@ -222,20 +247,39 @@ Supports pluggable providers:
 - **SiliconFlow** / BGE-M3 (China-friendly alternative)
 - Local **sentence-transformers** (no API cost, higher latency)
 
+**Provider config guidance**:
+- shuyu's main LLM is DeepSeek, which has NO embedding API.
+- **Recommended**: Use **SiliconFlow** (国内直连, 兼容 OpenAI SDK, BGE-M3 中文好).
+  → Can reuse an existing SiliconFlow API key or get a free one.
+  → Only needs `RAG_PROVIDER=siliconflow` + `RAG_API_KEY` in config.
+- **Alternative**: OpenAI `text-embedding-3-small`.
+  → Requires a separate OpenAI API key.
+- **Simplest setup**: SiliconFlow with the model `BAAI/bge-m3`.
+  → Set `RAG_PROVIDER=siliconflow`, `RAG_MODEL=BAAI/bge-m3`, no key needed if using free tier.
+- Embedding and chat use SEPARATE API keys and base URLs.
+  → Config handles this with `rag.api_key` and `rag.api_base` fields distinct from `llm.*`.
+
 ### 3.3 Configuration additions (config.py)
 
 ```python
 class RAGConfig(BaseModel):
     enabled: bool = False            # Master toggle
     backend: str = "sqlite"          # sqlite | chromadb | faiss
-    provider: str = "openai"         # openai | siliconflow | local
-    model: str = "text-embedding-3-small"
+    provider: str = "siliconflow"    # siliconflow (default) | openai | local
+    model: str = "BAAI/bge-m3"       # text-embedding-3-small for OpenAI
+    api_key: str = ""                # Separate from llm.api_key
+    api_base: Optional[str] = None   # e.g. https://api.siliconflow.cn/v1
     top_k: int = 5                   # Tables to retrieve per query
-    min_score: float = 0.3           # Minimum similarity threshold
+    min_score_tier1: float = 0.30    # Threshold for Tier 1 (table/column)
+    min_score_tier2: float = 0.70    # Threshold for Tier 2 (hypothetical)
+    # min_score values are defaults — the system auto-tunes based on
+    # embedding provider's score distribution (OpenAI scores are higher
+    # than BGE scores). Auto-tuning: sample 50 queries, compute mean
+    # and std of match scores, set threshold = mean - 0.5*std.
     rebuild_on_import: bool = True   # Auto-rebuild embeddings on schema import
     self_learn: bool = True          # Generate hypothetical questions from queries
-    self_learn_min_queries: int = 5  # Min queries before learning kicks in
-    tier_weights: list[float] = [1.0, 0.8, 0.5]  # Static, Hypothetical, SQL
+    self_learn_gates: bool = True    # Enable feedback gates (P0 safety)
+    tier2_max_age_days: int = 90     # Prune unused Tier 2 entries after N days
 ```
 
 ## 3a. Embedding Strategy: What to Put in the Vector Store
@@ -255,12 +299,25 @@ Not all embeddings are equal. What you store determines what you retrieve.
 ### Recommended approach: Hybrid three-tier
 
 ```
-Tier 1 — Static schema embeddings (built on import)
-  Entry per table:  table_name + {description} + {all column names with types}
-  Entry per column: table_name.column_name + data_type + {description} + {sample values}
-  → These NEVER change unless schema is re-imported
+Tier 1a — Table-level embeddings (built on import, Phase 1)
+  Entry per table:  table_name + {description} + {all column names with types (compact)}
+  → Purpose: Find the right table. "销量" → orders table.
+  → ~50-100 tokens per entry. Lightweight, fast.
+  → Dimension: 1 vector per table.
 
-Tier 2 — Hypothetical question embeddings (self-learning)
+Tier 1b — Column-level embeddings (built on import, Phase 1)
+  Entry per column: table_name.column_name + data_type + {description} + {sample values}
+  → Purpose: Find the right column within a table. "华东" → region column.
+  → ~20-50 tokens per entry. Much more precise.
+  → Dimension: 1 vector per column. 30 tables × 15 cols = 450 vectors.
+
+  At query time: search both 1a and 1b. Table-level finds the table,
+  column-level refines which columns are relevant. Combine results.
+
+  CRITICAL: Splitting table and column levels prevents information dilution.
+  A 20-column table's embedding doesn't drown in column noise.
+
+Tier 2 — Hypothetical question embeddings (self-learning, Phase 4)
   Generated from real user conversations after each successful query
   → These GROW over time, adapting to how real users phrase things
   → Tagged with the table IDs they resolve to
@@ -396,15 +453,33 @@ User: "上个月华东区销量排名"
 | 2 | `agent/describe_schema_agent.py` | After descriptions are generated, trigger embedding rebuild |
 | 3 | Database routes | Hook into `/api/database/import` to rebuild embeddings |
 
-### Phase 3 — Multi-Provider & Optimization (Effort: ~2-3 days)
+### Phase 3 — Multi-Provider, Multi-Turn & Optimization (Effort: ~2-3 days)
 
 | Step | Change |
 |------|--------|
 | 1 | Add ChromaDB backend (optional, for larger schemas) |
 | 2 | Add SiliconFlow / local BGE-M3 support |
 | 3 | Embedding cache & batch processing |
-| 4 | A/B comparison: RAG vs full-schema on query quality |
-| 5 | Column-level retrieval (retrieve individual columns, not just tables) |
+| 4 | **Multi-turn RAG strategy**: In a single conversation session, RAG is only
+      triggered on the FIRST user message. Subsequent messages reuse the same
+      retrieved schema (users refine their queries, not switch topics).
+      If the user explicitly mentions a new table or topic, re-trigger RAG.
+      → Implementation: store `rag_state = {tier_used, table_ids, question_embedding}`
+        in session metadata. Compare new question with stored embedding (cos-sim).
+        If below threshold → re-retrieve. |
+| 5 | **SQLite + numpy latency optimization**:
+      - Add `LIMIT N` to the numpy loop: pre-filter by database_id, then
+        apply a fast approximate filter (e.g. dot product > 0.1) before full norm.
+      - For Tier 2 with 2000+ entries, add a simple inverted-index pre-filter:
+        match keywords from the user question to table descriptions first.
+      - If latency exceeds 200ms consistently, move to ChromaDB (Phase 3 backend). |
+| 6 | **Dynamic min_score auto-tuning**:
+      - After first 50 RAG queries, collect all match scores.
+      - Compute mean and std per tier.
+      - Set `min_score_tier1 = mean - 0.5*std`, `min_score_tier2 = mean - 0.5*std`.
+      - Re-tune every 500 queries.
+      - Config field `min_score_tier1` and `min_score_tier2` override auto-tuning. |
+| 7 | A/B comparison: RAG vs full-schema on query quality |
 
 ### Phase 4 — Self-Learning System (Effort: ~2-3 days)
 
@@ -489,14 +564,21 @@ For 1,000 queries/month:
 
 ---
 
-## 8. Open Questions (Resolved)
+## 8. Design Review: Resolved Defects
 
-1. ✅ **Embedding provider**: OpenAI `text-embedding-3-small` is the recommended default. DeepSeek has no embedding API.
-2. ✅ **top-k default**: 5 for Tier 1. No limit on Tier 2 (hypothetical questions are already sparse and precise).
-3. ✅ **Table-level vs column-level**: Both. Tier 1 uses per-table embeddings (simpler), Tier 2 uses per-question embeddings (naturally maps to tables).
-4. ✅ **Self-learning**: Yes. `question_learner.py` generates hypothetical questions from real user queries post-chat.
-5. ❓ **Feedback UI**: Thumbs up/down in frontend? Would enable pruning bad hypotheses. Consider Phase 5.
-6. ❓ **Tier 2 hit count pruning**: Auto-clean hypotheses that never get retrieved. 30-day TTL for zero-hit entries.
+The following defects were identified during design review and have been fixed:
+
+| Severity | Issue | Fix |
+|----------|-------|-----|
+| **P0** | RAG truncation hides tables from agent | Inject `other_tables` list alongside `relevant_tables` |
+| **P0** | Single Tier 1 vector per table dilutes column signal | Split into Tier 1a (table) + Tier 1b (column), both Phase 1 |
+| **P0** | Self-learning reinforces wrong queries | Add feedback gates: non-empty results, no loop-detection, table in top-5 |
+| **P1** | Tier 1/2 scores not comparable | Layered search: Tier 2 first, Tier 1a/1b as fallback |
+| **P1** | Two providers = complex config | Default SiliconFlow (BGE-M3), separate `rag.api_key` from `llm.api_key` |
+| **P1** | min_score hardcoded | Tier-specific thresholds + auto-tuning after 50 queries |
+| **P2** | No multi-turn strategy | First message only; reuse schema in same session unless topic changes |
+| **P2** | Hypothetical question diversity | Prompt now enforces diverse phrasings explicitly |
+| **P2** | SQLite + numpy O(n) latency | Fast pre-filter, keyword index, escalate to ChromaDB if >200ms |
 
 ---
 
