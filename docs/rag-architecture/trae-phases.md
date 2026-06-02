@@ -3,6 +3,25 @@
 > 每阶段代码量 80-140 行，独立可测试。
 > 做完一阶段再开下一阶段，不用回头改上一阶段的代码。
 
+## 工作流程（Trae 严格按此执行）
+
+每阶段按以下步骤执行，**不跳过、不倒序**：
+
+```
+Step 1: 读本阶段 "改的文件" + "测试" 列表
+Step 2: 实现代码文件
+Step 3: 实现测试文件  
+Step 4: 运行测试 → pytest tests/xxx.py -v  全部通过
+Step 5: 如果测试失败 → 修代码 → 回到 Step 4
+Step 6: 通过后 → git add -A
+Step 7: git commit -m "rag phase N: xxx"
+Step 8: git push origin feature/enable-rag
+Step 9: 等待 GitHub Actions 全部绿色 ✅
+Step 10: 只有 Actions 通过后，才能进入下一阶段
+```
+
+**禁止**：跳过测试直接 commit、Actions 红色时开始下一阶段、修改上一阶段的代码。
+
 ---
 
 ## Phase 1：Admin 设置页（120 行代码 + 50 行测试）
@@ -220,4 +239,7 @@ pytest tests/test_schema_retriever.py -v
 
 **每个阶段独立，自带测试。做完 Phase 1-3（~550 行）就有一个可用的、经过测试的 RAG 系统。**
 
-要不要先从 Phase 1 开始？
+开始 Phase 1 前，确认以下前置条件：
+1. Branch: `feature/enable-rag` 已创建并 push 到 remote
+2. GitHub Actions 已配置并能正常运行（至少有一个空的 workflow 能通过）
+3. 本地能运行 `pytest`（venv 已激活）
