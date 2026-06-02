@@ -109,131 +109,121 @@ def create_embedding_service(provider: str, api_key: str, model: str) -> Embeddi
         raise ValueError(f"Unsupported embedding provider: {provider}")
 ```
 
-### Step 2: `persistence/vector_store.py` — SQLite-backed vector index
+### Step 2: `persistence/vector_store.py` — ChromaDB-backed vector index
 
 ```python
-"""SQLite-backed vector store with numpy cosine similarity.
+"""ChromaDB-backed vector store.
 
-Stores table/column embeddings alongside their metadata.
-No external vector DB needed for MVP — works in-process with the
-existing ConfigDB SQLite connection.
+Uses ChromaDB PersistentClient for storage and retrieval.
+All vector indexing, similarity search, and persistence are handled by ChromaDB.
 """
 
-import json
 import logging
-import sqlite3
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
+import chromadb
+from chromadb.config import Settings
 
 logger = logging.getLogger("shuyu.vector")
 
-# Embedding dimension for text-embedding-3-small
-DEFAULT_DIM = 1536
+CHROMA_DIR = Path(__file__).resolve().parent.parent.parent.parent / "data" / "chromadb"
 
 
 class VectorStore:
-    """Simple SQLite-backed vector store with numpy cosine similarity."""
-    
-    def __init__(self, db_path: Optional[str] = None):
-        if db_path is None:
-            from ..config import PROJECT_ROOT
-            db_path = str(PROJECT_ROOT / "backend" / "data" / "vectors.db")
-        self.db_path = db_path
-        self._conn: Optional[sqlite3.Connection] = None
-    
-    def _get_conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
-            self._conn.execute("""
-                CREATE TABLE IF NOT EXISTS table_embeddings (
-                    database_id TEXT NOT NULL,
-                    table_id    TEXT NOT NULL,
-                    table_name  TEXT NOT NULL,
-                    text        TEXT NOT NULL,       -- indexed text (name + desc)
-                    embedding   BLOB NOT NULL,       -- numpy float32 bytes
-                    dim         INTEGER NOT NULL,
-                    PRIMARY KEY (database_id, table_id)
-                )
-            """)
-            self._conn.execute("""
-                CREATE TABLE IF NOT EXISTS column_embeddings (
-                    database_id TEXT NOT NULL,
-                    table_id    TEXT NOT NULL,
-                    column_id   TEXT NOT NULL,
-                    column_name TEXT NOT NULL,
-                    text        TEXT NOT NULL,
-                    embedding   BLOB NOT NULL,
-                    dim         INTEGER NOT NULL,
-                    PRIMARY KEY (database_id, column_id)
-                )
-            """)
-            self._conn.execute("PRAGMA journal_mode=WAL")
-        return self._conn
-    
+    """ChromaDB-backed vector store for table/column embeddings."""
+
+    def __init__(self, persist_dir: Optional[str] = None):
+        if persist_dir is None:
+            persist_dir = str(CHROMA_DIR)
+        persist_dir_path = Path(persist_dir)
+        persist_dir_path.mkdir(parents=True, exist_ok=True)
+        self._client = chromadb.PersistentClient(
+            path=str(persist_dir_path),
+            settings=Settings(anonymized_telemetry=False),
+        )
+        self._collection = self._client.get_or_create_collection(
+            name="shuyu_rag",
+            metadata={"hnsw:space": "cosine"},
+        )
+
     def upsert_table(self, database_id: str, table_id: str, table_name: str,
                      text: str, embedding: list[float]):
-        conn = self._get_conn()
-        blob = np.array(embedding, dtype=np.float32).tobytes()
-        conn.execute(
-            "INSERT OR REPLACE INTO table_embeddings VALUES (?,?,?,?,?,?)",
-            (database_id, table_id, table_name, text, blob, len(embedding))
+        """Upsert a single table embedding."""
+        self._collection.upsert(
+            ids=[f"table_{database_id}_{table_id}"],
+            embeddings=[embedding],
+            metadatas=[{
+                "database_id": database_id,
+                "table_id": table_id,
+                "table_name": table_name,
+                "type": "table",
+            }],
+            documents=[text],
         )
-        conn.commit()
-    
-    def upsert_batch_tables(self, database_id: str, 
+
+    def upsert_batch_tables(self, database_id: str,
                             items: list[tuple[str, str, str, list[float]]]):
         """Batch upsert: [(table_id, table_name, text, embedding), ...]"""
-        conn = self._get_conn()
-        rows = []
+        ids = []
+        embeddings = []
+        metadatas = []
+        documents = []
         for table_id, table_name, text, emb in items:
-            blob = np.array(emb, dtype=np.float32).tobytes()
-            rows.append((database_id, table_id, table_name, text, blob, len(emb)))
-        conn.executemany(
-            "INSERT OR REPLACE INTO table_embeddings VALUES (?,?,?,?,?,?)",
-            rows
+            ids.append(f"table_{database_id}_{table_id}")
+            embeddings.append(emb)
+            metadatas.append({
+                "database_id": database_id,
+                "table_id": table_id,
+                "table_name": table_name,
+                "type": "table",
+            })
+            documents.append(text)
+        self._collection.upsert(
+            ids=ids,
+            embeddings=embeddings,
+            metadatas=metadatas,
+            documents=documents,
         )
-        conn.commit()
-    
+
     def search_tables(self, query_embedding: list[float], database_id: str,
                       top_k: int = 5, min_score: float = 0.3) -> list[dict]:
         """Search by cosine similarity. Returns [{table_id, table_name, text, score}]"""
-        conn = self._get_conn()
-        q = np.array(query_embedding, dtype=np.float32)
-        q_norm = q / (np.linalg.norm(q) + 1e-10)
-        
-        rows = conn.execute(
-            "SELECT table_id, table_name, text, embedding, dim FROM table_embeddings WHERE database_id=?",
-            (database_id,)
-        ).fetchall()
-        
-        results = []
-        for table_id, table_name, text, blob, dim in rows:
-            stored = np.frombuffer(blob, dtype=np.float32)
-            s_norm = stored / (np.linalg.norm(stored) + 1e-10)
-            score = float(np.dot(q_norm, s_norm))
+        results = self._collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where={"$and": [
+                {"database_id": {"$eq": database_id}},
+                {"type": {"$eq": "table"}},
+            ]},
+        )
+        if not results["ids"] or not results["ids"][0]:
+            return []
+
+        output = []
+        for i, doc_id in enumerate(results["ids"][0]):
+            meta = results["metadatas"][0][i] if results["metadatas"] else {}
+            distance = results["distances"][0][i] if results["distances"] else 0
+            score = 1.0 - distance  # cosine distance → similarity
             if score >= min_score:
-                results.append({
-                    "table_id": table_id,
-                    "table_name": table_name,
-                    "text": text,
+                output.append({
+                    "table_id": meta.get("table_id", doc_id),
+                    "table_name": meta.get("table_name", ""),
+                    "text": results["documents"][0][i] if results["documents"] else "",
                     "score": round(score, 4),
                 })
-        
-        results.sort(key=lambda r: r["score"], reverse=True)
-        return results[:top_k]
-    
+        return output
+
     def delete_database(self, database_id: str):
-        conn = self._get_conn()
-        conn.execute("DELETE FROM table_embeddings WHERE database_id=?", (database_id,))
-        conn.execute("DELETE FROM column_embeddings WHERE database_id=?", (database_id,))
-        conn.commit()
-    
+        """Delete all embeddings for a given database."""
+        self._collection.delete(
+            where={"database_id": {"$eq": database_id}},
+        )
+
     def close(self):
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        """Cleanup ChromaDB client."""
+        if self._client:
+            self._client = None
 ```
 
 ### Step 3: `router/schema_retriever.py` — Retrieval pipeline

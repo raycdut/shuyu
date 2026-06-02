@@ -221,6 +221,17 @@ export interface LLMModelInstance {
   is_connected?: boolean | null
 }
 
+export interface RAGConfig {
+  enabled: boolean
+  provider: string
+  model: string
+  api_key: string
+  api_base: string
+  top_k: number
+  min_score: number
+  self_learn: boolean
+}
+
 export interface SystemConfig {
   llm: {
     models: LLMModelInstance[]
@@ -243,6 +254,7 @@ export interface SystemConfig {
     log_interval: string
     log_retention_days: number
   }
+  rag?: RAGConfig
 }
 
 export interface UserPreferences {

@@ -59,6 +59,16 @@ DEFAULT_SYSTEM_CONFIG: dict[str, Any] = {
         "log_interval": "day",
         "log_retention_days": 30,
     },
+    "rag": {
+        "enabled": False,
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "api_key": "",
+        "api_base": "",
+        "top_k": 5,
+        "min_score": 0.3,
+        "self_learn": False,
+    },
 }
 
 DEFAULT_USER_CONFIG: dict[str, Any] = {
@@ -86,6 +96,9 @@ def get_system_config() -> dict[str, Any]:
             for m in models:
                 if m.get("api_key"):
                     m["api_key"] = decrypt_value(m["api_key"]) or ""
+            rag_api_key = config.get("rag", {}).get("api_key", "")
+            if rag_api_key:
+                config["rag"] = {**config.get("rag", {}), "api_key": decrypt_value(rag_api_key) or ""}
             return config
     except (json.JSONDecodeError, TypeError, Exception):
         return dict(DEFAULT_SYSTEM_CONFIG)
@@ -142,6 +155,15 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
             merged_llm["models"] = incoming
         merged["llm"] = merged_llm
 
+    if "rag" in config and isinstance(config["rag"], dict):
+        old_rag = old.get("rag", {})
+        incoming_rag = {**old_rag, **config["rag"]}
+        if incoming_rag.get("api_key") and "••••" not in incoming_rag["api_key"]:
+            incoming_rag["api_key"] = encrypt_value(incoming_rag["api_key"]) or ""
+        elif "••••" in incoming_rag.get("api_key", ""):
+            incoming_rag["api_key"] = old_rag.get("api_key", "")
+        merged["rag"] = incoming_rag
+
     now = datetime.now(timezone.utc).isoformat()
     with scoped_session() as session:
         row = session.query(SystemConfig).filter_by(id=1).first()
@@ -177,6 +199,9 @@ def get_system_config_masked() -> dict[str, Any]:
     for m in models:
         if m.get("api_key"):
             m["api_key"] = _mask_api_key(m["api_key"])
+    rag_api_key = config.get("rag", {}).get("api_key", "")
+    if rag_api_key:
+        config["rag"] = {**config.get("rag", {}), "api_key": _mask_api_key(rag_api_key)}
     return config
 
 

@@ -12,8 +12,9 @@ import { AdvancedSettingsTab } from './AdminSettings/tabs/AdvancedSettingsTab'
 import { ConfigLogTab } from './AdminSettings/tabs/ConfigLogTab'
 import { DatabaseManagementTab } from './AdminSettings/tabs/DatabaseManagementTab'
 import { PromptManagementTab } from './AdminSettings/tabs/PromptManagementTab'
+import { RAGSettingsTab } from './AdminSettings/tabs/RAGSettingsTab'
 
-type AdminTab = 'dashboard' | 'llm' | 'safety' | 'storage' | 'database' | 'users' | 'advanced' | 'logs' | 'prompts'
+type AdminTab = 'dashboard' | 'llm' | 'safety' | 'storage' | 'database' | 'users' | 'advanced' | 'logs' | 'prompts' | 'rag'
 
 interface TabGroup {
   groupKey: string
@@ -40,6 +41,7 @@ export default function AdminSettingsPage() {
         { key: 'llm', label: t('adminSettings.llmProvider') },
         { key: 'safety', label: t('adminSettings.safety') },
         { key: 'storage', label: t('adminSettings.storage') },
+        { key: 'rag', label: 'RAG 配置' },
         { key: 'advanced', label: t('adminSettings.advanced') },
       ],
     },
@@ -118,6 +120,7 @@ export default function AdminSettingsPage() {
               {activeTab === 'database' && <DatabaseManagementTab />}
               {activeTab === 'users' && <UserManagementTab />}
               {activeTab === 'prompts' && <PromptManagementTab />}
+              {activeTab === 'rag' && <RAGSettingsTab />}
               {activeTab === 'advanced' && <AdvancedSettingsTab />}
               {activeTab === 'logs' && <ConfigLogTab />}
             </div>

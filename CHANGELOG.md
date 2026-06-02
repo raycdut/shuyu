@@ -1,5 +1,48 @@
 # Changelog
 
+## 2026-06-02 — RAG Phase 1：Admin 配置 + ConfigDB 支持
+
+**动机**: 为语义 Schema 检索（RAG）功能奠定配置基础。管理员可在 UI 中启用/配置 RAG，配置存储在 ConfigDB 中。
+
+**变更清单**:
+
+1. **新增 `backend/app/config.py` — `RAGConfig` Pydantic 模型**:
+   - `enabled`/`provider`/`model`/`api_key`/`api_base`/`top_k`/`min_score`/`self_learn` 字段
+   - 默认值：disabled, provider=openai, model=text-embedding-3-small, top_k=5, min_score=0.3
+   - 环境变量覆盖：`RAG_ENABLED` / `RAG_PROVIDER` / `RAG_MODEL` / `RAG_TOP_K`
+
+2. **更新 `backend/app/admin_config/service.py`**:
+   - `DEFAULT_SYSTEM_CONFIG` 新增 `"rag"` 段（与 llm/safety/advanced/storage 并列）
+   - `update_system_config()` 新增 RAG 配置写⼊逻辑 + API Key 加密存储
+   - `get_system_config()` 新增 RAG API Key 解密读取
+   - `get_system_config_masked()` 新增 RAG API Key 脱敏显示
+
+3. **更新 `frontend/src/types/index.ts`**:
+   - 新增 `RAGConfig` 接口
+   - `SystemConfig` 新增可选 `rag: RAGConfig` 字段
+
+4. **新增 `frontend/src/pages/AdminSettings/tabs/RAGSettingsTab.tsx`**:
+   - Toggle 开关（启用/禁用 RAG）
+   - Provider 下拉（OpenAI / SiliconFlow）
+   - 模型、API Key（密码框）、API Base 输入
+   - Top-K、最低相似度分数参数
+   - 自学习开关（Phase 5 预留）
+   - 遵循现有 Admin Tab 设计模式（SettingSection/ToggleRow/PageHeader）
+
+5. **更新 `frontend/src/pages/AdminSettingsPage.tsx`**:
+   - 新增 `'rag'` Tab 类型
+   - 在 system 分组添加"RAG 配置"导航项
+   - 添加 `<RAGSettingsTab />` 渲染
+
+6. **新增 `backend/tests/test_rag_config.py`**（11 个测试）:
+   - `TestRAGConfigModel`: 默认值、在 Config 对象中的嵌套、自定义值
+   - `TestRAGInSystemConfig`: DEFAULT_SYSTEM_CONFIG 包含 rag、读写、不影响其他段、API Key 脱敏、changelog
+   - `TestRAGConfigApiBaseWhitelist`: 合法 URL 接受
+
+**向量存储**: 使用 ChromaDB（`chromadb>=0.5.0` 已在 requirements.txt 中），通过 `PersistentClient` 持久化到 `backend/data/chromadb/`
+
+---
+
 ## 2026-06-01 — PostgreSQL 支持
 
 ### 新增 PostgreSQL 连接器

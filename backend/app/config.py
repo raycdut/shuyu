@@ -34,10 +34,22 @@ class StorageConfig(BaseModel):
     log_retention_days: int = 30
 
 
+class RAGConfig(BaseModel):
+    enabled: bool = False
+    provider: str = "openai"
+    model: str = "text-embedding-3-small"
+    api_key: str = ""
+    api_base: str = ""
+    top_k: int = 5
+    min_score: float = 0.3
+    self_learn: bool = False
+
+
 class Config(BaseModel):
     llm: LLMConfig = LLMConfig()
     safety: SafetyConfig = SafetyConfig()
     storage: StorageConfig = StorageConfig()
+    rag: RAGConfig = RAGConfig()
 
 
 def load_config() -> Config:
@@ -64,6 +76,10 @@ def load_config() -> Config:
         ("llm", "provider"): "LLM_PROVIDER",
         ("llm", "model"): "LLM_MODEL",
         ("llm", "api_base"): "LLM_API_BASE",
+        ("rag", "enabled"): "RAG_ENABLED",
+        ("rag", "provider"): "RAG_PROVIDER",
+        ("rag", "model"): "RAG_MODEL",
+        ("rag", "top_k"): "RAG_TOP_K",
     }
 
     for (section, field), env_key in env_map.items():

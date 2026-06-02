@@ -72,36 +72,35 @@ pytest tests/test_admin_api.py -v
 
 | 文件 | 改动 | 行数 |
 |------|------|------|
-| `backend/app/persistence/vector_store.py` | 新文件：SQLite 表 CREATE、upsert_table、search_tables（余弦相似度）、delete_database | +80 |
-| `backend/app/embedding/service.py` | 新文件：EmbeddingService 抽象类 + **LocalOnnxEmbeddingService（默认，本地开发用）** + OpenAI/SiliconFlow 云端实现（部署用） + 工厂方法 | +60 |
+| `backend/app/persistence/vector_store.py` | 新文件：使用 **ChromaDB PersistentClient** 存储表/列向量，支持 upsert / search / delete | +70 |
+| `backend/app/embedding/service.py` | 新文件：EmbeddingService 抽象类 + OpenAI / SiliconFlow 云端实现 + 工厂方法 | +60 |
 
 ### 测试
 
 | 文件 | 测什么 | 行数 |
 |------|--------|------|
-| `tests/test_vector_store.py` | 1. 创建表、插入向量、查询向量<br>2. 余弦相似度计算结果正确<br>3. dim 字段存储和读取（384 vs 1024 vs 1536）<br>4. 按 database_id 过滤<br>5. 删除 database 级联清除 | +35 |
-| `tests/test_embedding_service.py` | 1. Local ONNX 模型加载成功<br>2. embed() 返回 384 维向量<br>3. embed_batch 保持输入顺序<br>4. 云端 provider 工厂方法返回正确类型 | +30 |
+| `tests/test_vector_store.py` | 1. 初始化 ChromaDB 持久化客户端<br>2. 插入表向量、按向量搜索<br>3. 按 database_id 元数据过滤<br>4. 删除 database 级联清除 | +35 |
+| `tests/test_embedding_service.py` | 1. embed() / embed_batch 正常返回<br>2. embed_batch 保持输入顺序<br>3. 云端 provider 工厂方法返回正确类型 | +30 |
 
 ### 关键设计
 
-**本地开发（默认）**：
-- Provider: `local`
-- 模型路径: `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/onnx/model.onnx`
-- Tokenizer: `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/`
-- 维度: 384
-- 零 API 费用，数据不离开本机
+**向量存储（ChromaDB）**：
+- 使用 `chromadb.PersistentClient`，数据持久化到 `backend/data/chromadb/`
+- 单个 collection `shuyu_rag`，通过 metadata 字段 `database_id` + `type` 过滤
+- 默认使用余弦距离（`hnsw:space = cosine`）
+- 无需手动管理索引、维度、序列化——ChromaDB 自动处理
 
-**生产部署（可切换）**：
-- Admin 在 UI 里选 SiliconFlow / OpenAI
-- 填写 API Key + API Base
-- 云端模型对中文支持更好（BGE-M3 / text-embedding-3-small）
-- 维度自动匹配（BGE-M3=1024, OpenAI=1536）
+**Embedding Provider**：
+- **OpenAI**（默认）：`text-embedding-3-small`，1536 维
+- **SiliconFlow**：`BAAI/bge-m3`，1024 维（对中文友好）
+- Provider 运行时不依赖本地模型，所有 Provider 走远程 API
+- API Key 复用 LLM 的 key（或者单独配置）
 
 ### 改的文件（续）
 
 | 文件 | 改动 | 行数 |
 |------|------|------|
-| `backend/app/main.py` | lifespan 里如果 RAG enabled 就初始化 embedding 服务 + 重建向量 | +10 |
+| `backend/app/main.py` | lifespan 里如果 RAG enabled 就初始化 ChromaDB + 重建向量 | +10 |
 | `backend/app/client.py` | 加 `get_embedding_service()` 工厂函数 | +10 |
 
 **总行数：~210 行**
@@ -110,11 +109,10 @@ pytest tests/test_admin_api.py -v
 
 ```
 pytest tests/test_vector_store.py -v
-→ 5 passed
+→ 4 passed
 
 1. 启动服务 → 日志显示 "Rebuilding embeddings for database xxx"
-2. sqlite3 backend/data/vectors.db
-   SELECT count(*) FROM table_embeddings;  → 30
+2. ls backend/data/chromadb/ → chroma.sqlite3 存在
 ```
 
 ---
