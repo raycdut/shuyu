@@ -89,10 +89,14 @@ def _get_rag_enabled() -> bool:
     return _rag_config_cache["enabled"]
 
 
-async def _get_schema_prompt(question: str, db_id: str, tables: list, connector) -> str:
-    """Build schema prompt — uses RAG retrieval if enabled, full schema otherwise."""
+async def _get_schema_prompt(question: str, db_id: str, tables: list, connector) -> dict:
+    """Build schema prompt — uses RAG retrieval if enabled, full schema otherwise.
+    
+    Returns dict with keys: prompt, tier_hit, match_score, table_count.
+    """
     if not _get_rag_enabled():
-        return build_schema_prompt(tables, db_id)
+        prompt = build_schema_prompt(tables, db_id)
+        return {"prompt": prompt, "tier_hit": "disabled", "match_score": 0.0, "table_count": len(tables)}
     try:
         from ..router.schema_retriever import retrieve_schema
         start = time.time()
@@ -102,18 +106,12 @@ async def _get_schema_prompt(question: str, db_id: str, tables: list, connector)
             tables=tables,
         )
         latency = int((time.time() - start) * 1000)
-        from ..metrics.rag_metrics import record_query
-        record_query(
-            enabled=True,
-            tier_hit=result.get("tier_hit", "unknown"),
-            score=result.get("match_score", 0.0),
-            latency_ms=latency,
-            tables_retrieved=result.get("table_count", 0),
-        )
-        return result["prompt"]
+        logger.info(f"RAG result db={db_id} tier={result.get('tier_hit')} tables={result.get('table_count')} score={result.get('match_score', 0):.3f} latency={latency}ms")
+        return result
     except Exception as e:
         logger.warning(f"RAG schema retrieval failed, using full schema: {e}")
-        return build_schema_prompt(tables, db_id)
+        prompt = build_schema_prompt(tables, db_id)
+        return {"prompt": prompt, "tier_hit": "error", "match_score": 0.0, "table_count": len(tables)}
 
 
 def _to_json_safe(obj):
@@ -241,8 +239,10 @@ async def chat(req: ChatRequest):
                 })
 
         # Inject schema — use RAG if enabled, full schema otherwise
+        rag_result = None
         if _get_rag_enabled():
-            inject_schema = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+            rag_result = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+            inject_schema = rag_result["prompt"]
         else:
             inject_schema = schema_text
             if req.mode == "quality" and db_entry:
@@ -397,7 +397,15 @@ async def chat_stream(req: ChatRequest):
                         session.metadata["_cached_db_id"] = req.db_id
 
                     if _get_rag_enabled():
-                        s_text = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+                        rag_result = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+                        s_text = rag_result["prompt"]
+                        yield _make_event({
+                            'type': 'rag_info',
+                            'enabled': True,
+                            'tier_hit': rag_result.get('tier_hit', 'unknown'),
+                            'table_count': rag_result.get('table_count', 0),
+                            'match_score': rag_result.get('match_score', 0.0),
+                        })
                     else:
                         s_text = (
                             full_schema_text

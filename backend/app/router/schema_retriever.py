@@ -115,8 +115,10 @@ async def retrieve_schema(
                     full_tables = load_full_schema(database_id)
                     relevant = [t for t in full_tables if t["table_name"] in table_ids_set or t["id"] in table_ids_set]
                     if relevant:
+                        table_names = [t["table_name"] for t in relevant]
                         formatted = build_schema_prompt(relevant, database_id)
                         header = f"<rag note=\"已通过历史相似问题匹配到 {len(relevant)} 张相关表\">\n"
+                        logger.info(f"RAG tier=hypothesis db={database_id} tables={table_names} score={tier2_results[0]['score']}")
                         return {
                             "prompt": header + formatted,
                             "tier_hit": "hypothesis",
@@ -129,7 +131,7 @@ async def retrieve_schema(
             q_vector, database_id, top_k=top_k, min_score=min_score
         )
         if not results:
-            logger.info(f"No relevant tables found (min_score={min_score}), falling back")
+            logger.info(f"RAG tier=table db={database_id} matches=0 fallback min_score={min_score}")
             return fallback()
 
         matched_ids = {r["table_id"] for r in results}
@@ -137,14 +139,17 @@ async def retrieve_schema(
         full_tables = load_full_schema(database_id)
         relevant = [t for t in full_tables if t["id"] in matched_ids]
         if not relevant:
+            logger.info(f"RAG tier=table db={database_id} matched_ids={matched_ids} but no full schema found, fallback")
             return fallback()
 
         matched_scores = {r["table_id"]: r["score"] for r in results}
         relevant.sort(key=lambda t: matched_scores.get(t["id"], 0), reverse=True)
+        table_names = [t["table_name"] for t in relevant]
+        best_score = results[0]["score"] if results else 0.0
 
         formatted = build_schema_prompt(relevant, database_id)
         header = (f"<rag note=\"已根据问题语义检索到 {len(relevant)} 张相关表，其余表已过滤\">\n")
-        best_score = results[0]["score"] if results else 0.0
+        logger.info(f"RAG tier=table db={database_id} tables={table_names} scores={[round(matched_scores.get(t['id'], 0), 3) for t in relevant]}")
         return {
             "prompt": header + formatted,
             "tier_hit": "table",
