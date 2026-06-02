@@ -21,7 +21,8 @@
   .badge-schema { background: #1f6feb22; color: #58a6ff; border: 1px solid #1f6feb55; }
   .badge-embed { background: #23863622; color: #3fb950; border: 1px solid #23863655; }
   .badge-sql { background: #d2992222; color: #d29922; border: 1px solid #d2992255; }
-  .badge-cost { background: #da363322; color: #f85149; border: 1px solid #da363355; }
+  .badge-admin { background: #58a6ff22; color: #58a6ff; border: 1px solid #58a6ff55; }
+  .badge-fallback { background: #da363322; color: #f85149; border: 1px solid #da363355; }
   .arrow { text-align: center; color: #30363d; font-size: 18px; margin: 2px 0; }
   .cost-box { margin-top: 20px; padding: 12px; border-radius: 8px; }
   .cost-current { background: #1c1212; border: 1px solid #da363344; }
@@ -30,6 +31,7 @@
   .cost-box .value { font-size: 16px; font-weight: 700; }
   .cost-box .green { color: #3fb950; }
   .cost-box .red { color: #f85149; }
+  .divider-dash { text-align: center; color: #484f58; font-size: 14px; letter-spacing: 4px; margin: 6px 0; }
 </style>
 </head>
 <body>
@@ -42,6 +44,15 @@
   <!-- LEFT: Current -->
   <div class="flow">
     <h2 class="current">❌ Without RAG (Current)</h2>
+
+    <div class="step">
+      <div class="label">Admin Setup (once)</div>
+      <div class="title">Nothing to configure</div>
+      <div class="detail"><span class="badge badge-schema">RAG</span> Not available. Schema injection is the only mode.
+        <br/>No additional API keys, no vector store, no embedding service.</div>
+    </div>
+
+    <div class="divider-dash">— · — · —</div>
 
     <div class="step">
       <div class="label">Step 1</div>
@@ -73,7 +84,7 @@
       <div class="label">Step 4</div>
       <div class="title">Inject into agent system prompt</div>
       <div class="detail"><span class="badge badge-schema">routes/chat.py:203</span>
-        <br/>Agent sees ALL tables, must infer which are relevant</div>
+        <br/>Agent sees ALL tables. Must infer which are relevant.</div>
     </div>
 
     <div class="arrow">▼</div>
@@ -104,6 +115,17 @@
   <div class="flow">
     <h2 class="proposed">✅ With RAG (Proposed)</h2>
 
+    <div class="step" style="border-color: #58a6ff55; background: #1f6feb11;">
+      <div class="label">Admin Setup (once)</div>
+      <div class="title" style="color: #58a6ff;">Admin enables RAG in settings</div>
+      <div class="detail"><span class="badge badge-admin">/admin → RAG Settings</span>
+        <br/>Toggle ON → select provider (SiliconFlow default) → enter API key
+        <br/>→ Save. Backend auto-builds Tier 1 embeddings for all databases.
+        <br/>→ No restart needed. All subsequent queries use RAG.</div>
+    </div>
+
+    <div class="divider-dash">— · — · —</div>
+
     <div class="step">
       <div class="label">Step 1</div>
       <div class="title">User asks a question</div>
@@ -114,56 +136,79 @@
 
     <div class="step">
       <div class="label">Step 2</div>
-      <div class="title">Embed question</div>
-      <div class="detail"><span class="badge badge-embed">embed()</span> user_question → vector (1536 dims)
-        <br/>~100ms, via OpenAI text-embedding-3-small</div>
+      <div class="title">Route: check RAG enabled?</div>
+      <div class="detail"><span class="badge badge-admin">routes/chat.py</span> state.rag_config.enabled == true
+        <br/>→ proceed to retrieve_schema()
+        <br/><span style="color:#8b949e">(If enabled == false: fall through to build_schema_prompt as before)</span></div>
     </div>
 
     <div class="arrow">▼</div>
 
     <div class="step">
       <div class="label">Step 3</div>
-      <div class="title">Vector search → top-K tables</div>
-      <div class="detail"><span class="badge badge-embed">schema_retriever.retrieve()</span>
-        <br/>
-        · orders: <span style="color:#3fb950">score 0.91</span> — "销量" ✓<br/>
-        · products: <span style="color:#3fb950">score 0.68</span> — "排名→产品" ✓<br/>
-        · regions: <span style="color:#58a6ff">score 0.52</span> — "华东区" ✓<br/>
-        <span style="color:#8b949e">· suppliers: score 0.12 — ✗ filtered</span><br/>
-        <span style="color:#8b949e">· inventory: score 0.09 — ✗ filtered</span>
-      </div>
+      <div class="title">Embed question</div>
+      <div class="detail"><span class="badge badge-embed">embed()</span> user_question → vector (1024 dims for BGE-M3)
+        <br/>~100ms, via SiliconFlow BAAI/bge-m3 (or OpenAI)</div>
     </div>
 
     <div class="arrow">▼</div>
 
     <div class="step">
       <div class="label">Step 4</div>
-      <div class="title">Load relevant schema only</div>
-      <div class="detail"><span class="badge badge-schema">load_imported_columns()</span> × 3 tables
-        <br/>~500-800 tokens → 80% less than full schema</div>
+      <div class="title">Layered vector search</div>
+      <div class="detail"><span class="badge badge-embed">schema_retriever.retrieve()</span>
+        <br/>
+        ← First: Tier 2 (hypothetical questions) — no match (new question)<br/>
+        ← Then: Tier 1a (table-level) — orders 0.85, products 0.62<br/>
+        ← Then: Tier 1b (column-level) — region 0.78, amount 0.71<br/>
+        <span style="color:#3fb950">→ Top-3: orders, products, regions</span><br/>
+        <span style="color:#8b949e">→ other_tables: [suppliers, customers, inventory, ...]</span>
+      </div>
     </div>
 
     <div class="arrow">▼</div>
 
     <div class="step">
       <div class="label">Step 5</div>
-      <div class="title">SQL generation (cleaner prompt)</div>
-      <div class="detail"><span class="badge badge-sql">sql_tool.py</span> LLM sees only relevant schema
-        <br/>✅ Less noise, less hallucination risk, faster generation</div>
+      <div class="title">Build two-part schema prompt</div>
+      <div class="detail"><span class="badge badge-schema">retrieve_schema()</span>
+        <br/>relevant_tables: orders(全列) + products(全列) + regions(全列)<br/>
+        other_tables: suppliers, customers, inventory, ...<br/>
+        ~600-900 tokens → 80% less than full schema</div>
     </div>
 
     <div class="arrow">▼</div>
 
     <div class="step">
       <div class="label">Step 6</div>
+      <div class="title">SQL generation (cleaner prompt)</div>
+      <div class="detail"><span class="badge badge-sql">sql_tool.py</span> LLM sees relevant tables + other_tables list
+        <br/>✅ Less noise, less hallucination risk, faster generation
+        <br/>✅ Can still use other_tables if query requires them</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 7</div>
       <div class="title">Execute SQL → return result</div>
       <div class="detail">connector.execute() → formatted response</div>
     </div>
 
+    <div class="arrow">▼</div>
+
+    <div class="step" style="border-color: #3fb95055; background: #23863611;">
+      <div class="label">Step 8 (Background)</div>
+      <div class="title" style="color: #3fb950;">Self-learning (if enabled)</div>
+      <div class="detail"><span class="badge badge-embed">question_learner.learn()</span>
+        <br/>Feedback gates passed? → Generate 2-3 hypothetical questions
+        <br/>→ Embed + store in Tier 2. Next similar query hits Tier 2 first.</div>
+    </div>
+
     <div class="cost-box cost-proposed">
       <div class="label">Cost per query</div>
-      <div class="value"><span class="green">~700 tokens</span> for schema + <span class="green">~$0.00004</span> embedding</div>
-      <div class="detail" style="margin-top:6px">80-90% schema token reduction. Embedding cost is negligible.</div>
+      <div class="value"><span class="green">~700 tokens</span> for schema + <span class="green">~$0.00003</span> embedding</div>
+      <div class="detail" style="margin-top:6px">80-90% schema token reduction. Self-learning adds ~200 tokens per query (background).</div>
     </div>
   </div>
 </div>
@@ -171,11 +216,12 @@
 <div style="max-width: 900px; margin: 40px auto; padding: 20px; border: 1px solid #30363d; border-radius: 8px; background: #161b22;">
   <h3 style="color: #58a6ff; margin-top: 0;">Key Observations</h3>
   <ul style="color: #c9d1d9; line-height: 1.8;">
-    <li>The RAG path adds <strong>one extra step</strong> (embedding + vector search) but removes 80-90% of schema tokens</li>
+    <li>The RAG path adds <strong>admin configuration</strong> (one-time) + <strong>two extra steps</strong> (embedding + vector search) but removes 80-90% of schema tokens</li>
     <li>Embedding latency (~100ms) is far less than the time saved from a shorter prompt</li>
-    <li>Table selection is <strong>guaranteed by semantic similarity</strong>, not LLM guessing</li>
-    <li>Fallback path: if embedding service is down, inject full schema as-is</li>
-    <li>No changes needed to SQL generation, agent loops, or execution pipeline</li>
+    <li><strong>other_tables list</strong> prevents information loss — agent knows all available table names</li>
+    <li><strong>Fallback path</strong>: if embedding service is down OR admin disables RAG, inject full schema as-is</li>
+    <li>No changes needed to agent loops, SQL execution pipeline, or user-facing UI</li>
+    <li>Self-learning makes the system <strong>smarter over time</strong> — Tier 2 grows from real usage</li>
   </ul>
 </div>
 

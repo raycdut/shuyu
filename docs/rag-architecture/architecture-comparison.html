@@ -28,6 +28,7 @@
   .tag-changed { background: #d2992233; color: #d29922; border: 1px solid #d2992266; }
   .tag-unchanged { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
   .tag-removed { background: #da363333; color: #f85149; border: 1px solid #da363366; }
+  .tag-admin { background: #58a6ff22; color: #58a6ff; border: 1px solid #58a6ff55; }
   .legend { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
   .legend-item { font-size: 12px; }
   .arrow-layer { text-align: center; color: #30363d; margin: 4px 0; font-size: 14px; }
@@ -39,10 +40,11 @@
 <p class="subtitle">Current (without RAG) vs. Proposed (with RAG) — layer-by-layer breakdown</p>
 
 <div class="legend">
-  <span class="legend-item"><span class="tag tag-new">NEW</span> New component</span>
-  <span class="legend-item"><span class="tag tag-changed">CHANGED</span> Modified component</span>
+  <span class="legend-item"><span class="tag tag-new">NEW</span> New</span>
+  <span class="legend-item"><span class="tag tag-changed">CHANGED</span> Modified</span>
   <span class="legend-item"><span class="tag tag-unchanged">UNCHANGED</span> No changes</span>
-  <span class="legend-item"><span class="tag tag-removed">REMOVED</span> Deprecated</span>
+  <span class="legend-item"><span class="tag tag-removed">N/A</span> Not present</span>
+  <span class="legend-item"><span class="tag tag-admin">ADMIN</span> Admin-only</span>
 </div>
 
 <div class="comparison">
@@ -60,8 +62,16 @@
     <div class="arrow-layer">▼</div>
 
     <div class="layer">
+      <div class="layer-title">⚙️ Admin Settings</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Admin Page (/admin)</span><br><span class="box-detail">LLM, Safety, Advanced tabs</span></div>
+      <div class="component comp-gray"><span class="tag tag-removed">N/A</span> <span class="box-title">RAG Settings Tab</span><br><span class="box-detail">❌ Does not exist</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
       <div class="layer-title">📂 Data Layer</div>
-      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">ConfigDB (configdb/)</span><br><span class="box-detail">SQLite/MySQL — stores prompts, users, sessions</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">ConfigDB (configdb/)</span><br><span class="box-detail">SQLite/MySQL — stores prompts, users, sessions, system config</span></div>
       <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Schema Persistence (persistence/schema.py)</span><br><span class="box-detail">ImportedTable + ImportedColumn ORM</span></div>
       <div class="component comp-gray"><span class="tag tag-removed">N/A</span> <span class="box-title">Vector Store</span><br><span class="box-detail">❌ Does not exist — schema loaded from SQLite directly</span></div>
     </div>
@@ -110,34 +120,42 @@
     <div class="layer">
       <div class="layer-title">🌐 Entry Layer</div>
       <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">FastAPI Server (main.py)</span></div>
-      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">POST /api/chat (routes/chat.py)</span><br><span class="box-detail">Calls schema_retriever.retrieve() instead of build_schema_prompt()</span></div>
+      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">POST /api/chat (routes/chat.py)</span><br><span class="box-detail">Checks state.rag_config.enabled → calls retrieve_schema() or build_schema_prompt()</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">⚙️ Admin Settings</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Admin Page (/admin)</span><br><span class="box-detail">LLM, Safety, Advanced tabs (unchanged)</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">RAG Settings Tab (RAGSettingsTab.tsx)</span><br><span class="box-detail">Toggle, provider, model, API key, top-k, self-learning, test button</span></div>
     </div>
 
     <div class="arrow-layer">▼</div>
 
     <div class="layer">
       <div class="layer-title">📂 Data Layer</div>
-      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">ConfigDB (configdb/)</span></div>
+      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">ConfigDB (configdb/)</span><br><span class="box-detail">SystemConfig JSON now contains "rag" key with all RAG settings</span></div>
       <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Schema Persistence (persistence/schema.py)</span></div>
-      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Vector Store (persistence/vector_store.py)</span><br><span class="box-detail">Table + column embeddings stored in SQLite-backed vector index (numpy cosine similarity)</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Vector Store (persistence/vector_store.py)</span><br><span class="box-detail">Tier 1a (table) + Tier 1b (column) + Tier 2 (hypothetical) embeddings</span></div>
     </div>
 
     <div class="arrow-layer">▼</div>
 
     <div class="layer">
       <div class="layer-title">🧠 Schema Processing</div>
-      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">build_schema_prompt() (db/schema.py)</span><br><span class="box-detail">Still exists but now receives TOP-K tables only</span></div>
-      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Schema Retriever (router/schema_retriever.py)</span><br><span class="box-detail">embed → vector search → format top-K schema</span></div>
-      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Embedding Service (embedding/service.py)</span><br><span class="box-detail">Pluggable: OpenAI | SiliconFlow | local sentence-transformers</span></div>
+      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">build_schema_prompt() (db/schema.py)</span><br><span class="box-detail">Still exists. Now receives TOP-K tables + other_tables list</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Schema Retriever (router/schema_retriever.py)</span><br><span class="box-detail">Layered search: Tier 2 → Tier 1a → Tier 1b → format with other_tables</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Embedding Service (embedding/service.py)</span><br><span class="box-detail">Pluggable: SiliconFlow (default) | OpenAI | local sentence-transformers</span></div>
     </div>
 
     <div class="arrow-layer">▼</div>
 
     <div class="layer">
       <div class="layer-title">🤖 Agent Layer</div>
-      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SimpleAgent (fast mode)</span><br><span class="box-detail">ReAct loop — system prompt now has RELEVANT schema only</span></div>
-      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">AdvancedAgent (quality mode)</span><br><span class="box-detail">Same plan/exec/report pipeline with smaller schema prompt</span></div>
-      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SQL Generation Tool (sql_tool.py)</span><br><span class="box-detail">Same code — gets smaller schema_prompt, less noise</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SimpleAgent (fast mode)</span><br><span class="box-detail">ReAct loop — system prompt has relevant_tables + other_tables</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">AdvancedAgent (quality mode)</span><br><span class="box-detail">Same pipeline, smaller schema prompt + other_tables list for fallback</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SQL Generation Tool (sql_tool.py)</span><br><span class="box-detail">Same code — gets smaller, cleaner schema_prompt</span></div>
     </div>
 
     <div class="arrow-layer">▼</div>
@@ -150,12 +168,13 @@
     <div style="margin-top:16px; padding:12px; background:#0a2e1a; border:1px solid #23863644; border-radius:6px;">
       <div style="color:#3fb950; font-weight:600; font-size:14px;">✅ Key Improvements</div>
       <ul style="color:#c9d1d9; font-size:13px; margin:8px 0 0; padding-left:20px; line-height:1.6;">
-        <li>Only top-K relevant tables injected → 80-90% token reduction</li>
+        <li>Only top-K relevant tables + other_tables list → 80-90% token reduction</li>
         <li>Scalable to 100+ tables without prompt budget issues</li>
-        <li>Multi-DB: can retrieve from N vector indexes independently</li>
-        <li>Embedding cost negligible (~$0.00004/query)</li>
+        <li>Admin toggle: enabled/disabled from settings page, no restart</li>
+        <li>Embedding cost negligible (~$0.00004/query with SiliconFlow BGE-M3)</li>
         <li>Zero changes to agent loops or SQL execution pipeline</li>
-        <li>Toggle ON/OFF via config — safe rollback</li>
+        <li>Self-learning: Tier 2 grows from real user questions over time</li>
+        <li>Safe fallback: if disabled or embedding fails, full schema injection restored</li>
       </ul>
     </div>
   </div>
@@ -172,37 +191,52 @@
     <tr style="border-bottom:1px solid #21262d;">
       <td style="padding:8px 4px;"><code style="font-size:12px;">persistence/vector_store.py</code></td>
       <td><span class="tag tag-new">NEW</span></td>
-      <td style="color:#c9d1d9;">SQLite-backed vector index + numpy cos-sim</td>
+      <td style="color:#c9d1d9;">SQLite-backed vector index: Tier 1a + 1b + 2 tables</td>
     </tr>
     <tr style="border-bottom:1px solid #21262d;">
       <td style="padding:8px 4px;"><code style="font-size:12px;">router/schema_retriever.py</code></td>
       <td><span class="tag tag-new">NEW</span></td>
-      <td style="color:#c9d1d9;">Embed → search → format pipeline</td>
+      <td style="color:#c9d1d9;">Layered retrieval: embed → Tier2 → Tier1a → Tier1b → format</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">router/question_learner.py</code></td>
+      <td><span class="tag tag-new">NEW</span></td>
+      <td style="color:#c9d1d9;">Post-query self-learning with feedback gates</td>
     </tr>
     <tr style="border-bottom:1px solid #21262d;">
       <td style="padding:8px 4px;"><code style="font-size:12px;">embedding/service.py</code></td>
       <td><span class="tag tag-new">NEW</span></td>
-      <td style="color:#c9d1d9;">Pluggable embedding provider abstraction</td>
+      <td style="color:#c9d1d9;">Pluggable embedding provider (SiliconFlow/OpenAI/local)</td>
     </tr>
     <tr style="border-bottom:1px solid #21262d;">
-      <td style="padding:8px 4px;"><code style="font-size:12px;">config.py</code></td>
+      <td style="padding:8px 4px;"><code style="font-size:12px;">admin_config/service.py</code></td>
       <td><span class="tag tag-changed">CHANGED</span></td>
-      <td style="color:#c9d1d9;">Added RAGConfig section</td>
+      <td style="color:#c9d1d9;">Add "rag" to DEFAULT_SYSTEM_CONFIG, handle in update_system_config()</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">admin_config/router.py</code></td>
+      <td><span class="tag tag-changed">CHANGED</span></td>
+      <td style="color:#c9d1d9;">Add POST /api/admin/rag/test + GET /api/admin/rag/stats</td>
     </tr>
     <tr style="border-bottom:1px solid #21262d;">
       <td style="padding:8px 4px;"><code style="font-size:12px;">routes/chat.py</code></td>
       <td><span class="tag tag-changed">CHANGED</span></td>
-      <td style="color:#c9d1d9;">Replace build_schema_prompt with schema_retriever.retrieve()</td>
+      <td style="color:#c9d1d9;">Check state.rag_config.enabled → retrieve_schema() or build_schema_prompt()</td>
     </tr>
     <tr style="border-bottom:1px solid #21262d;">
-      <td style="padding:8px 4px;"><code style="font-size:12px;">client.py</code></td>
+      <td style="padding:8px 4px;"><code style="font-size:12px;">frontend/AdminSettings/tabs/RAGSettingsTab.tsx</code></td>
+      <td><span class="tag tag-new">NEW</span></td>
+      <td style="color:#c9d1d9;">Admin tab: toggle, provider, model, key, top-k, test button</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">config.py</code></td>
       <td><span class="tag tag-changed">CHANGED</span></td>
-      <td style="color:#c9d1d9;">Add embed() method (alongside call_llm)</td>
+      <td style="color:#c9d1d9;">RAGConfig Pydantic model (defaults only, not active config)</td>
     </tr>
     <tr>
-      <td style="padding:8px 4px;"><code style="font-size:12px;">routes/schema.py</code></td>
+      <td style="padding:8px 4px;"><code style="font-size:12px;">client.py</code></td>
       <td><span class="tag tag-changed">CHANGED</span></td>
-      <td style="color:#c9d1d9;">Webhook to rebuild embeddings on schema import</td>
+      <td style="color:#c9d1d9;">Add embed() method, embedding service factory</td>
     </tr>
   </table>
 </div>
