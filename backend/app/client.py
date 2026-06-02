@@ -11,6 +11,29 @@ from .persistence.token import save_token_usage
 
 logger = logging.getLogger("shuyu.main")
 
+_embedding_service_instance = None
+
+
+def get_embedding_service():
+    """Get or create the embedding service based on current runtime config."""
+    global _embedding_service_instance
+    if _embedding_service_instance is None:
+        from .embedding.service import create_embedding_service
+        cfg = state.config.rag
+        _embedding_service_instance = create_embedding_service(
+            provider=cfg.provider,
+            api_key=cfg.api_key or state.config.llm.api_key,
+            model=cfg.model,
+            api_base=cfg.api_base or None,
+        )
+    return _embedding_service_instance
+
+
+def reset_embedding_service():
+    """Reset the cached embedding service (e.g. after config change)."""
+    global _embedding_service_instance
+    _embedding_service_instance = None
+
 
 async def call_llm(messages: list[dict], **kwargs) -> object:
     """Unified LLM call — routes to the configured provider, with retry."""
