@@ -62,17 +62,10 @@ async def user_config_history(current_user: dict = Depends(get_current_user)) ->
     return get_config_changelog("user", current_user["id"])
 
 
-@router.get("/api/admin/rag/stats")
-async def admin_rag_stats(_admin: dict = Depends(require_admin)) -> dict:
-    from ..metrics.rag_metrics import get_rag_metrics
-    return get_rag_metrics()
-
-
 @router.post("/api/admin/rag/test")
 async def admin_rag_test(body: dict[str, Any], _admin: dict = Depends(require_admin)) -> dict:
     """Test RAG embedding connection with the provided or current config."""
     from ..embedding.service import create_embedding_service
-    from ..metrics.rag_metrics import get_rag_metrics
     cfg = {**get_system_config().get("rag", {}), **body.get("rag", {})}
     api_key = cfg.get("api_key", "") or None
     if not api_key:
@@ -88,3 +81,26 @@ async def admin_rag_test(body: dict[str, Any], _admin: dict = Depends(require_ad
         return {"ok": True, "dimension": len(result), "message": "连接成功"}
     except Exception as e:
         return {"ok": False, "message": f"连接失败: {e}"}
+
+
+@router.post("/api/admin/rag/rebuild-all")
+async def admin_rag_rebuild_all(_admin: dict = Depends(require_admin)) -> dict:
+    """Rebuild embeddings for all databases that have imported schemas."""
+    from .. import state as app_state
+    from ..router.schema_retriever import rebuild_embeddings
+
+    db_ids = set()
+    for conn in app_state._db_connections:
+        db_ids.add(conn["id"])
+
+    results = []
+    for db_id in db_ids:
+        try:
+            await rebuild_embeddings(db_id)
+            results.append({"database_id": db_id, "ok": True})
+        except Exception as e:
+            logger.warning(f"Rebuild failed for {db_id}: {e}")
+            results.append({"database_id": db_id, "ok": False, "error": str(e)})
+
+    ok_count = sum(1 for r in results if r["ok"])
+    return {"ok": True, "total": len(results), "succeeded": ok_count, "failed": len(results) - ok_count, "results": results}

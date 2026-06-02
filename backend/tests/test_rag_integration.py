@@ -23,7 +23,6 @@ from app.embedding.service import (
     SiliconFlowEmbeddingService,
     create_embedding_service,
 )
-from app.metrics.rag_metrics import RagMetrics, get_rag_metrics, record_query, record_self_learn
 from app.persistence.vector_store import VectorStore
 from app.router.schema_retriever import init_rag, retrieve_schema, rebuild_embeddings, _build_table_search_text
 from app.router.question_learner import init_learner
@@ -216,37 +215,6 @@ class TestEmbeddingServiceIntegration:
 
 
 # =========================================================================
-# Integration: RAG Metrics
-# =========================================================================
-
-class TestRagMetricsIntegration:
-    """Verify metrics collection works end-to-end."""
-
-    def test_metrics_tracking(self):
-        RagMetrics().last_reset = 0  # reset for clean test
-        record_query(enabled=True, tier_hit="table", score=0.95, latency_ms=150, tables_retrieved=3)
-        record_query(enabled=True, tier_hit="fallback", score=0.0, latency_ms=5, tables_retrieved=0)
-        record_query(enabled=False)
-        record_self_learn()
-
-        metrics = get_rag_metrics()
-        assert metrics["total_queries"] >= 3
-        assert metrics["rag_enabled_queries"] >= 2
-        assert metrics["fallback_count"] >= 1
-        assert metrics["self_learn_count"] >= 1
-        assert metrics["avg_latency_ms"] >= 0
-
-    def test_metrics_empty_initially(self):
-        """Reset and check clean state."""
-        m = RagMetrics()
-        snap = m.snapshot()
-        assert snap["total_queries"] == 0
-        assert snap["rag_enabled_queries"] == 0
-        assert snap["fallback_count"] == 0
-        assert snap["self_learn_count"] == 0
-
-
-# =========================================================================
 # Integration: Question Learner
 # =========================================================================
 
@@ -327,3 +295,59 @@ class TestSchemaImportTriggersRebuild:
 
         state.config.rag = RAGConfig(enabled=False)
         assert state.config.rag.enabled is False
+
+
+# =========================================================================
+# Integration: Database deletion cleans up embeddings
+# =========================================================================
+
+class TestDatabaseDeletionCleansEmbeddings:
+    """When a database is deleted, its embeddings should also be removed."""
+
+    def test_vector_store_delete_database(self, vs):
+        vs.upsert_table("db1", "t1", "users", "users table", [0.1, 0.2, 0.3])
+        vs.upsert_table("db1", "t2", "orders", "orders table", [0.4, 0.5, 0.6])
+        vs.store_hypothesis("h1", "db1", "test question", '["t1"]', "SELECT 1", [0.1, 0.2, 0.3], 100.0)
+
+        vs.delete_database("db1")
+
+        tables = vs.search_tables([0.1, 0.2, 0.3], "db1", top_k=5)
+        hypos = vs.search_hypotheses([0.1, 0.2, 0.3], "db1", top_k=5, min_score=0.0)
+        assert tables == []
+        assert hypos == []
+
+    def test_delete_only_affects_target_database(self, vs):
+        vs.upsert_table("db1", "t1", "db1_table", "db1", [0.1, 0.2, 0.3])
+        vs.upsert_table("db2", "t2", "db2_table", "db2", [0.9, 0.8, 0.7])
+
+        vs.delete_database("db1")
+
+        db2_tables = vs.search_tables([0.9, 0.8, 0.7], "db2", top_k=5)
+        assert len(db2_tables) == 1
+        assert db2_tables[0]["table_name"] == "db2_table"
+
+
+# =========================================================================
+# Integration: Rebuild-all endpoint
+# =========================================================================
+
+class TestRebuildAllEmbeddings:
+    """Verify the rebuild-all API endpoint logic."""
+
+    @pytest.mark.asyncio
+    async def test_rebuild_all_with_mock_embeddings(self, vs):
+        """Simulate rebuild-all with mocked embedding service."""
+        from app.router.schema_retriever import init_rag
+
+        class MockEmb:
+            async def embed_batch(self, texts):
+                return [[0.1, 0.2, 0.3]] * len(texts)
+
+        init_rag(MockEmb(), vs)
+        from app.router.schema_retriever import rebuild_embeddings
+
+        # Should not raise with uninitialized persistence
+        result = await rebuild_embeddings("nonexistent-db")
+        assert result is None
+
+        init_rag(None, None)

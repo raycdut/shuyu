@@ -196,7 +196,7 @@ async def test_database_connection(req: DBConnectRequest):
 
 @router.delete("/api/database/{db_id}")
 async def disconnect_database(db_id: str, _admin: dict = Depends(require_admin)):
-    """Remove a registered database."""
+    """Remove a registered database and clean up its embeddings."""
     logger.info(f"DELETE /api/database/{db_id}")
     entry = next((d for d in state._db_connections if d["id"] == db_id), None)
     db_name = entry["name"] if entry else db_id
@@ -208,6 +208,14 @@ async def disconnect_database(db_id: str, _admin: dict = Depends(require_admin))
         _admin["username"],
         f"删除数据库连接: {db_name}",
     )
+
+    try:
+        from ..router.schema_retriever import _vector_store as rag_vs
+        if rag_vs:
+            rag_vs.delete_database(db_id)
+            logger.info(f"Cleaned up RAG embeddings for database {db_id}")
+    except Exception:
+        logger.warning(f"Failed to clean up RAG embeddings for {db_id} (non-fatal)")
 
     return {"ok": True}
 
