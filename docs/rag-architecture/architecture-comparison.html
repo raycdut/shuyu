@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shuyu RAG — Architecture Comparison</title>
+<style>
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 30px; }
+  h1 { color: #58a6ff; }
+  p.subtitle { color: #8b949e; }
+  .comparison { display: flex; gap: 30px; flex-wrap: wrap; }
+  .side { flex: 1; min-width: 420px; }
+  h2 { padding: 10px 14px; border-radius: 6px; font-size: 16px; margin-bottom: 20px; }
+  h2.current { background: #21262d; border: 1px solid #30363d; color: #e6edf3; }
+  h2.proposed { background: #0a2e1a; border: 1px solid #238636; color: #3fb950; }
+  .layer { margin-bottom: 16px; border: 1px solid #30363d; border-radius: 8px; background: #161b22; padding: 14px; }
+  .layer-title { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .component { padding: 8px 10px; margin: 4px 0; border-radius: 4px; font-size: 13px; border-left: 3px solid; }
+  .comp-green { background: #0a2e1a22; border-color: #238636; }
+  .comp-blue { background: #1f6feb22; border-color: #58a6ff; }
+  .comp-yellow { background: #d2992222; border-color: #d29922; }
+  .comp-gray { background: #21262d; border-color: #484f58; color: #8b949e; }
+  .comp-dim { color: #8b949e; font-style: italic; }
+  .box-title { font-weight: 600; margin-bottom: 2px; }
+  .box-detail { font-size: 12px; }
+  .tag { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 8px; margin-right: 4px; }
+  .tag-new { background: #23863633; color: #3fb950; border: 1px solid #23863666; }
+  .tag-changed { background: #d2992233; color: #d29922; border: 1px solid #d2992266; }
+  .tag-unchanged { background: #21262d; color: #8b949e; border: 1px solid #30363d; }
+  .tag-removed { background: #da363333; color: #f85149; border: 1px solid #da363366; }
+  .legend { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .legend-item { font-size: 12px; }
+  .arrow-layer { text-align: center; color: #30363d; margin: 4px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<h1>🏗️ Shuyu Architecture Comparison</h1>
+<p class="subtitle">Current (without RAG) vs. Proposed (with RAG) — layer-by-layer breakdown</p>
+
+<div class="legend">
+  <span class="legend-item"><span class="tag tag-new">NEW</span> New component</span>
+  <span class="legend-item"><span class="tag tag-changed">CHANGED</span> Modified component</span>
+  <span class="legend-item"><span class="tag tag-unchanged">UNCHANGED</span> No changes</span>
+  <span class="legend-item"><span class="tag tag-removed">REMOVED</span> Deprecated</span>
+</div>
+
+<div class="comparison">
+
+  <!-- LEFT: Current Architecture -->
+  <div class="side">
+    <h2 class="current">❌ Current Architecture (No RAG)</h2>
+
+    <div class="layer">
+      <div class="layer-title">🌐 Entry Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">FastAPI Server (main.py)</span><br><span class="box-detail">Routes + lifespan + CORS</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">POST /api/chat + /api/chat/stream (routes/chat.py)</span><br><span class="box-detail">Session, DB selection, schema injection</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">📂 Data Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">ConfigDB (configdb/)</span><br><span class="box-detail">SQLite/MySQL — stores prompts, users, sessions</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Schema Persistence (persistence/schema.py)</span><br><span class="box-detail">ImportedTable + ImportedColumn ORM</span></div>
+      <div class="component comp-gray"><span class="tag tag-removed">N/A</span> <span class="box-title">Vector Store</span><br><span class="box-detail">❌ Does not exist — schema loaded from SQLite directly</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🧠 Schema Processing</div>
+      <div class="component comp-yellow"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">build_schema_prompt() (db/schema.py)</span><br><span class="box-detail">Formats ALL tables + columns into prompt text</span></div>
+      <div class="component comp-gray"><span class="tag tag-removed">N/A</span> <span class="box-title">Schema Router / Retriever</span><br><span class="box-detail">❌ Does not exist — full schema always injected</span></div>
+      <div class="component comp-gray"><span class="tag tag-removed">N/A</span> <span class="box-title">Embedding Service</span><br><span class="box-detail">❌ Does not exist — no embedding calls made</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🤖 Agent Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SimpleAgent (fast mode)</span><br><span class="box-detail">ReAct loop — system prompt contains ALL schema</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">AdvancedAgent (quality mode)</span><br><span class="box-detail">Plan → Reflect → Execute — schema in plan prompt + exec prompt</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SQL Generation Tool (sql_tool.py)</span><br><span class="box-detail">LLM gets full schema_prompt → generate SQL</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🗄️ Database Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">DuckDB / MySQL / PostgreSQL</span><br><span class="box-detail">Remote database being queried</span></div>
+    </div>
+
+    <div style="margin-top:16px; padding:12px; background:#1c1212; border:1px solid #da363344; border-radius:6px;">
+      <div style="color:#f85149; font-weight:600; font-size:14px;">⚠️ Scaling Constraints</div>
+      <ul style="color:#c9d1d9; font-size:13px; margin:8px 0 0; padding-left:20px; line-height:1.6;">
+        <li>Full schema injected every query → token waste</li>
+        <li>30 tables ≈ 5K tokens of schema prompt</li>
+        <li>50+ tables → LLM starts confusing similar column names</li>
+        <li>No semantic table selection — relies on LLM inference</li>
+        <li>Multi-DB impossible — one schema per injection</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- RIGHT: Proposed Architecture -->
+  <div class="side">
+    <h2 class="proposed">✅ Proposed Architecture (With RAG)</h2>
+
+    <div class="layer">
+      <div class="layer-title">🌐 Entry Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">FastAPI Server (main.py)</span></div>
+      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">POST /api/chat (routes/chat.py)</span><br><span class="box-detail">Calls schema_retriever.retrieve() instead of build_schema_prompt()</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">📂 Data Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">ConfigDB (configdb/)</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">Schema Persistence (persistence/schema.py)</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Vector Store (persistence/vector_store.py)</span><br><span class="box-detail">Table + column embeddings stored in SQLite-backed vector index (numpy cosine similarity)</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🧠 Schema Processing</div>
+      <div class="component comp-yellow"><span class="tag tag-changed">CHANGED</span> <span class="box-title">build_schema_prompt() (db/schema.py)</span><br><span class="box-detail">Still exists but now receives TOP-K tables only</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Schema Retriever (router/schema_retriever.py)</span><br><span class="box-detail">embed → vector search → format top-K schema</span></div>
+      <div class="component comp-green"><span class="tag tag-new">NEW</span> <span class="box-title">Embedding Service (embedding/service.py)</span><br><span class="box-detail">Pluggable: OpenAI | SiliconFlow | local sentence-transformers</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🤖 Agent Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SimpleAgent (fast mode)</span><br><span class="box-detail">ReAct loop — system prompt now has RELEVANT schema only</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">AdvancedAgent (quality mode)</span><br><span class="box-detail">Same plan/exec/report pipeline with smaller schema prompt</span></div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">SQL Generation Tool (sql_tool.py)</span><br><span class="box-detail">Same code — gets smaller schema_prompt, less noise</span></div>
+    </div>
+
+    <div class="arrow-layer">▼</div>
+
+    <div class="layer">
+      <div class="layer-title">🗄️ Database Layer</div>
+      <div class="component comp-blue"><span class="tag tag-unchanged">UNCHANGED</span> <span class="box-title">DuckDB / MySQL / PostgreSQL</span></div>
+    </div>
+
+    <div style="margin-top:16px; padding:12px; background:#0a2e1a; border:1px solid #23863644; border-radius:6px;">
+      <div style="color:#3fb950; font-weight:600; font-size:14px;">✅ Key Improvements</div>
+      <ul style="color:#c9d1d9; font-size:13px; margin:8px 0 0; padding-left:20px; line-height:1.6;">
+        <li>Only top-K relevant tables injected → 80-90% token reduction</li>
+        <li>Scalable to 100+ tables without prompt budget issues</li>
+        <li>Multi-DB: can retrieve from N vector indexes independently</li>
+        <li>Embedding cost negligible (~$0.00004/query)</li>
+        <li>Zero changes to agent loops or SQL execution pipeline</li>
+        <li>Toggle ON/OFF via config — safe rollback</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div style="max-width: 900px; margin: 40px auto; padding: 20px; border: 1px solid #30363d; border-radius: 8px; background: #161b22;">
+  <h3 style="color: #58a6ff; margin-top: 0;">📝 Files Changed Summary</h3>
+  <table style="width:100%; border-collapse: collapse; font-size:13px;">
+    <tr style="border-bottom:1px solid #30363d;">
+      <th style="text-align:left; padding:8px 4px; color:#8b949e;">File</th>
+      <th style="text-align:left; padding:8px 4px; color:#8b949e;">Change</th>
+      <th style="text-align:left; padding:8px 4px; color:#8b949e;">Description</th>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">persistence/vector_store.py</code></td>
+      <td><span class="tag tag-new">NEW</span></td>
+      <td style="color:#c9d1d9;">SQLite-backed vector index + numpy cos-sim</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">router/schema_retriever.py</code></td>
+      <td><span class="tag tag-new">NEW</span></td>
+      <td style="color:#c9d1d9;">Embed → search → format pipeline</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">embedding/service.py</code></td>
+      <td><span class="tag tag-new">NEW</span></td>
+      <td style="color:#c9d1d9;">Pluggable embedding provider abstraction</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">config.py</code></td>
+      <td><span class="tag tag-changed">CHANGED</span></td>
+      <td style="color:#c9d1d9;">Added RAGConfig section</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">routes/chat.py</code></td>
+      <td><span class="tag tag-changed">CHANGED</span></td>
+      <td style="color:#c9d1d9;">Replace build_schema_prompt with schema_retriever.retrieve()</td>
+    </tr>
+    <tr style="border-bottom:1px solid #21262d;">
+      <td style="padding:8px 4px;"><code style="font-size:12px;">client.py</code></td>
+      <td><span class="tag tag-changed">CHANGED</span></td>
+      <td style="color:#c9d1d9;">Add embed() method (alongside call_llm)</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 4px;"><code style="font-size:12px;">routes/schema.py</code></td>
+      <td><span class="tag tag-changed">CHANGED</span></td>
+      <td style="color:#c9d1d9;">Webhook to rebuild embeddings on schema import</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

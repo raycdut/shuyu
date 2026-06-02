@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shuyu RAG — Request Flow Comparison</title>
+<style>
+  body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 40px; }
+  h1 { color: #58a6ff; margin-bottom: 8px; }
+  p.subtitle { color: #8b949e; margin-top: 0; }
+  .container { display: flex; gap: 40px; flex-wrap: wrap; justify-content: center; }
+  .flow { flex: 1; min-width: 420px; max-width: 600px; }
+  h2 { text-align: center; padding: 10px; border-radius: 6px; margin-bottom: 20px; }
+  h2.current { background: #21262d; border: 1px solid #30363d; }
+  h2.proposed { background: #0a2e1a; border: 1px solid #238636; }
+  .step { border: 1px solid #30363d; border-radius: 8px; padding: 14px; margin-bottom: 12px; position: relative; background: #161b22; }
+  .step .label { font-size: 11px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .step .title { font-weight: 600; color: #e6edf3; margin-bottom: 4px; }
+  .step .detail { font-size: 13px; color: #8b949e; line-height: 1.5; }
+  .step .badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+  .badge-schema { background: #1f6feb22; color: #58a6ff; border: 1px solid #1f6feb55; }
+  .badge-embed { background: #23863622; color: #3fb950; border: 1px solid #23863655; }
+  .badge-sql { background: #d2992222; color: #d29922; border: 1px solid #d2992255; }
+  .badge-cost { background: #da363322; color: #f85149; border: 1px solid #da363355; }
+  .arrow { text-align: center; color: #30363d; font-size: 18px; margin: 2px 0; }
+  .cost-box { margin-top: 20px; padding: 12px; border-radius: 8px; }
+  .cost-current { background: #1c1212; border: 1px solid #da363344; }
+  .cost-proposed { background: #0a2e1a; border: 1px solid #23863644; }
+  .cost-box .label { font-size: 11px; color: #8b949e; }
+  .cost-box .value { font-size: 16px; font-weight: 700; }
+  .cost-box .green { color: #3fb950; }
+  .cost-box .red { color: #f85149; }
+</style>
+</head>
+<body>
+
+<h1>📊 Request Flow Comparison</h1>
+<p class="subtitle">Shuyu: without RAG (current) vs. with RAG (proposed)</p>
+
+<div class="container">
+
+  <!-- LEFT: Current -->
+  <div class="flow">
+    <h2 class="current">❌ Without RAG (Current)</h2>
+
+    <div class="step">
+      <div class="label">Step 1</div>
+      <div class="title">User asks a question</div>
+      <div class="detail">"上个月华东区销量排名"</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 2</div>
+      <div class="title">Load full schema from SQLite</div>
+      <div class="detail"><span class="badge badge-schema">load_full_schema()</span> SELECT * FROM imported_tables WHERE database_id=?
+        <br/>All 30+ tables, 450+ columns loaded into memory</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 3</div>
+      <div class="title">Build schema prompt</div>
+      <div class="detail"><span class="badge badge-schema">build_schema_prompt()</span> Format every table + column + description
+        <br/>~3,000-5,000 tokens of schema text</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 4</div>
+      <div class="title">Inject into agent system prompt</div>
+      <div class="detail"><span class="badge badge-schema">routes/chat.py:203</span>
+        <br/>Agent sees ALL tables, must infer which are relevant</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 5</div>
+      <div class="title">SQL generation</div>
+      <div class="detail"><span class="badge badge-sql">sql_tool.py</span> LLM reads full schema → generates SQL
+        <br/>⚠️ Risk: LLM picks wrong table (e.g. "suppliers" has a "region" column)</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 6</div>
+      <div class="title">Execute SQL → return result</div>
+      <div class="detail">connector.execute() → formatted response</div>
+    </div>
+
+    <div class="cost-box cost-current">
+      <div class="label">Cost per query</div>
+      <div class="value"><span class="red">~4,000 tokens</span> for schema alone</div>
+      <div class="detail" style="margin-top:6px">Plus LLM generation. Schema-to-response ratio: <span class="red">~50% waste</span></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Proposed -->
+  <div class="flow">
+    <h2 class="proposed">✅ With RAG (Proposed)</h2>
+
+    <div class="step">
+      <div class="label">Step 1</div>
+      <div class="title">User asks a question</div>
+      <div class="detail">"上个月华东区销量排名"</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 2</div>
+      <div class="title">Embed question</div>
+      <div class="detail"><span class="badge badge-embed">embed()</span> user_question → vector (1536 dims)
+        <br/>~100ms, via OpenAI text-embedding-3-small</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 3</div>
+      <div class="title">Vector search → top-K tables</div>
+      <div class="detail"><span class="badge badge-embed">schema_retriever.retrieve()</span>
+        <br/>
+        · orders: <span style="color:#3fb950">score 0.91</span> — "销量" ✓<br/>
+        · products: <span style="color:#3fb950">score 0.68</span> — "排名→产品" ✓<br/>
+        · regions: <span style="color:#58a6ff">score 0.52</span> — "华东区" ✓<br/>
+        <span style="color:#8b949e">· suppliers: score 0.12 — ✗ filtered</span><br/>
+        <span style="color:#8b949e">· inventory: score 0.09 — ✗ filtered</span>
+      </div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 4</div>
+      <div class="title">Load relevant schema only</div>
+      <div class="detail"><span class="badge badge-schema">load_imported_columns()</span> × 3 tables
+        <br/>~500-800 tokens → 80% less than full schema</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 5</div>
+      <div class="title">SQL generation (cleaner prompt)</div>
+      <div class="detail"><span class="badge badge-sql">sql_tool.py</span> LLM sees only relevant schema
+        <br/>✅ Less noise, less hallucination risk, faster generation</div>
+    </div>
+
+    <div class="arrow">▼</div>
+
+    <div class="step">
+      <div class="label">Step 6</div>
+      <div class="title">Execute SQL → return result</div>
+      <div class="detail">connector.execute() → formatted response</div>
+    </div>
+
+    <div class="cost-box cost-proposed">
+      <div class="label">Cost per query</div>
+      <div class="value"><span class="green">~700 tokens</span> for schema + <span class="green">~$0.00004</span> embedding</div>
+      <div class="detail" style="margin-top:6px">80-90% schema token reduction. Embedding cost is negligible.</div>
+    </div>
+  </div>
+</div>
+
+<div style="max-width: 900px; margin: 40px auto; padding: 20px; border: 1px solid #30363d; border-radius: 8px; background: #161b22;">
+  <h3 style="color: #58a6ff; margin-top: 0;">Key Observations</h3>
+  <ul style="color: #c9d1d9; line-height: 1.8;">
+    <li>The RAG path adds <strong>one extra step</strong> (embedding + vector search) but removes 80-90% of schema tokens</li>
+    <li>Embedding latency (~100ms) is far less than the time saved from a shorter prompt</li>
+    <li>Table selection is <strong>guaranteed by semantic similarity</strong>, not LLM guessing</li>
+    <li>Fallback path: if embedding service is down, inject full schema as-is</li>
+    <li>No changes needed to SQL generation, agent loops, or execution pipeline</li>
+  </ul>
+</div>
+
+</body>
+</html>
