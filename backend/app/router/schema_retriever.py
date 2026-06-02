@@ -5,6 +5,7 @@ Replaces build_schema_prompt() when RAG is enabled.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -12,6 +13,7 @@ logger = logging.getLogger("shuyu.rag")
 
 _embedding_service = None
 _vector_store = None
+_rag_config = None
 
 
 def init_rag(embedding_service, vector_store):
@@ -94,6 +96,35 @@ async def retrieve_schema(
 
     try:
         q_vector = await _embedding_service.embed(question)
+
+        # Tier 2: check hypothetical questions first (higher min_score)
+        if _vector_store and cfg.self_learn:
+            tier2_results = _vector_store.search_hypotheses(
+                q_vector, database_id, top_k=3, min_score=0.7
+            )
+            if tier2_results:
+                table_ids_set = set()
+                for r in tier2_results:
+                    try:
+                        ids = json.loads(r["table_ids"])
+                        table_ids_set.update(ids)
+                    except Exception:
+                        pass
+                if table_ids_set:
+                    from ..persistence.schema import load_full_schema
+                    full_tables = load_full_schema(database_id)
+                    relevant = [t for t in full_tables if t["table_name"] in table_ids_set or t["id"] in table_ids_set]
+                    if relevant:
+                        formatted = build_schema_prompt(relevant, database_id)
+                        header = f"<rag note=\"已通过历史相似问题匹配到 {len(relevant)} 张相关表\">\n"
+                        return {
+                            "prompt": header + formatted,
+                            "tier_hit": "hypothesis",
+                            "match_score": tier2_results[0]["score"],
+                            "table_count": len(relevant),
+                        }
+
+        # Tier 1a: table-level search
         results = _vector_store.search_tables(
             q_vector, database_id, top_k=top_k, min_score=min_score
         )

@@ -61,3 +61,22 @@ class TestVectorStore:
         results_db2 = store.search_tables([0.7, 0.8, 0.9], "db2", top_k=5)
         assert results_db1 == []
         assert len(results_db2) == 1
+
+    def test_store_and_search_hypotheses(self, store: VectorStore):
+        store.store_hypothesis("h1", "db1", "how many users?", '["users"]', "SELECT * FROM users", [0.1, 0.2, 0.3], 1000.0)
+        store.store_hypothesis("h2", "db1", "order amounts?", '["orders"]', "SELECT * FROM orders", [0.9, 0.8, 0.7], 1000.0)
+        results = store.search_hypotheses([0.9, 0.8, 0.7], "db1", top_k=3, min_score=0.5)
+        assert len(results) >= 1
+        assert "orders" in results[0].get("table_ids", "")
+
+    def test_search_hypotheses_empty_for_new_database(self, store: VectorStore):
+        store.store_hypothesis("h1", "db1", "how many users?", '["users"]', "SELECT 1", [0.1, 0.2, 0.3], 1000.0)
+        results = store.search_hypotheses([0.1, 0.2, 0.3], "db2", top_k=3, min_score=0.5)
+        assert results == []
+
+    def test_search_hypotheses_min_score_filter(self, store: VectorStore):
+        store.store_hypothesis("h1", "db1", "unrelated", '["x"]', "SELECT 1", [1.0, 0.0, 0.0], 1000.0)
+        store.store_hypothesis("h2", "db1", "very related", '["y"]', "SELECT 1", [0.0, 1.0, 0.0], 1000.0)
+        results = store.search_hypotheses([0.0, 1.0, 0.0], "db1", top_k=3, min_score=0.9)
+        assert len(results) == 1
+        assert "very related" in results[0]["question"]

@@ -292,6 +292,22 @@ async def chat(req: ChatRequest):
 
     session.add_message("assistant", content)
 
+    # Fire-and-forget self-learning (Phase 5)
+    if sql_queries_collector:
+        try:
+            from ..router.question_learner import learn as rag_learn
+            import asyncio
+            asyncio.ensure_future(rag_learn(
+                question=req.message,
+                sql=sql_queries_collector[0] if sql_queries_collector else "",
+                tables=[],  # table names extracted from SQL if needed
+                database_id=req.db_id or "",
+                success=bool(query_results_collector),
+                self_learn_enabled=_get_rag_enabled(),
+            ))
+        except Exception:
+            pass
+
     # Store query_results in session metadata for persistence
     try:
         session.metadata["_query_results"] = _to_json_safe(

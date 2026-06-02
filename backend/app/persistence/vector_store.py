@@ -119,6 +119,49 @@ class VectorStore:
             where={"database_id": {"$eq": database_id}},
         )
 
+    def store_hypothesis(self, id: str, database_id: str, question: str,
+                         table_ids: str, source_query: str, embedding: list[float],
+                         created_at: float):
+        """Store a hypothetical question embedding (Tier 2 self-learning)."""
+        self._collection.upsert(
+            ids=[f"hyp_{database_id}_{id}"],
+            embeddings=[embedding],
+            metadatas=[{
+                "database_id": database_id,
+                "type": "hypothesis",
+                "table_ids": table_ids,
+                "source_query": source_query,
+                "created_at": created_at,
+            }],
+            documents=[question],
+        )
+
+    def search_hypotheses(self, query_embedding: list[float], database_id: str,
+                          top_k: int = 3, min_score: float = 0.7) -> list[dict]:
+        """Search Tier 2 hypothetical questions. Returns [{question, table_ids, score}]."""
+        results = self._collection.query(
+            query_embeddings=[query_embedding],
+            n_results=top_k,
+            where={"$and": [
+                {"database_id": {"$eq": database_id}},
+                {"type": {"$eq": "hypothesis"}},
+            ]},
+        )
+        if not results["ids"] or not results["ids"][0]:
+            return []
+        output = []
+        for i, doc_id in enumerate(results["ids"][0]):
+            meta = results["metadatas"][0][i] if results["metadatas"] else {}
+            distance = results["distances"][0][i] if results["distances"] else 0
+            score = 1.0 - distance
+            if score >= min_score:
+                output.append({
+                    "question": results["documents"][0][i] if results["documents"] else "",
+                    "table_ids": meta.get("table_ids", "[]"),
+                    "score": round(score, 4),
+                })
+        return output
+
     def close(self):
         """Cleanup ChromaDB client."""
         if self._client:
