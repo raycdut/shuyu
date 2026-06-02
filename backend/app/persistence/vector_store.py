@@ -162,6 +162,15 @@ class VectorStore:
                 })
         return output
 
+    def delete_hypotheses(self, database_id: str):
+        """Delete all hypothesis embeddings for a given database (user data deletion)."""
+        self._collection.delete(
+            where={"$and": [
+                {"database_id": {"$eq": database_id}},
+                {"type": {"$eq": "hypothesis"}},
+            ]},
+        )
+
     def close(self):
         """Cleanup ChromaDB client."""
         if self._client:

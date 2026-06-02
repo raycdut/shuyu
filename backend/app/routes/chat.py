@@ -494,3 +494,21 @@ async def chat_stream(req: ChatRequest):
             yield _make_event({'type': 'error', 'content': str(e)})
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@router.post("/api/user/rag/forget")
+async def rag_forget(req: dict):
+    """Delete all RAG hypotheses for a given database (user data deletion)."""
+    database_id = req.get("database_id", "")
+    if not database_id:
+        raise HTTPException(400, "database_id is required")
+    try:
+        from ..router.schema_retriever import _vector_store as vs
+        if vs:
+            vs.delete_hypotheses(database_id)
+            logger.info(f"Deleted RAG hypotheses for database: {database_id}")
+            return {"ok": True, "message": f"已删除数据库 {database_id} 的 RAG 自学习数据"}
+        return {"ok": False, "message": "RAG 未初始化"}
+    except Exception as e:
+        logger.error(f"Failed to delete RAG hypotheses: {e}")
+        raise HTTPException(500, f"删除失败: {e}")
