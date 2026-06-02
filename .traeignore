@@ -1,0 +1,20 @@
+# Trae IDE ignore — 加速索引
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+dist/
+backend/data/
+data/
+.env
+.DS_Store
+.git/
+*.db
+*.db-shm
+*.db-wal
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
