@@ -163,6 +163,11 @@ Steps:
       → If Tier 2 finds matches above `tier2_min_score` (default 0.7), use them.
    b. **If not enough**: Search Tier 1a (table-level). Lower scores expected (0.3-0.6).
    c. **If still not enough**: Search Tier 1b (column-level) for fine-grained matching.
+      → For each relevant table, rank columns by similarity to the user question.
+      → Only keep columns above `column_min_score` (default 0.5).
+      → Example: "上个月华东区销量" → orders.amount(0.89), orders.region(0.82),
+        orders.order_date(0.75), orders.product_id(0.31→filtered)
+      → This reduces irrelevant columns per table from 15 to 3-5.
    d. **Optional**: Search Tier 3 (historical SQL).
 3. Merge results across tiers: Tier 2 results are trusted most, followed by
    Tier 1a, then Tier 1b. De-duplicate by table_id.
@@ -170,14 +175,47 @@ Steps:
 5. For each matched table, load full column details from SQLite.
 6. Build **two-part output**:
    a. `<relevant_tables>` — Top-K table schemas with full column details
-   b. `<other_tables>` — List of remaining table names (name only, no columns)
-7. Inject both into the agent prompt.
+      (types, descriptions, sample values — enough to write complete SQL)
+   b. `<other_tables>` — Remaining tables with column NAMES only
+      (no types, no descriptions, no samples — just enough to inform
+      the LLM about table shape without bloating the prompt)
+      
+   Example output:
+   ```xml
+   <database name="sales_db">
+     <relevant_tables>
+       表: orders
+         - id: INTEGER (PK)
+         - amount: DECIMAL(10,2) — 交易金额, 销售额
+         - region: VARCHAR(50) — 区域
+         - order_date: DATE — 下单日期
+       表: products
+         - id: INTEGER (PK)
+         - name: VARCHAR(100) — 产品名称
+     </relevant_tables>
+     <other_tables>
+       表: suppliers — 供应商信息 (columns: id, name, contact, phone)
+       表: inventory — 库存 (columns: id, product_id, qty)
+     </other_tables>
+     <instructions>
+       - 优先使用 relevant_tables 中的表
+       - 如果查询需要用到 other_tables 中的表，也可以使用
+       - other_tables 只列出了列名，没有详细类型信息，
+         请基于列名推断表的结构并谨慎生成 SQL
+     </instructions>
+   </database>
+   ```
 
-Output: formatted schema prompt with relevant + other tables
+**Why column names, not just table names**: Without column names, the LLM
+hallucinates column names for `other_tables` (e.g. assumes `suppliers`
+has column `contact_person` when it's actually named `contact_phone`).
+Column names alone (~5-10 tokens per table) provide enough guidance
+without the full schema cost.
 
-**Why this matters**: A query like "上个月华东区销量最高的产品的供应商"
-needs `suppliers` table which might rank below top-5. The `other_tables` list
-keeps the agent aware of all available tables without bloating the prompt.
+**Why no types**: Types add ~20-40 tokens per column. For the 25 tables
+not in top-5, that's 500-1000 unnecessary tokens per query. Column names
+are sufficient for the LLM to decide "yes I need this table" and then
+the SQL engine will validate types at execution time.
 ```
 
 #### `router/question_learner.py` — Self-learning from conversations (NEW)
@@ -203,7 +241,31 @@ Step 2: **Feedback gate** — only learn from queries when:
   If any gate fails → skip. Do NOT generate hypothetical questions.
   Better to learn nothing than to learn wrong patterns.
 
-Step 3: LLM generates hypothetical questions (lightweight, 1-shot):
+Step 3: **Deferred commit** — hypotheses are NOT stored immediately.
+  Instead they are placed in a **pending store** within the session:
+
+  ```python
+  session.metadata["_pending_hypotheses"] = [
+      {"question": "华东地区上月销售额最高的产品有哪些",
+       "sql": "SELECT ...", "tables": ["orders", "products"]},
+      ...
+  ]
+  ```
+
+  The session continues. The hypotheses are only "committed" to Tier 2
+  when the session ends with a positive signal, OR cleared if the user
+  expresses dissatisfaction.
+
+  **Implicit negation detection** (at session end or next user message):
+  - Scan the user's next message for negation keywords:
+    `"不对", "不是", "错了", "我要的不是", "wrong", "not what I asked"`
+  - If negation found → `user_satisfied = false` → discard pending hypotheses
+  - If user asks a follow-up question on the SAME topic (e.g. "按产品细分")
+    → `user_satisfied = true` → commit pending hypotheses to Tier 2
+  - If session times out with no further messages → commit after 24h TTL
+    (conservative: assume it was correct)
+
+Step 4: On commit, LLM generates hypothetical questions:
   "Based on the user question '{question}' and the SQL query '{sql}'
    executed against tables {tables}, generate 2-3 alternative phrasings
    that would lead to the SAME SQL query.
@@ -550,6 +612,21 @@ User: "上个月华东区销量排名"
 `config.yaml` only holds the `RAGConfig` Pydantic model definition (defaults), not active values.
 Admin saves settings → backend stores in DB → runtime reads from state.
 
+**Architectural must-haves (included in Phase 1)**:
+
+| # | Concern | Solution | Effort |
+|---|---------|----------|--------|
+| A | Multi-worker state sync | Read RAG config from ConfigDB every query, not from process memory. Add 5s TTL cache. | ~15 lines |
+| B | Server restart resets config | Sync RAG config from ConfigDB in `lifespan()`. | ~10 lines |
+| C | Concurrent rebuild corrupts data | Atomic swap: build into temp table → DROP + RENAME. File lock to serialize rebuilds. | ~40 lines |
+| D | Embedding provider change breaks old vectors | `dim` field on every vector; query only matches same-dim vectors. | ~1 line |
+| E | Zero observability | `RagMetrics` class + `GET /api/admin/rag/stats` shows hits, latency, fallback rate. | ~60 lines |
+| F | Per-query RAG quality tag | Each response tagged with `rag_info: {mode, tier, score, latency}`. | ~40 lines |
+
+These are not "Phase 2" items — they are foundational. Without them, the system
+fails in multi-worker deployment (A) and on restart (B), produces silent data
+corruption (C), and has no way to tell if it's working (E).
+
 ### Phase 2 — Schema Import Sync (Effort: ~1 day)
 
 | Step | File | Change |
@@ -675,15 +752,21 @@ The following defects were identified during design review and have been fixed:
 
 | Severity | Issue | Fix |
 |----------|-------|-----|
-| **P0** | RAG truncation hides tables from agent | Inject `other_tables` list alongside `relevant_tables` |
-| **P0** | Single Tier 1 vector per table dilutes column signal | Split into Tier 1a (table) + Tier 1b (column), both Phase 1 |
-| **P0** | Self-learning reinforces wrong queries | Add feedback gates: non-empty results, no loop-detection, table in top-5 |
-| **P1** | Tier 1/2 scores not comparable | Layered search: Tier 2 first, Tier 1a/1b as fallback |
+| **P0** | RAG truncation hides tables from agent | Inject `other_tables` with column NAMES (no types) alongside `relevant_tables` |
+| **P0** | Single Tier 1 vector per table dilutes column signal | Split into Tier 1a (table) + Tier 1b (column), both Phase 1. Add column-level score filtering. |
+| **P0** | Self-learning reinforces wrong queries | Add deferred commit + implicit negation detection in session. Hypotheses only committed after follow-up confirmation. |
+| **P1** | Tier 1/2 scores not comparable | Layered search: Tier 2 first, Tier 1a/1b as fallback. Each tier has its own min_score. |
 | **P1** | Two providers = complex config | Default SiliconFlow (BGE-M3), separate `rag.api_key` from `llm.api_key` |
 | **P1** | min_score hardcoded | Tier-specific thresholds + auto-tuning after 50 queries |
+| **P1** | Multi-worker state inconsistent | Read RAG config from ConfigDB per query (5s TTL cache), not from process memory |
+| **P1** | Server restart reverts config | Sync RAG config from ConfigDB in `lifespan()` startup |
+| **P1** | No observability | `RagMetrics` class + `GET /api/admin/rag/stats` + per-query `rag_info` tag |
+| **P2** | Concurrent rebuild corrupts data | Atomic swap (temp table + DROP/RENAME) + file lock for serialization |
+| **P2** | Provider switch breaks vector dims | `dim` field on all vectors; query only matches same-dim vectors |
 | **P2** | No multi-turn strategy | First message only; reuse schema in same session unless topic changes |
 | **P2** | Hypothetical question diversity | Prompt now enforces diverse phrasings explicitly |
 | **P2** | SQLite + numpy O(n) latency | Fast pre-filter, keyword index, escalate to ChromaDB if >200ms |
+| **P2** | Self-learning hypotheses stored before validation | Deferred commit: pending hypotheses in session metadata, only committed after user confirmation |
 
 ---
 

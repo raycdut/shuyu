@@ -8,14 +8,18 @@
 ## File Changes Overview
 
 ```
-NEW  backend/app/persistence/vector_store.py   (80 lines)
+NEW  backend/app/persistence/vector_store.py   (150 lines)  ← expanded: atomic swap, dim validation
 NEW  backend/app/embedding/service.py           (60 lines)
-NEW  backend/app/router/schema_retriever.py     (100 lines)
+NEW  backend/app/router/schema_retriever.py     (130 lines) ← expanded: column-level filter, other_tables with col names
+NEW  backend/app/router/question_learner.py     (100 lines) ← new: deferred commit + negation detection
+NEW  backend/app/metrics/rag_metrics.py          (60 lines) ← new: observability
 MOD  backend/app/config.py                      (+15 lines)
 MOD  backend/app/client.py                      (+20 lines)
-MOD  backend/app/routes/chat.py                 (~10 lines changed)
-MOD  backend/app/routes/schema.py               (+10 lines)
-MOD  backend/app/state.py                       (+1 line)
+MOD  backend/app/routes/chat.py                 (~30 lines changed) ← expanded: multi-worker sync, per-query tags
+MOD  backend/app/admin_config/service.py        (+15 lines)
+MOD  backend/app/admin_config/router.py         (+20 lines) ← added /rag/test + /rag/stats
+MOD  backend/app/main.py                        (+10 lines) ← lifespan sync
+NEW  frontend/AdminSettings/tabs/RAGSettingsTab.tsx  (+200 lines)
 ```
 
 ---
@@ -405,23 +409,62 @@ def get_embedding_service():
     return _embedding_service_instance
 ```
 
-### Step 6: `routes/chat.py` — Injection point change
+### Step 6: `routes/chat.py` — RAG injection + multi-worker safe config read
 
 ```python
+# Multi-worker-safe RAG config read (reads from ConfigDB, not process memory)
+_rag_config_cache = {"timestamp": 0.0, "enabled": False, "top_k": 5}
+
+def _get_rag_enabled() -> bool:
+    """Read RAG status from ConfigDB with 5s TTL cache.
+    This survives multi-worker deployments — each worker reads from the shared DB
+    instead of depending on process-local state."""
+    now = time.time()
+    if now - _rag_config_cache["timestamp"] > 5:
+        try:
+            from ..admin_config.service import get_system_config
+            config = get_system_config()
+            rag = config.get("rag", {})
+            _rag_config_cache["enabled"] = rag.get("enabled", False)
+            _rag_config_cache["top_k"] = rag.get("top_k", 5)
+            _rag_config_cache["timestamp"] = now
+        except Exception:
+            pass  # Use cached value on failure
+    return _rag_config_cache["enabled"]
+
+
+async def _get_schema_prompt(question: str, db_id: str, tables, connector) -> str:
+    """Get schema prompt — with RAG if enabled, full schema if not."""
+    if not _get_rag_enabled():
+        from ..db.schema import build_schema_prompt
+        return build_schema_prompt(tables, db_id)
+    
+    from ..router.schema_retriever import retrieve_schema
+    start = time.time()
+    result = await retrieve_schema(
+        question=question,
+        database_id=db_id,
+        tables=tables,
+    )
+    latency = int((time.time() - start) * 1000)
+    
+    # Tag response with RAG metadata for observability
+    from ..metrics.rag_metrics import record_query
+    record_query(
+        enabled=True,
+        tier_hit=result.get("tier_hit", "unknown"),
+        score=result.get("match_score", 0),
+        latency_ms=latency,
+        tables_retrieved=result.get("table_count", 0),
+    )
+    
+    return result["prompt"]
+
+
 # In the chat handler, replace:
 #   schema_text = build_schema_prompt(tables, req.db_id)
 # with:
-
-if state.config.rag.enabled:
-    from ..router.schema_retriever import retrieve_schema
-    schema_text = await retrieve_schema(
-        question=req.message,
-        database_id=req.db_id,
-        tables=tables,  # from connector.get_schema()
-    )
-else:
-    from ..db.schema import build_schema_prompt
-    schema_text = build_schema_prompt(tables, req.db_id)
+schema_text = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
 ```
 
 ### Step 7: `state.py` — Add RAG config reference
