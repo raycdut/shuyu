@@ -54,16 +54,36 @@ pytest tests/test_admin_api.py -v
 | 文件 | 改动 | 行数 |
 |------|------|------|
 | `backend/app/persistence/vector_store.py` | 新文件：SQLite 表 CREATE、upsert_table、search_tables（余弦相似度）、delete_database | +80 |
-| `backend/app/embedding/service.py` | 新文件：EmbeddingService 抽象类 + OpenAI/SiliconFlow 实现 + 工厂方法 | +50 |
-| `backend/app/main.py` | lifespan 里如果 RAG enabled 就初始化 embedding 服务 + 重建向量 | +10 |
-| `backend/app/client.py` | 加 `get_embedding_service()` 工厂函数 | +10 |
+| `backend/app/embedding/service.py` | 新文件：EmbeddingService 抽象类 + **LocalOnnxEmbeddingService（默认，本地开发用）** + OpenAI/SiliconFlow 云端实现（部署用） + 工厂方法 | +60 |
 
 ### 测试
 
 | 文件 | 测什么 | 行数 |
 |------|--------|------|
-| `tests/test_vector_store.py` | 1. 创建表、插入向量、查询向量<br>2. 余弦相似度计算结果正确<br>3. dim 字段存储和读取<br>4. 按 database_id 过滤<br>5. 删除 database 级联清除 | +35 |
-| `tests/test_embedding_service.py` | 1. OpenAI/SiliconFlow 工厂方法返回正确类型<br>2. Mock embedding API 返回正确维度<br>3. embed_batch 保持输入顺序 | +25 |
+| `tests/test_vector_store.py` | 1. 创建表、插入向量、查询向量<br>2. 余弦相似度计算结果正确<br>3. dim 字段存储和读取（384 vs 1024 vs 1536）<br>4. 按 database_id 过滤<br>5. 删除 database 级联清除 | +35 |
+| `tests/test_embedding_service.py` | 1. Local ONNX 模型加载成功<br>2. embed() 返回 384 维向量<br>3. embed_batch 保持输入顺序<br>4. 云端 provider 工厂方法返回正确类型 | +30 |
+
+### 关键设计
+
+**本地开发（默认）**：
+- Provider: `local`
+- 模型路径: `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/onnx/model.onnx`
+- Tokenizer: `~/.cache/chroma/onnx_models/all-MiniLM-L6-v2/`
+- 维度: 384
+- 零 API 费用，数据不离开本机
+
+**生产部署（可切换）**：
+- Admin 在 UI 里选 SiliconFlow / OpenAI
+- 填写 API Key + API Base
+- 云端模型对中文支持更好（BGE-M3 / text-embedding-3-small）
+- 维度自动匹配（BGE-M3=1024, OpenAI=1536）
+
+### 改的文件（续）
+
+| 文件 | 改动 | 行数 |
+|------|------|------|
+| `backend/app/main.py` | lifespan 里如果 RAG enabled 就初始化 embedding 服务 + 重建向量 | +10 |
+| `backend/app/client.py` | 加 `get_embedding_service()` 工厂函数 | +10 |
 
 **总行数：~210 行**
 
