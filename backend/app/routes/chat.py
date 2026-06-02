@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -66,6 +67,53 @@ router = APIRouter()
 
 
 MAX_RESULT_ROWS = 100
+
+
+# --- RAG integration helpers ---
+_rag_config_cache = {"timestamp": 0.0, "enabled": False, "top_k": 5}
+
+
+def _get_rag_enabled() -> bool:
+    """Read RAG status from ConfigDB with 5s TTL cache (multi-worker safe)."""
+    now = time.time()
+    if now - _rag_config_cache["timestamp"] > 5:
+        try:
+            from ..admin_config.service import get_system_config
+            config = get_system_config()
+            rag = config.get("rag", {})
+            _rag_config_cache["enabled"] = rag.get("enabled", False)
+            _rag_config_cache["top_k"] = rag.get("top_k", 5)
+            _rag_config_cache["timestamp"] = now
+        except Exception:
+            pass
+    return _rag_config_cache["enabled"]
+
+
+async def _get_schema_prompt(question: str, db_id: str, tables: list, connector) -> str:
+    """Build schema prompt — uses RAG retrieval if enabled, full schema otherwise."""
+    if not _get_rag_enabled():
+        return build_schema_prompt(tables, db_id)
+    try:
+        from ..router.schema_retriever import retrieve_schema
+        start = time.time()
+        result = await retrieve_schema(
+            question=question,
+            database_id=db_id,
+            tables=tables,
+        )
+        latency = int((time.time() - start) * 1000)
+        from ..metrics.rag_metrics import record_query
+        record_query(
+            enabled=True,
+            tier_hit=result.get("tier_hit", "unknown"),
+            score=result.get("match_score", 0.0),
+            latency_ms=latency,
+            tables_retrieved=result.get("table_count", 0),
+        )
+        return result["prompt"]
+    except Exception as e:
+        logger.warning(f"RAG schema retrieval failed, using full schema: {e}")
+        return build_schema_prompt(tables, db_id)
 
 
 def _to_json_safe(obj):
@@ -192,14 +240,14 @@ async def chat(req: ChatRequest):
                     "content": f"注意：你已连接到数据库「{db_entry['name']}」，但无法加载表结构（{e}）。请告知用户。"
                 })
 
-        # Inject schema — use full schema for quality mode, light for fast mode
-        inject_schema = schema_text
-        if req.mode == "quality" and db_entry:
-            try:
+        # Inject schema — use RAG if enabled, full schema otherwise
+        if _get_rag_enabled():
+            inject_schema = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+        else:
+            inject_schema = schema_text
+            if req.mode == "quality" and db_entry:
                 if full_schema_text:
                     inject_schema = full_schema_text
-            except Exception:
-                pass
         agent_messages.insert(0, {
             "role": "system",
             "content": f"<database name=\"{db_entry['name']}\">\n{inject_schema}\n</database>\n<instruction>以上 <database> 标签中已完整列出所有可用表、字段和业务描述。关于表结构、有哪些表等元数据问题，请直接使用以上信息回答，不要查询数据库。</instruction>\n<instruction>对于具体的数据查询（如销量、订单量、用户数等），调用 query_database 工具。</instruction>"
@@ -332,11 +380,14 @@ async def chat_stream(req: ChatRequest):
                         session.metadata["_schema_full"] = full_schema_text
                         session.metadata["_cached_db_id"] = req.db_id
 
-                    s_text = (
-                        full_schema_text
-                        if (req.mode == "quality" and full_schema_text)
-                        else schema_text
-                    )
+                    if _get_rag_enabled():
+                        s_text = await _get_schema_prompt(req.message, req.db_id, tables, active_connector)
+                    else:
+                        s_text = (
+                            full_schema_text
+                            if (req.mode == "quality" and full_schema_text)
+                            else schema_text
+                        )
                     agent_messages.insert(0, {
                         "role": "system",
                         "content": f"<database name=\"{db_entry['name']}\">\n{s_text}\n</database>\n<instruction>你必须调用 query_database 工具来查询数据，不要凭表名猜测答案。</instruction>"
