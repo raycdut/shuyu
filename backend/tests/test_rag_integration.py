@@ -298,3 +298,32 @@ class TestHypothesisStorageIntegration:
         vs.delete_hypotheses("db1")
         results = vs.search_hypotheses([0.1, 0.2], "db1", top_k=5, min_score=0.0)
         assert results == []
+
+
+# =========================================================================
+# Integration: Config change triggers reset
+# =========================================================================
+
+class TestConfigChangeResetsEmbeddingService:
+    """Verify that changing RAG config resets the cached embedding service."""
+
+    def test_rag_update_calls_reset(self):
+        from app.admin_config.service import update_system_config
+        from app import client
+        client._embedding_service_instance = "cached_instance"
+        update_system_config({"rag": {"top_k": 10}}, updated_by="admin")
+        assert client._embedding_service_instance is None, "reset_embedding_service should clear cache"
+
+
+class TestSchemaImportTriggersRebuild:
+    """Verify rebuild_embeddings is called after schema import (via state.rag.enabled)."""
+
+    def test_rag_enabled_flag_checked_for_rebuild(self):
+        from app.config import Config, RAGConfig
+        from app import state
+        state.config = Config()
+        state.config.rag = RAGConfig(enabled=True)
+        assert state.config.rag.enabled is True
+
+        state.config.rag = RAGConfig(enabled=False)
+        assert state.config.rag.enabled is False

@@ -305,6 +305,13 @@ async def import_schema(db_id: str, req: SchemaImportRequest, _admin: dict = Dep
             f"导入数据库 Schema: {entry['name']} → {tables_count} 张表，{columns_count} 个字段",
         )
 
+        try:
+            if state.config.rag.enabled:
+                from ..router.schema_retriever import rebuild_embeddings
+                await rebuild_embeddings(db_id)
+        except Exception:
+            logger.warning("RAG embedding rebuild skipped (non-fatal)")
+
         return {
             "ok": True,
             "tables_count": tables_count,

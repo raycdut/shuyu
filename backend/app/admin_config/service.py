@@ -163,6 +163,8 @@ def update_system_config(config: dict[str, Any], updated_by: str | None = None) 
         elif "••••" in incoming_rag.get("api_key", ""):
             incoming_rag["api_key"] = old_rag.get("api_key", "")
         merged["rag"] = incoming_rag
+        from ..client import reset_embedding_service
+        reset_embedding_service()
 
     now = datetime.now(timezone.utc).isoformat()
     with scoped_session() as session:
