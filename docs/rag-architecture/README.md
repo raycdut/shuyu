@@ -622,6 +622,9 @@ Admin saves settings → backend stores in DB → runtime reads from state.
 | D | Embedding provider change breaks old vectors | `dim` field on every vector; query only matches same-dim vectors. | ~1 line |
 | E | Zero observability | `RagMetrics` class + `GET /api/admin/rag/stats` shows hits, latency, fallback rate. | ~60 lines |
 | F | Per-query RAG quality tag | Each response tagged with `rag_info: {mode, tier, score, latency}`. | ~40 lines |
+| G | `api_base` whitelist & validation | Prevent data exfiltration via rogue embedding endpoints. Block private IPs. | ~30 lines |
+| H | User data privacy | 90-day Tier 2 TTL + user deletion endpoint `POST /api/user/rag/forget` | ~50 lines |
+| I | SSRF protection for test endpoint | Only test against whitelisted providers, not arbitrary URLs | ~20 lines |
 
 These are not "Phase 2" items — they are foundational. Without them, the system
 fails in multi-worker deployment (A) and on restart (B), produces silent data
@@ -767,12 +770,181 @@ The following defects were identified during design review and have been fixed:
 | **P2** | Hypothetical question diversity | Prompt now enforces diverse phrasings explicitly |
 | **P2** | SQLite + numpy O(n) latency | Fast pre-filter, keyword index, escalate to ChromaDB if >200ms |
 | **P2** | Self-learning hypotheses stored before validation | Deferred commit: pending hypotheses in session metadata, only committed after user confirmation |
+| **SEC P0** | `api_base` points to attacker server → data exfiltration | `validate_rag_config()` whitelist + block private IPs |
+| **SEC P0** | User queries stored indefinitely → privacy risk | 90-day TTL + `POST /api/user/rag/forget` API |
+| **SEC P0** | Test endpoint allows SSRF | Only test against whitelisted providers |
+| **SEC P1** | RAG config audit trail incomplete | Record diffs for each RAG config change |
+| **SEC P1** | Admin can't see where embedding data goes | `data_sent_to` field in `/api/admin/rag/stats` |
+| **ARCH P1** | Schema re-import breaks Tier 2 references | Rebuild Tier 2 or use stable table name keys instead of IDs |
+| **ARCH P1** | Multi-worker metrics fragmented | Write metrics to ConfigDB instead of process memory |
+| **ARCH P2** | No automated tests | Unit + integration + regression test suite |
+| **ARCH P2** | 5s TTL cache is time-based | Event-driven: version number in ConfigDB, cache invalidates on change |
+| **ARCH P2** | `other_tables` column loading is N+1 queries | Single `SELECT column_name, table_id FROM imported_columns ...` |
 
 ---
 
-## 9. Visual Diagrams
+## 9. Security Considerations
 
-See companion HTML files in this directory:
+RAG introduces new attack surfaces that must be addressed before production deployment.
 
-- `architecture-comparison.html` — Side-by-side current vs RAG architecture
-- `flow-comparison.html` — Request flow: with and without RAG
+### 9.1 Embedding provider as data exfiltration channel
+
+**Risk**: An attacker with admin access can change `rag.api_base` to point to their
+own server. Every subsequent query (user question + schema metadata) is sent there.
+
+**Mitigation — `api_base` whitelist**:
+
+```python
+ALLOWED_EMBEDDING_BASES = {
+    "siliconflow": "https://api.siliconflow.cn/v1",
+    "openai":       "https://api.openai.com/v1",
+    # Add more as needed
+}
+
+def validate_rag_config(rag: dict) -> bool:
+    provider = rag.get("provider", "")
+    api_base = rag.get("api_base", "")
+    
+    if provider in ALLOWED_EMBEDDING_BASES:
+        # For known providers, verify api_base matches the official URL
+        if not api_base.startswith(ALLOWED_EMBEDDING_BASES[provider]):
+            return False
+    else:
+        # For custom providers, require admin to confirm via a second step
+        # Block internal/private IP ranges
+        from urllib.parse import urlparse
+        parsed = urlparse(api_base)
+        host = parsed.hostname or ""
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"):
+            return False
+        if host.endswith(".local") or host.endswith(".internal"):
+            return False
+    
+    return True
+```
+
+Applied in `update_system_config()` before saving RAG settings:
+if RAG section changed and !validate_rag_config(new_rag) → reject the change.
+
+### 9.2 Test embedding as SSRF vector
+
+`POST /api/admin/rag/test` should NOT allow arbitrary `api_base`. Instead:
+- Test against the whitelisted known providers only
+- Or use a sandboxed HTTP client with network restrictions
+
+### 9.3 User query persistence & data deletion
+
+Tier 2 stores user questions and SQL queries permanently. This creates privacy
+compliance risk (GDPR, PIPL).
+
+**Mitigation**:
+
+1. **Data retention policy**:
+   - Tier 2 entries expire after 90 days regardless of hit count
+   - `tier2_max_age_days` config field controls this (default 90)
+   - A daily cron job (or lazy cleanup on read) prunes expired entries
+
+2. **User deletion API**:
+   `POST /api/user/rag/forget` — deletes ALL Tier 2 entries for queries
+   made by this user. Backend maps user_id → session_ids → query texts →
+   delete matching Tier 2 entries.
+
+3. **SQL content masking** (optional, Phase 5):
+   Before storing `source_query` in Tier 2, mask literal values:
+   ```sql
+   -- Before masking:
+   WHERE name = '张三' AND salary > 100000
+   -- After masking:
+   WHERE name = '?' AND salary > ?
+   ```
+
+### 9.4 RAG configuration audit trail
+
+The existing `ConfigChangelog` table should record RAG-specific diffs:
+
+```python
+# In update_system_config():
+if "rag" in config:
+    old_rag = old.get("rag", {})
+    new_rag = config["rag"]
+    diff_fields = []
+    for key in ("enabled", "provider", "api_base", "model"):
+        if old_rag.get(key) != new_rag.get(key):
+            diff_fields.append(f"{key}: {old_rag.get(key)} → {new_rag.get(key)}")
+    _log_config_change("system", None, updated_by or "unknown",
+                       f"更新RAG配置: {', '.join(diff_fields)}",
+                       diff="\n".join(diff_fields))
+```
+
+This ensures security audits can answer: "Who changed RAG settings, when, and what did they change?"
+
+### 9.5 Embedding data destination display
+
+`GET /api/admin/rag/stats` should display where data is being sent:
+
+```json
+{
+  "status": "enabled",
+  "provider": "siliconflow",
+  "api_base": "https://api.siliconflow.cn/v1",
+  "model": "BAAI/bge-m3",
+  "data_sent_to": "SiliconFlow (China mainland — subject to Chinese data laws)",
+  "tables_indexed": 30,
+  "columns_indexed": 450,
+  "hypotheses_count": 127,
+  "tier2_hit_rate": 0.34,
+  "avg_latency_ms": 87,
+  "fallback_rate": 0.021
+}
+```
+
+The `data_sent_to` field is derived from the provider setting, giving admins
+visibility into where their schema metadata is being sent.
+
+---
+
+## 10. Assessment: Is This Design Production-Ready?
+
+### What's done well
+
+- **Drop-in replacement** for `build_schema_prompt()` → zero agent changes
+- **Layered retrieval** (Tier 2 → 1a → 1b) → correct prioritization
+- **Deferred commit** for self-learning → prevents learning from bad queries
+- **Atomic rebuild** for vector store → no data corruption on schema re-import
+- **Admin toggle** → safe rollback without restart
+- **Architecture-first approach** → 3 rounds of design review before writing code
+
+### Remaining gaps (must-fix before production)
+
+| Priority | Gap | Fix effort |
+|----------|-----|-----------|
+| **P0** | `api_base` not validated → data exfiltration risk | ~30 lines |
+| **P0** | User queries stored indefinitely → privacy risk | ~50 lines |
+| **P0** | Test endpoint allows SSRF | ~20 lines |
+| **P0** | No automated tests | ~150 lines |
+| **P1** | Schema re-import breaks Tier 2 references | ~20 lines |
+| **P1** | Multi-worker metrics are fragmented | ~40 lines |
+| **P1** | RAG audit trail is incomplete | ~15 lines |
+| **P2** | 5s TTL cache could be event-driven | ~10 lines |
+| **P2** | `other_tables` column loading is N+1 queries | ~10 lines |
+| **P3** | Self-learning and SQL use same LLM (bias) | Acceptable for MVP |
+
+### Verdict
+
+The design is **architecturally sound for a Phase 1 MVP**, with the following
+understanding:
+
+- **Do not deploy with default config** (`api_base` whitelist is required)
+- **Do not deploy without Tier 2 data retention policy** (privacy risk)
+- **Do not skip test automation** (RAG is too complex to verify manually)
+- **Acceptable risks for Phase 1**: LLM bias from same-provider learning,
+   5s TTL inconsistency window, fragile implicit negation detection
+
+The core architectural decisions (layered retrieval, deferred commit,
+ConfigDB-based config, atomic rebuild) are correct and will serve as a
+solid foundation for Phases 2-5.
+
+**Estimated production-readiness timeline**:
+- Phase 1 with P0 fixes: 3-4 days
+- Phase 1 with all tests: +1 day
+- Phase 1 hardened for production: 5 days total
