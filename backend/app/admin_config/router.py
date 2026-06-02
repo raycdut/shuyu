@@ -60,3 +60,31 @@ async def user_available_options(current_user: dict = Depends(get_current_user))
 @router.get("/api/user/config/history")
 async def user_config_history(current_user: dict = Depends(get_current_user)) -> list[dict]:
     return get_config_changelog("user", current_user["id"])
+
+
+@router.get("/api/admin/rag/stats")
+async def admin_rag_stats(_admin: dict = Depends(require_admin)) -> dict:
+    from ..metrics.rag_metrics import get_rag_metrics
+    return get_rag_metrics()
+
+
+@router.post("/api/admin/rag/test")
+async def admin_rag_test(body: dict[str, Any], _admin: dict = Depends(require_admin)) -> dict:
+    """Test RAG embedding connection with the provided or current config."""
+    from ..embedding.service import create_embedding_service
+    from ..metrics.rag_metrics import get_rag_metrics
+    cfg = {**get_system_config().get("rag", {}), **body.get("rag", {})}
+    api_key = cfg.get("api_key", "") or None
+    if not api_key:
+        raise HTTPException(400, "API Key is required")
+    try:
+        svc = create_embedding_service(
+            provider=cfg.get("provider", "openai"),
+            api_key=api_key,
+            model=cfg.get("model", "text-embedding-3-small"),
+            api_base=cfg.get("api_base") or None,
+        )
+        result = await svc.embed("test connection")
+        return {"ok": True, "dimension": len(result), "message": "连接成功"}
+    except Exception as e:
+        return {"ok": False, "message": f"连接失败: {e}"}

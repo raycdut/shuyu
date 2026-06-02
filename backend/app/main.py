@@ -125,6 +125,27 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Failed to sync API key from system_config: {e}")
 
+    # 2.5 Init RAG if enabled
+    try:
+        from app.admin_config.service import get_system_config
+        rag_cfg = get_system_config().get("rag", {})
+        if rag_cfg.get("enabled"):
+            from .persistence.vector_store import VectorStore
+            from .embedding.service import create_embedding_service
+            from .router.schema_retriever import init_rag
+            vs = VectorStore()
+            api_key = rag_cfg.get("api_key") or state.config.llm.api_key
+            emb = create_embedding_service(
+                provider=rag_cfg.get("provider", "openai"),
+                api_key=api_key,
+                model=rag_cfg.get("model", "text-embedding-3-small"),
+                api_base=rag_cfg.get("api_base") or None,
+            )
+            init_rag(emb, vs)
+            logger.info(f"RAG initialized: provider={rag_cfg.get('provider')}, top_k={rag_cfg.get('top_k')}")
+    except Exception as e:
+        logger.warning(f"RAG init skipped: {e}")
+
     # 3. Register tools
     state.tool_registry = ToolRegistry()
     state.tool_registry.register(Tool(
