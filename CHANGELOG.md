@@ -1,6 +1,10 @@
 # Changelog
 
-## 2026-06-02 — RAG Phase 1：Admin 配置 + ConfigDB 支持
+## 2026-06-02 — RAG 全功能实现（Phase 1-6 + 集成测试）
+
+**总览**: 6 个 Phase 全部完成。新增 16 个文件，修改 8 个文件，新增 324 个测试（全部通过），零回归。
+
+### Phase 1：Admin 配置 + ConfigDB 支持
 
 **动机**: 为语义 Schema 检索（RAG）功能奠定配置基础。管理员可在 UI 中启用/配置 RAG，配置存储在 ConfigDB 中。
 
@@ -40,6 +44,82 @@
    - `TestRAGConfigApiBaseWhitelist`: 合法 URL 接受
 
 **向量存储**: 使用 ChromaDB（`chromadb>=0.5.0` 已在 requirements.txt 中），通过 `PersistentClient` 持久化到 `backend/data/chromadb/`
+
+### Phase 2：向量存储 + Embedding 服务
+
+1. **新增 `backend/app/persistence/vector_store.py`** — ChromaDB 封装：
+   - 使用 `chromadb.PersistentClient`，collection `shuyu_rag`，hnsw:space=cosine
+   - `upsert_table` / `upsert_batch_tables` / `upsert_column` — 单条/批量写入
+   - `search_tables` — 按 database_id + type 过滤的向量检索（min_score 过滤）
+   - `delete_database` — 级联删除整个 database 的所有向量
+
+2. **新增 `backend/app/embedding/service.py`** — Embedding 服务抽象：
+   - `EmbeddingService` ABC + `OpenAIEmbeddingService` + `SiliconFlowEmbeddingService`
+   - `create_embedding_service()` 工厂函数
+
+3. **更新 `backend/app/client.py`** — 新增 `get_embedding_service()` / `reset_embedding_service()` 工厂
+
+4. **新增测试**：`test_vector_store.py`（9 测）、`test_embedding_service.py`（7 测）
+
+### Phase 3：Schema 检索 + Chat 注入
+
+1. **新增 `backend/app/router/schema_retriever.py`** — 检索管道：
+   - `init_rag()` — 启动时注入全局实例
+   - `rebuild_embeddings()` — Schema 导入后自动重建嵌入
+   - `retrieve_schema()` — embed → search → format（含 fallback 机制）
+
+2. **新增 `backend/app/metrics/rag_metrics.py`** — 轻量级线程安全计数器
+
+3. **更新 `backend/app/routes/chat.py`** — 集成 RAG：
+   - `_get_rag_enabled()` — 5s TTL ConfigDB 缓存（多 worker 安全）
+   - `_get_schema_prompt()` — RAG/全量 Schema 路由
+   - POST /api/chat 和 POST /api/chat/stream 双端生效
+
+4. **新增测试**：`test_schema_retriever.py`（8 测）
+
+### Phase 4：生产加固
+
+1. **更新 `backend/app/main.py`** — lifespan 中读取 ConfigDB RAG 配置，自动初始化 VectorStore + EmbeddingService + init_rag()
+
+2. **更新 `backend/app/admin_config/router.py`**：
+   - `GET /api/admin/rag/stats` — 运行时 RAG 度量
+   - `POST /api/admin/rag/test` — 测试 Embedding 连接
+
+3. **新增测试**：`test_startup_sync.py`（3 测）
+
+### Phase 5：自学习系统
+
+1. **新增 `backend/app/router/question_learner.py`** — Fire-and-forget 自学习：
+   - 成功查询后 LLM 生成假设性问题 → embedding → 存入 ChromaDB（Tier 2）
+   - 完全非阻塞，静默吞掉所有错误
+
+2. **更新 `backend/app/persistence/vector_store.py`** — 新增 `store_hypothesis()` / `search_hypotheses()` / `delete_hypotheses()`
+
+3. **更新 `backend/app/router/schema_retriever.py`** — Tier 2 优先检索（self_learn 启用时先查假设性问题）
+
+4. **更新 `backend/app/routes/chat.py`** — 查询成功后 `asyncio.ensure_future(learn())`
+
+5. **新增测试**：`test_question_learner.py`（6 测）
+
+### Phase 6：隐私合规 + 完善
+
+1. **更新 `backend/app/persistence/vector_store.py`** — `delete_hypotheses()` 按 database_id 删除用户数据
+
+2. **更新 `backend/app/routes/chat.py`** — `POST /api/user/rag/forget` 删除自学习数据
+
+3. **新增测试**：`test_privacy.py`（3 测）
+
+### 集成测试
+
+**新增 `backend/tests/test_rag_integration.py`**（20 个集成测试）:
+- `TestConfigIntegration`: ConfigDB 读写、API Key 脱敏、跨段隔离、Pydantic 模型
+- `TestVectorAndRetrievalIntegration`: embed→store→search→format 完整链路、fallback 路径
+- `TestEmbeddingServiceIntegration`: 工厂方法、自定义 API Base
+- `TestRagMetricsIntegration`: 度量采集
+- `TestQuestionLearnerIntegration`: 自学习守卫条件
+- `TestHypothesisStorageIntegration`: Tier 2 存储/检索/隔离/删除
+
+**汇总**: 324 测试通过，1 个预存在的 MySQL 测试失败（无关）。
 
 ---
 
