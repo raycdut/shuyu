@@ -282,6 +282,106 @@ class RAGConfig(BaseModel):
     tier2_max_age_days: int = 90     # Prune unused Tier 2 entries after N days
 ```
 
+### 3b. Admin Settings Integration
+
+RAG is an **advanced admin-only feature**. It is NOT configured via config.yaml.
+Instead, it follows shuyu's existing admin config system:
+
+```
+Admin Settings Page (/admin)
+  └── RAG Settings tab (NEW)
+       ├── Enable RAG                    [toggle]
+       ├── Embedding Provider            [dropdown: SiliconFlow | OpenAI | Local]
+       ├── Model                         [text: BAAI/bge-m3]
+       ├── API Key                       [password field]
+       ├── API Base URL                  [text: https://api.siliconflow.cn/v1]
+       ├── Top-K (tables to retrieve)    [number: default 5]
+       ├── Self-Learning                 [toggle: default ON]
+       └── [Test Embedding] button       → API /api/admin/rag/test
+```
+
+#### Config storage
+
+RAG settings live in the existing `SystemConfig` JSON blob under a `"rag"` key:
+
+```json
+{
+  "llm": { ... },
+  "safety": { ... },
+  "advanced": { ... },
+  "rag": {
+    "enabled": false,
+    "provider": "siliconflow",
+    "model": "BAAI/bge-m3",
+    "api_key": "(encrypted)",
+    "api_base": "https://api.siliconflow.cn/v1",
+    "top_k": 5,
+    "min_score_tier1": 0.30,
+    "min_score_tier2": 0.70,
+    "self_learn": true,
+    "self_learn_gates": true,
+    "tier2_max_age_days": 90
+  }
+}
+```
+
+- API key is encrypted at rest (same mechanism as LLM API keys, via `encrypt_value()`)
+- `GET /api/admin/config` returns masked key (`sk-••••abcd`)
+- `PUT /api/admin/config` with `{ "rag": { ... } }` updates the RAG section
+
+#### Backend API
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `GET /api/admin/config` | GET | Returns full config including `rag` (key masked) |
+| `PUT /api/admin/config` | PUT | Save RAG settings alongside other config |
+| `POST /api/admin/rag/test` | POST | Test embedding connection with current config |
+| `GET /api/admin/rag/stats` | GET | Show vector store stats (#tables, #hypotheses, avg score) |
+
+#### Config → Runtime flow
+
+```
+Admin saves RAG settings
+  → PUT /api/admin/config { "rag": { "enabled": true, ... } }
+  → update_system_config() stores in ConfigDB (encrypted key)
+  → If "rag" section changed:
+      → Initialize/reinitialize VectorStore
+      → If enabled == true:
+          → Build Tier 1 embeddings for ALL connected databases
+          → Register RAG middleware in chat route
+      → If enabled == false:
+          → Bypass RAG, use original build_schema_prompt()
+  → All subsequent /api/chat requests use new RAG config
+```
+
+#### Runtime state synchronization
+
+In `update_system_config()`, when the `"rag"` section changes:
+
+```python
+if "rag" in config:
+    rag_cfg = merged.get("rag", {})
+    state.rag_config.enabled = rag_cfg.get("enabled", False)
+    if state.rag_config.enabled and not _rag_initialized:
+        embedding_svc = create_embedding_service(...)
+        vector_store = VectorStore(...)
+        init_rag(embedding_svc, vector_store, state.rag_config)
+        for db in state._db_connections:
+            asyncio.create_task(rebuild_embeddings(db["id"]))
+        _rag_initialized = True
+    elif not state.rag_config.enabled:
+        _rag_initialized = False
+```
+
+#### User experience
+
+- **RAG disabled (default)**: shuyu works exactly as before. Zero change.
+- **RAG enabled**: Admin flips the toggle → system builds embeddings in background
+  → user messages start getting filtered schema → no restart needed
+- **Admin disables RAG**: Instant rollback. Next chat request uses full schema.
+
+---
+
 ## 3a. Embedding Strategy: What to Put in the Vector Store
 
 Not all embeddings are equal. What you store determines what you retrieve.
@@ -433,17 +533,22 @@ User: "上个月华东区销量排名"
 ### Phase 1 — MVP (Effort: ~1-2 days)
 
 **Goal**: Functional RAG with OpenAI embedding + in-process vector search.
+**Config path**: Admin settings page → ConfigDB (NOT config.yaml).
 
 | Step | File | Change |
 |------|------|--------|
 | 1 | `persistence/vector_store.py` | Create SQLite-backed vector store with numpy cosine similarity |
 | 2 | `client.py` | Add `embed()` method alongside `call_llm()` |
 | 3 | `router/schema_retriever.py` | Create retrieval pipeline: embed → search → format |
-| 4 | `routes/chat.py` | Replace `build_schema_prompt()` with `schema_retriever.retrieve()` |
-| 5 | `config.py` | Add `RAGConfig` with `enabled` toggle |
-| 6 | `routes/schema.py` | Webhook: auto-rebuild embeddings on schema import |
+| 4 | `routes/chat.py` | Replace `build_schema_prompt()` with `schema_retriever.retrieve()` when RAG enabled |
+| 5 | `admin_config/service.py` | Add `"rag"` to `DEFAULT_SYSTEM_CONFIG`, handle in `update_system_config()` |
+| 6 | `admin_config/router.py` | Add `POST /api/admin/rag/test` and `GET /api/admin/rag/stats` endpoints |
+| 7 | `frontend/AdminSettings/tabs/` | Add `RAGSettingsTab.tsx` with all fields |
+| 8 | `routes/schema.py` | Webhook: auto-rebuild embeddings on schema import |
 
-**Key decision**: Support OpenAI `text-embedding-3-small` as the default provider, with a config field to switch.
+**Key decision**: RAG config is stored in ConfigDB under `config["rag"]`, encrypted API key.
+`config.yaml` only holds the `RAGConfig` Pydantic model definition (defaults), not active values.
+Admin saves settings → backend stores in DB → runtime reads from state.
 
 ### Phase 2 — Schema Import Sync (Effort: ~1 day)
 
